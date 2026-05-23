@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>英语口语评估</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #f5f5f5;
+    min-height: 100vh;
+    color: #333;
+    display: flex;
+    justify-content: center;
+    padding: 24px 16px;
+  }
+  .container { width: 100%; max-width: 720px; }
+
+  h1 {
+    text-align: center;
+    font-size: 1.8rem;
+    font-weight: 700;
+    margin-bottom: 24px;
+    background: linear-gradient(90deg, #667eea, #764ba2);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .card {
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 16px;
+    padding: 24px;
+    margin-bottom: 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  }
+
+  .video-wrap {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 4/3;
+    background: #000;
+    border-radius: 12px;
+    overflow: hidden;
+    margin-bottom: 16px;
+  }
+  .video-wrap video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .video-wrap .placeholder {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    color: #aaa; font-size: 0.95rem;
+  }
+  .video-wrap .placeholder .icon { font-size: 3rem; margin-bottom: 8px; }
+  .video-wrap .rec-dot {
+    position: absolute; top: 12px; right: 12px;
+    width: 14px; height: 14px;
+    background: #ff3b3b; border-radius: 50%;
+    animation: blink 1s infinite;
+    display: none;
+  }
+  .video-wrap.recording .rec-dot { display: block; }
+  @keyframes blink { 50% { opacity: 0.3; } }
+
+  .timer {
+    text-align: center;
+    font-size: 1.5rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    margin-bottom: 16px;
+    display: none;
+  }
+  .timer.visible { display: block; }
+
+  .btn-row { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+
+  .btn {
+    padding: 12px 28px;
+    border-radius: 10px;
+    border: none;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.15s, opacity 0.2s;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .btn:active { transform: scale(0.97); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-start { background: #4caf50; color: #fff; }
+  .btn-stop  { background: #f44336; color: #fff; }
+  .btn-upload { background: linear-gradient(135deg, #667eea, #764ba2); color: #fff; }
+  .btn-reset  { background: #eee; color: #555; }
+
+  .progress-wrap {
+    margin-top: 16px; display: none;
+  }
+  .progress-wrap.visible { display: block; }
+  .progress-bar {
+    width: 100%; height: 8px;
+    background: #e8e8e8;
+    border-radius: 4px; overflow: hidden;
+  }
+  .progress-bar .fill {
+    height: 100%; width: 0%;
+    background: linear-gradient(90deg, #667eea, #764ba2);
+    border-radius: 4px;
+    transition: width 0.3s;
+  }
+  .progress-text {
+    text-align: center; font-size: 0.85rem;
+    color: #888; margin-top: 6px;
+  }
+
+  /* results */
+  .result-section { display: none; }
+  .result-section.visible { display: block; }
+
+  .overall {
+    display: flex; align-items: center; gap: 20px;
+    padding: 20px 0; border-bottom: 1px solid #eee;
+    margin-bottom: 20px;
+  }
+  .score-circle {
+    width: 90px; height: 90px;
+    border-radius: 50%;
+    background: conic-gradient(#667eea calc(var(--pct) * 1%), #e8e8e8 0);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .score-inner {
+    width: 72px; height: 72px;
+    border-radius: 50%;
+    background: #fff;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+  }
+  .score-num { font-size: 1.6rem; font-weight: 700; color: #667eea; }
+  .score-outof { font-size: 0.7rem; color: #888; }
+  .overall-comment { font-size: 0.9rem; color: #666; line-height: 1.6; }
+
+  .dim-group { margin-bottom: 20px; }
+  .dim-group-title {
+    font-size: 0.85rem; font-weight: 700;
+    color: #667eea; text-transform: uppercase;
+    letter-spacing: 1px; margin-bottom: 10px;
+  }
+  .dim-row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 0; border-bottom: 1px solid #f5f5f5;
+  }
+  .dim-name { width: 110px; font-size: 0.9rem; flex-shrink: 0; }
+  .dim-bar-wrap { flex: 1; height: 8px; background: #e8e8e8; border-radius: 4px; overflow: hidden; }
+  .dim-bar-fill { height: 100%; border-radius: 4px; transition: width 0.6s ease; }
+  .dim-score { width: 36px; text-align: right; font-weight: 700; font-size: 0.9rem; }
+  .dim-comment { font-size: 0.8rem; color: #999; margin-top: 4px; padding-left: 122px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🎤 英语口语练习评估</h1>
+
+  <!-- 录制区 -->
+  <div class="card">
+    <div class="video-wrap" id="videoWrap">
+      <video id="preview" autoplay playsinline muted></video>
+      <div class="placeholder" id="placeholder">
+        <span class="icon">📹</span>
+        <span>点击"开始录制"调用摄像头</span>
+      </div>
+      <div class="rec-dot" id="recDot"></div>
+    </div>
+    <div class="timer" id="timer">00:00</div>
+    <div class="btn-row">
+      <button class="btn btn-start" id="btnStart" onclick="startRecording()">▶ 开始录制</button>
+      <button class="btn btn-stop" id="btnStop" onclick="stopRecording()" disabled>⏹ 结束录制</button>
+      <button class="btn btn-upload" id="btnUpload" onclick="uploadVideo()" disabled>☁️ 上传评估</button>
+      <button class="btn btn-reset" id="btnReset" onclick="resetAll()">↺ 重新录制</button>
+    </div>
+    <div class="progress-wrap" id="progressWrap">
+      <div class="progress-bar"><div class="fill" id="progressFill"></div></div>
+      <div class="progress-text" id="progressText">正在上传并评估...</div>
+    </div>
+  </div>
+
+  <!-- 结果区 -->
+  <div class="card result-section" id="resultSection">
+    <div class="overall">
+      <div class="score-circle" id="scoreCircle" style="--pct:0">
+        <div class="score-inner">
+          <span class="score-num" id="scoreNum">--</span>
+          <span class="score-outof">/ 5.0</span>
+        </div>
+      </div>
+      <div class="overall-comment" id="overallComment"></div>
+    </div>
+    <div id="dimensions"></div>
+  </div>
+</div>
+
+<script>
+let mediaRecorder, stream, recordedBlob;
+let timerInterval, startTime;
+
+const $ = s => document.querySelector(s);
+const $$ = s => document.querySelectorAll(s);
+
+async function startRecording() {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+  } catch (e) {
+    alert('无法访问摄像头和麦克风: ' + e.message);
+    return;
+  }
+
+  $('#preview').srcObject = stream;
+  $('#placeholder').style.display = 'none';
+  $('#videoWrap').classList.add('recording');
+
+  const chunks = [];
+  mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp8,opus' });
+  mediaRecorder.ondataavailable = e => chunks.push(e.data);
+  mediaRecorder.onstop = () => {
+    recordedBlob = new Blob(chunks, { type: 'video/webm' });
+    $('#preview').srcObject = null;
+    $('#preview').src = URL.createObjectURL(recordedBlob);
+    $('#preview').muted = false;
+    $('#videoWrap').classList.remove('recording');
+    $('#btnUpload').disabled = false;
+  };
+
+  mediaRecorder.start();
+  startTime = Date.now();
+  timerInterval = setInterval(updateTimer, 200);
+
+  $('#btnStart').disabled = true;
+  $('#btnStop').disabled = false;
+  $('#btnUpload').disabled = true;
+  $('#resultSection').classList.remove('visible');
+  $('#timer').classList.add('visible');
+}
+
+function stopRecording() {
+  mediaRecorder.stop();
+  stream.getTracks().forEach(t => t.stop());
+  clearInterval(timerInterval);
+
+  $('#btnStart').disabled = false;
+  $('#btnStop').disabled = true;
+  $('#timer').classList.remove('visible');
+}
+
+function updateTimer() {
+  const elapsed = Math.floor((Date.now() - startTime) / 1000);
+  const m = String(Math.floor(elapsed / 60)).padStart(2, '0');
+  const s = String(elapsed % 60).padStart(2, '0');
+  $('#timer').textContent = m + ':' + s;
+}
+
+async function uploadVideo() {
+  if (!recordedBlob) return;
+
+  $('#btnUpload').disabled = true;
+  $('#progressWrap').classList.add('visible');
+  $('#resultSection').classList.remove('visible');
+  updateProgress(5, '正在上传视频...');
+
+  const form = new FormData();
+  form.append('video', recordedBlob, 'recording.webm');
+
+  updateProgress(20, '正在评估口语表现（可能需要1-2分钟）...');
+
+  try {
+    const resp = await fetch('/upload', { method: 'POST', body: form });
+    const data = await resp.json();
+
+    if (!resp.ok) {
+      alert('评估失败: ' + (data.error || '未知错误'));
+      updateProgress(0, '');
+      $('#progressWrap').classList.remove('visible');
+      $('#btnUpload').disabled = false;
+      return;
+    }
+
+    updateProgress(100, '评估完成');
+    setTimeout(() => {
+      $('#progressWrap').classList.remove('visible');
+      $('#btnUpload').disabled = true;
+      renderResults(data);
+    }, 400);
+
+  } catch (e) {
+    alert('网络错误: ' + e.message);
+    $('#progressWrap').classList.remove('visible');
+    $('#btnUpload').disabled = false;
+  }
+}
+
+function updateProgress(pct, text) {
+  $('#progressFill').style.width = pct + '%';
+  $('#progressText').textContent = text;
+}
+
+function resetAll() {
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
+  clearInterval(timerInterval);
+  recordedBlob = null;
+
+  $('#preview').srcObject = null;
+  $('#preview').src = '';
+  $('#placeholder').style.display = '';
+  $('#videoWrap').classList.remove('recording');
+  $('#timer').classList.remove('visible');
+  $('#timer').textContent = '00:00';
+  $('#progressWrap').classList.remove('visible');
+  $('#resultSection').classList.remove('visible');
+
+  $('#btnStart').disabled = false;
+  $('#btnStop').disabled = true;
+  $('#btnUpload').disabled = true;
+}
+
+function renderResults(data) {
+  $('#resultSection').classList.add('visible');
+  $('#scoreNum').textContent = data.overall_score.toFixed(1);
+  const pct = (data.overall_score / 5) * 100;
+  $('#scoreCircle').style.setProperty('--pct', pct);
+  $('#overallComment').textContent = data.overall_comment;
+
+  const dims = data.dimensions || [];
+  const categories = {};
+  dims.forEach(d => {
+    if (!categories[d.category]) categories[d.category] = [];
+    categories[d.category].push(d);
+  });
+
+  const colors = ['#f44336','#ff9800','#ffeb3b','#8bc34a','#4caf50','#388e3c','#2e7d32'];
+  let html = '';
+
+  for (const [cat, items] of Object.entries(categories)) {
+    html += `<div class="dim-group"><div class="dim-group-title">${cat}</div>`;
+    items.forEach(d => {
+      const idx = Math.round(d.score) - 1;
+      const color = colors[Math.min(Math.max(idx, 0), 6)];
+      html += `
+        <div class="dim-row">
+          <span class="dim-name">${d.name}</span>
+          <div class="dim-bar-wrap"><div class="dim-bar-fill" style="width:${(d.score/5)*100}%;background:${color}"></div></div>
+          <span class="dim-score">${d.score.toFixed(1)}</span>
+        </div>
+        <div class="dim-comment">${d.comment}</div>`;
+    });
+    html += '</div>';
+  }
+
+  $('#dimensions').innerHTML = html;
+  document.getElementById('resultSection').scrollIntoView({ behavior: 'smooth' });
+}
+</script>
+</body>
+</html>

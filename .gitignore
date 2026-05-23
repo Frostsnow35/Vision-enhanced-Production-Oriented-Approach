@@ -1,0 +1,40 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+*.db
+*.sqlite3
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# IDE
+.claude/
+.trae/
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Uploads (test/development data)
+uploads/
+
+# Skills (third-party)
+skills/
+
+# Node.js (frontend)
+node_modules/
+.next/
+out/
+
+# Misc
+*.log
+*.tmp
