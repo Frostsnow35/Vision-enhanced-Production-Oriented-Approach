@@ -1,22 +1,16 @@
 # Python
-.venv/
 __pycache__/
-*.pyc
-*.pyo
-*.egg-info/
-dist/
-build/
-*.db
-*.sqlite3
-
-# Environment
+*.py[cod]
+venv/
 .env
-.env.*
-!.env.example
+*.db
+
+# Node
+node_modules/
+.next/
+out/
 
 # IDE
-.claude/
-.trae/
 .vscode/
 .idea/
 
@@ -24,17 +18,6 @@ build/
 .DS_Store
 Thumbs.db
 
-# Uploads (test/development data)
+# Uploads
 uploads/
-
-# Skills (third-party)
-skills/
-
-# Node.js (frontend)
-node_modules/
-.next/
-out/
-
-# Misc
-*.log
-*.tmp
+sample_images/
