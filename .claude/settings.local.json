@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx next *)",
+      "Bash(python -c \"from config import engine, SessionLocal, get_db; from models import Base, Scenario, POATask, Attempt, Gap, InputPack, Evaluation; from schemas import ScenarioCreate, ScenarioResponse, POATaskCreate, POATaskResponse, AttemptCreate, AttemptResponse, GapCreate, GapResponse, InputPackCreate, InputPackResponse, EvaluationCreate, EvaluationResponse; print\\('All imports OK'\\)\")",
+      "Bash(npx tsc *)",
+      "Bash(venv/Scripts/python.exe -c ' *)",
+      "Bash(npm run *)"
+    ]
+  }
+}
