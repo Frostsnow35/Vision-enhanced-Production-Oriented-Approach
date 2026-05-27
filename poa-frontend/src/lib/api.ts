@@ -3,7 +3,7 @@
  * 后端默认地址 http://localhost:8000，可通过环境变量 NEXT_PUBLIC_API_BASE 覆盖。
  */
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
+const BASE_URL = process.env.NEXT_PUBLIC_API_BASE ?? "";
 
 async function request<T>(path: string, body: Record<string, unknown>): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
