@@ -18,6 +18,7 @@ from routers.attempt import router as attempt_router
 from routers.evaluate import router as evaluate_router
 from routers.facilitate import router as facilitate_router
 from routers.exercise import router as exercise_router
+from routers.chat import router as chat_router
 
 
 @asynccontextmanager
@@ -64,6 +65,7 @@ app.include_router(attempt_router)
 app.include_router(evaluate_router)
 app.include_router(facilitate_router)
 app.include_router(exercise_router)
+app.include_router(chat_router)
 
 # mount sample_images as static files
 os.makedirs("sample_images", exist_ok=True)
