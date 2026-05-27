@@ -23,6 +23,7 @@ async def lifespan(app: FastAPI):
     # ensure upload directories exist
     os.makedirs("uploads/images", exist_ok=True)
     os.makedirs("uploads/audio", exist_ok=True)
+    os.makedirs("uploads/tts", exist_ok=True)
 
     # auto-create tables
     Base.metadata.create_all(bind=engine)
@@ -64,6 +65,7 @@ app.include_router(evaluate_router)
 # mount sample_images as static files
 os.makedirs("sample_images", exist_ok=True)
 app.mount("/samples", StaticFiles(directory="sample_images"), name="samples")
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 
 @app.get("/")
