@@ -4,9 +4,7 @@
 """
 import logging
 import os
-import tempfile
 import uuid
-import shutil
 
 from fastapi import APIRouter, UploadFile, File, HTTPException
 
@@ -46,10 +44,9 @@ async def upload_image(file: UploadFile = File(...)):
             logger.info(f"[upload_image] 目录创建成功或已存在")
         except Exception as e:
             logger.error(f"[upload_image] 目录创建失败: {str(e)}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"无法创建上传目录: {str(e)}",
-            )
+            save_dir = "/tmp/poa_uploads/images"
+            os.makedirs(save_dir, exist_ok=True)
+            logger.info(f"[upload_image] 降级到临时目录: {save_dir}")
 
         filename = f"{uuid.uuid4().hex}{ext}"
         filepath = os.path.join(save_dir, filename)
@@ -112,10 +109,9 @@ async def upload_audio(file: UploadFile = File(...)):
             os.makedirs(save_dir, exist_ok=True)
         except Exception as e:
             logger.error(f"[upload_audio] 目录创建失败: {str(e)}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"无法创建上传目录: {str(e)}",
-            )
+            save_dir = "/tmp/poa_uploads/audio"
+            os.makedirs(save_dir, exist_ok=True)
+            logger.info(f"[upload_audio] 降级到临时目录: {save_dir}")
 
         filename = f"{uuid.uuid4().hex}{ext}"
         filepath = os.path.join(save_dir, filename)
