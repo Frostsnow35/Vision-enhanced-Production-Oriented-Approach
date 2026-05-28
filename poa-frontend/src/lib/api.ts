@@ -118,7 +118,7 @@ export interface EvaluateResult {
 }
 
 export async function evaluateAttempts(
-  attempt_text: string,
+  attempt1_text: string,
   attempt2_text: string
 ): Promise<EvaluateResult> {
   return request<EvaluateResult>("/api/evaluate", { attempt1_text, attempt2_text });
