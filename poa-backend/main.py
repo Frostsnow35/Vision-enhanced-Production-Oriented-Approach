@@ -68,8 +68,11 @@ app.include_router(facilitate_router)
 app.include_router(exercise_router)
 app.include_router(chat_router)
 
-# mount sample_images as static files
 os.makedirs("sample_images", exist_ok=True)
+os.makedirs("uploads/images", exist_ok=True)
+os.makedirs("uploads/audio", exist_ok=True)
+os.makedirs("uploads/tts", exist_ok=True)
+
 app.mount("/samples", StaticFiles(directory="sample_images"), name="samples")
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
