@@ -1,12 +1,10 @@
 /**
  * API 客户端 —— 封装对后端所有接口的 fetch 调用。
- * 后端默认地址 http://localhost:8000，可通过环境变量 NEXT_PUBLIC_API_BASE 覆盖。
+ * 使用相对路径，由 Next.js rewrite 代理到后端。
  */
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
-
 async function request<T>(path: string, body: Record<string, unknown>): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
+  const res = await fetch(path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -36,7 +34,7 @@ export async function analyzeScenario(image_path: string): Promise<ScenarioResul
 export async function uploadImage(file: File): Promise<{ image_url: string }> {
   const form = new FormData();
   form.append("file", file);
-  const res = await fetch(`${BASE_URL}/api/upload/image`, {
+  const res = await fetch("/api/upload/image", {
     method: "POST",
     body: form,
   });

@@ -20,4 +20,4 @@ DOUBAO_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
 
 # Ark SDK 配置
 ARK_API_KEY = DOUBAO_API_KEY
-ARK_MODEL_ID = "doubao-1.5-vision-pro-32k"
+ARK_MODEL_ID = "doubao-1.5-vision-pro-250328"
