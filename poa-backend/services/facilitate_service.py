@@ -10,22 +10,22 @@ logger = logging.getLogger("facilitate_service")
 
 # ---- 预设场景词块 ----
 _MOCK_SCENE_CHUNKS = [
-    "a latte / a cappuccino / an americano",
-    "oat milk / almond milk / soy milk",
-    "for here / to go",
-    "the Wi-Fi password",
-    "the receipt / the bill / the check",
-    "a pastry / a muffin / a cookie",
+    {"chunk": "a latte / a cappuccino / an americano", "meaning": "拿铁 / 卡布奇诺 / 美式咖啡", "usage": "点单时指定咖啡品类"},
+    {"chunk": "oat milk / almond milk / soy milk", "meaning": "燕麦奶 / 杏仁奶 / 豆奶", "usage": "说明乳制品替代需求"},
+    {"chunk": "for here / to go", "meaning": "堂食 / 外带", "usage": "回应咖啡师的堂食/外带询问"},
+    {"chunk": "the Wi-Fi password", "meaning": "Wi-Fi 密码", "usage": "询问店内无线网络密码"},
+    {"chunk": "the receipt / the bill / the check", "meaning": "收据 / 账单", "usage": "请求结账或索取收据"},
+    {"chunk": "a pastry / a muffin / a cookie", "meaning": "糕点 / 松饼 / 饼干", "usage": "搭配咖啡的点心选择"},
 ]
 
 # ---- 预设功能句式 ----
 _MOCK_FUNCTIONAL_SENTENCES = [
-    "I'd like a ..., please.",
-    "Could I have that with ... instead?",
-    "Could you tell me the Wi-Fi password?",
-    "Can I have the receipt, please?",
-    "Would it be possible to get ... ?",
-    "Sorry, could you say that again?",
+    {"function": "点单表达", "sentence": "I'd like a ..., please."},
+    {"function": "替换需求", "sentence": "Could I have that with ... instead?"},
+    {"function": "询问信息", "sentence": "Could you tell me the Wi-Fi password?"},
+    {"function": "请求单据", "sentence": "Can I have the receipt, please?"},
+    {"function": "委婉请求", "sentence": "Would it be possible to get ... ?"},
+    {"function": "请求重复", "sentence": "Sorry, could you say that again?"},
 ]
 
 # ---- 预设示范对话 ----

@@ -4,6 +4,13 @@
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 
+export interface VLMError {
+  error_type: string;
+  message: string;
+  detail?: string;
+  suggestion?: string;
+}
+
 async function request<T>(path: string, body: Record<string, unknown>): Promise<T> {
   const url = `${BACKEND_URL}${path}`;
   const res = await fetch(url, {
@@ -12,8 +19,23 @@ async function request<T>(path: string, body: Record<string, unknown>): Promise<
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    const detail = await res.text().catch(() => "Unknown error");
-    throw new Error(`API ${path} 返回 ${res.status}: ${detail}`);
+    let errorMsg = `API ${path} 返回 ${res.status}`;
+    try {
+      const json = await res.json();
+      const detail = json.detail;
+      if (detail && typeof detail === "object" && detail.message) {
+        errorMsg = detail.message;
+        if (detail.suggestion) errorMsg += `\n→ ${detail.suggestion}`;
+      } else if (typeof detail === "string") {
+        errorMsg = detail;
+      } else {
+        errorMsg += `: ${JSON.stringify(detail)}`;
+      }
+    } catch {
+      const text = await res.text().catch(() => "");
+      if (text) errorMsg += `: ${text.slice(0, 300)}`;
+    }
+    throw new Error(errorMsg);
   }
   return res.json();
 }
@@ -28,7 +50,30 @@ export interface ScenarioResult {
 }
 
 export async function analyzeScenario(image_path: string): Promise<ScenarioResult> {
-  return request<ScenarioResult>("/api/scenario/analyze", { image_path });
+  const url = `${BACKEND_URL}/api/scenario/analyze`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ image_path }),
+  });
+  if (!res.ok) {
+    let vlmError: VLMError | null = null;
+    try {
+      const json = await res.json();
+      const detail = json.detail;
+      if (detail && typeof detail === "object" && detail.error_type) {
+        vlmError = detail as VLMError;
+      }
+    } catch {}
+    if (vlmError) {
+      const err = new Error(vlmError.message) as Error & { vlmError: VLMError };
+      (err as any).vlmError = vlmError;
+      throw err;
+    }
+    const text = await res.text().catch(() => "Unknown error");
+    throw new Error(`场景分析失败 (HTTP ${res.status}): ${text}`);
+  }
+  return res.json();
 }
 
 export async function uploadImage(file: File): Promise<{ image_url: string }> {

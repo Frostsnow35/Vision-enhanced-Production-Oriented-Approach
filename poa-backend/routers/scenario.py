@@ -4,12 +4,16 @@
 """
 import logging
 import os
+import time
 
-from fastapi import APIRouter, Depends
+import httpx
+from fastapi import APIRouter, Depends, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
-from config import get_db
-from schemas import ScenarioAnalyzeRequest, ScenarioAnalyzeResponse
+from config import get_db, DOUBAO_API_KEY, DOUBAO_BASE_URL, ARK_MODEL_ID
+from schemas import ScenarioAnalyzeRequest, ScenarioAnalyzeResponse, VLMHealthResponse
 from services.ai_service import get_or_analyze_scenario
 
 router = APIRouter(prefix="/api/scenario", tags=["scenario"])
@@ -50,3 +54,55 @@ async def analyze_scene(req: ScenarioAnalyzeRequest, db: Session = Depends(get_d
 
     result = get_or_analyze_scenario(image_path=image_path, db=db)
     return result
+
+
+@router.get("/health", response_model=VLMHealthResponse)
+async def health():
+    """检查豆包 VLM API 连通性"""
+    if not DOUBAO_API_KEY:
+        return {
+            "vlm_available": False,
+            "error_type": "api_key_missing",
+            "detail": "DOUBAO_API_KEY not configured",
+        }
+
+    try:
+        start = time.time()
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                f"{DOUBAO_BASE_URL}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {DOUBAO_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": ARK_MODEL_ID,
+                    "messages": [
+                        {"role": "user", "content": "ping"}
+                    ],
+                },
+            )
+        elapsed = int((time.time() - start) * 1000)
+        if resp.status_code == 200:
+            return {
+                "vlm_available": True,
+                "model": ARK_MODEL_ID,
+                "latency_ms": elapsed,
+            }
+        else:
+            return {
+                "vlm_available": False,
+                "model": ARK_MODEL_ID,
+                "latency_ms": elapsed,
+                "error_type": "http_error",
+                "detail": f"HTTP {resp.status_code}: {resp.text[:200]}",
+            }
+    except Exception as e:
+        elapsed = int((time.time() - start) * 1000)
+        return {
+            "vlm_available": False,
+            "model": ARK_MODEL_ID,
+            "latency_ms": elapsed,
+            "error_type": type(e).__name__,
+            "detail": str(e),
+        }

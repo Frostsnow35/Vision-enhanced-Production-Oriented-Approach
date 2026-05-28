@@ -216,15 +216,20 @@ export default function Attempt1Page() {
     setSubmitError("");
     setSubmitting(true);
     try {
-      const body = {
-        task_id: task?.id ?? 0,
-        conversation,
-        attempt_number: 1,
-      };
+      // 提取对话文本：合并用户所有消息
+      const userMessages = conversation
+        .filter((m) => m.role === "user")
+        .map((m) => m.content)
+        .join("\n");
+      if (!userMessages.trim()) {
+        setSubmitError("没有找到你的对话内容");
+        setSubmitting(false);
+        return;
+      }
       const res = await fetch(`${BASE_URL}/api/attempt1/submit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ attempt_text: userMessages }),
       });
       if (!res.ok) {
         const detail = await res.text().catch(() => "Unknown");
