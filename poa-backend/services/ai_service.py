@@ -1,5 +1,6 @@
 """
 AI 服务 —— analyze_scenario 已接入豆包视觉模型 + DB 哈希缓存，
+失败时直接抛 HTTPException（无 Mock 降级），
 其余函数（diagnose / input_pack / exercises / evaluate）仍为 Mock。
 """
 import base64
@@ -7,9 +8,12 @@ import hashlib
 import json
 import logging
 import os
+import time
+import traceback
 from typing import Any, Dict, List
 
 import httpx
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from config import DOUBAO_API_KEY, DOUBAO_BASE_URL, ARK_MODEL_ID
@@ -21,70 +25,56 @@ logger = logging.getLogger("ai_service")
 # ---- REST API 端点 ----
 DOUBAO_CHAT_URL = f"{DOUBAO_BASE_URL}/chat/completions"
 
-# ============================================================
-# Mock 降级数据（咖啡店场景）
-# ============================================================
-_MOCK_SCENARIO_RESULT: Dict[str, Any] = {
-    "scene_label": "咖啡店点单 — Coffee Shop Ordering",
-    "roles": (
-        "A: 顾客（Customer）—— 有乳糖不耐受，需要植物奶替代；"
-        "B: 咖啡师（Barista）—— 高峰期忙碌但态度友善"
-    ),
-    "goal": "用英语完成从进店打招呼 → 点单 → 口味定制 → 确认订单 → 支付的完整咖啡点单流程。",
-    "context_constraints": (
-        "1. 店内高峰期，后面有 3 位顾客在排队，需注意对话效率；"
-        "2. 菜单全英文无配图，需要能识别常见咖啡品类（espresso / latte / cappuccino / americano 等）；"
-        "3. 顾客乳糖不耐受（lactose intolerant），所有含乳饮品需替换为燕麦奶（oat milk）或杏仁奶（almond milk）；"
-        "4. 顾客偏好冰饮（iced），需要确认是否可以做成冰的。"
-    ),
-    "evaluation_criteria": (
-        "1. 能清晰说出咖啡品类 + 大小（size: small / medium / large）；"
-        "2. 能说明口味定制需求（oat milk / iced / less sugar 等）；"
-        "3. 能听懂并礼貌回应咖啡师的确认问题（for here or to go? / anything else?）；"
-        "4. 能询问价格并完成支付对话；"
-        "5. 结束对话时表达感谢与告别。"
-    ),
-    "variant_plot": (
-        "变体 A【基础版】: 低峰期，菜单熟悉，无特殊需求 —— 练习基本点单句型；"
-        "变体 B【进阶版】: 高峰期 + 乳糖不耐受 + 咖啡师做错了饮品 —— "
-        "需要礼貌地指出错误并请求重做。"
-    ),
-}
-
 _SYSTEM_PROMPT = """\
 你是一个英语教学场景分析专家。请分析这张照片，严格输出如下 JSON 格式（不要输出任何其他内容）：
 
 {
-  "scene_label": "场景名称（中文，如：咖啡厅、图书馆）",
+  "scene_label": "场景名称（中文）",
   "scene_elements": {
     "location": "识别到的场所类型",
     "objects": "画面中的关键物体",
     "people": "画面中人物的角色和关系"
   },
   "poa_task": {
-    "roles": "你的角色和AI角色，格式如'A: 顾客（Customer）; B: 咖啡师（Barista）'",
-    "goal": "交际目标（用中文描述，如'用英语完成点单、口味定制到支付的全流程'）",
-    "context_constraints": "语境要求列表（用序号列出，如'1. 高峰期需要排队；2. 需要用礼貌请求句式；3. 注意话轮衔接'）",
-    "evaluation_criteria": ["请求句式使用", "话轮衔接", "礼貌程度", "流利度", "词汇丰富度"]
+    "roles": "你的角色和AI角色",
+    "goal": "交际目标（用中文描述）",
+    "context_constraints": "语境要求列表（用序号列出）",
+    "evaluation_criteria": ["评价维度1", "评价维度2", "评价维度3", "评价维度4", "评价维度5"]
   },
-  "variant_plot": "用于二次产出的新情节变体（中文），在原场景基础上增加一个变化（如：这次你要加一份甜点并询问优惠活动/咖啡师做错了饮品需要礼貌退换）"
+  "variant_plot": "用于二次产出的新情节变体（中文），在原场景基础上增加一个变化"
 }"""
 
 
 # ============================================================
-# 1. 场景分析 → 豆包视觉模型 + Mock 降级
+# 1. 场景分析 → 豆包视觉模型（无 Mock 降级）
 # ============================================================
 def analyze_scenario(image_path: str) -> Dict[str, Any]:
     """
     根据场景图片路径，调用豆包视觉模型（REST API）分析并返回 POA 任务参数。
-    失败时自动降级为 Mock 数据，确保流程不中断。
+    失败时抛出 HTTPException，不再使用 Mock 降级。
     """
     logger.info(f"[analyze_scenario] image_path={image_path}")
 
+    if not DOUBAO_API_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error_type": "api_key_missing",
+                "message": "豆包 API Key 未配置，请在环境变量中设置 DOUBAO_API_KEY",
+                "suggestion": "请检查 .env 文件或服务器环境变量",
+            },
+        )
+
     # 1. 文件存在性检查
     if not os.path.isfile(image_path):
-        logger.warning(f"[analyze_scenario] 文件不存在: {image_path}，降级使用 Mock")
-        return dict(_MOCK_SCENARIO_RESULT)
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error_type": "file_not_found",
+                "message": f"图片文件不存在: {image_path}",
+                "suggestion": "请重新上传图片",
+            },
+        )
 
     # 2. 读取图片并转 base64 Data URL
     try:
@@ -97,8 +87,14 @@ def analyze_scenario(image_path: str) -> Dict[str, Any]:
             b64 = base64.b64encode(f.read()).decode("utf-8")
         data_url = f"data:{mime_type};base64,{b64}"
     except OSError as e:
-        logger.error(f"[analyze_scenario] 读取图片失败: {e}，降级使用 Mock")
-        return dict(_MOCK_SCENARIO_RESULT)
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error_type": "file_read_error",
+                "message": "图片读取失败",
+                "detail": str(e),
+            },
+        )
 
     # 3. 构造 REST API 请求体
     body = {
@@ -115,9 +111,13 @@ def analyze_scenario(image_path: str) -> Dict[str, Any]:
     }
 
     # 4. 调用 REST API
-    logger.info(f"[analyze_scenario] 调用豆包 REST API — model={ARK_MODEL_ID}")
+    logger.info(
+        f"[analyze_scenario] 调用豆包 REST API — "
+        f"endpoint={DOUBAO_CHAT_URL} model={ARK_MODEL_ID}"
+    )
+    start_time = time.time()
     try:
-        with httpx.Client(timeout=30.0) as client:
+        with httpx.Client(timeout=120.0) as client:
             resp = client.post(
                 DOUBAO_CHAT_URL,
                 headers={
@@ -126,13 +126,62 @@ def analyze_scenario(image_path: str) -> Dict[str, Any]:
                 },
                 json=body,
             )
-            resp.raise_for_status()
+        elapsed_ms = int((time.time() - start_time) * 1000)
+        status_code = resp.status_code
+        logger.info(
+            f"[analyze_scenario] API 响应 — status={status_code} "
+            f"elapsed_ms={elapsed_ms}"
+        )
+        if status_code != 200:
+            response_text = resp.text[:300]
+            logger.error(
+                f"[analyze_scenario] HTTP {status_code} — body={response_text}\n"
+                f"{traceback.format_exc()}"
+            )
+            raise HTTPException(
+                status_code=502,
+                detail={
+                    "error_type": "http_error",
+                    "message": f"豆包 API 返回错误 (HTTP {status_code})",
+                    "detail": response_text,
+                    "suggestion": "请稍后重试",
+                },
+            )
         data = resp.json()
         raw_text = data["choices"][0]["message"]["content"]
-        logger.info(f"[analyze_scenario] 豆包返回: {raw_text[:200]}...")
+        logger.info(f"[analyze_scenario] 豆包返回前500字符: {raw_text[:500]}")
+    except HTTPException:
+        raise
+    except httpx.TimeoutException as e:
+        elapsed_ms = int((time.time() - start_time) * 1000)
+        logger.error(
+            f"[analyze_scenario] 网络超时 — elapsed_ms={elapsed_ms}\n"
+            f"{traceback.format_exc()}"
+        )
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error_type": "network_timeout",
+                "message": "豆包 API 调用超时",
+                "detail": str(e),
+                "suggestion": "请稍后重试",
+            },
+        )
     except (httpx.HTTPError, KeyError, json.JSONDecodeError) as e:
-        logger.error(f"[analyze_scenario] REST API 调用失败: {e}，降级使用 Mock")
-        return dict(_MOCK_SCENARIO_RESULT)
+        elapsed_ms = int((time.time() - start_time) * 1000)
+        logger.error(
+            f"[analyze_scenario] API 调用失败 — elapsed_ms={elapsed_ms}\n"
+            f"{traceback.format_exc()}"
+        )
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error_type": "network_error",
+                "message": "豆包 API 调用失败",
+                "detail": str(e),
+                "suggestion": "请稍后重试",
+            },
+        )
 
     # 5. 解析返回的 JSON
     try:
@@ -146,11 +195,30 @@ def analyze_scenario(image_path: str) -> Dict[str, Any]:
             raw_text = "\n".join(lines)
         parsed = json.loads(raw_text)
     except json.JSONDecodeError as e:
-        logger.error(f"[analyze_scenario] 解析 JSON 失败: {e}，降级使用 Mock")
-        return dict(_MOCK_SCENARIO_RESULT)
+        logger.error(
+            f"[analyze_scenario] 解析 JSON 失败: {e}\n"
+            f"原始内容前300字符: {raw_text[:300]}\n"
+            f"{traceback.format_exc()}"
+        )
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "error_type": "json_parse_error",
+                "message": "豆包返回内容无法解析为 JSON",
+                "detail": raw_text[:300],
+                "suggestion": "请稍后重试",
+            },
+        )
 
     # 6. 转换为前端期望的扁平格式
     poa = parsed.get("poa_task", {})
+
+    ctx = poa.get("context_constraints", "")
+    if isinstance(ctx, list):
+        ctx = "\n".join(f"{i}. {c}" for i, c in enumerate(ctx, 1))
+    else:
+        ctx = str(ctx)
+
     eval_criteria = poa.get("evaluation_criteria", [])
     if isinstance(eval_criteria, list):
         eval_str = "\n".join(
@@ -160,12 +228,12 @@ def analyze_scenario(image_path: str) -> Dict[str, Any]:
         eval_str = str(eval_criteria)
 
     result = {
-        "scene_label": parsed.get("scene_label", _MOCK_SCENARIO_RESULT["scene_label"]),
-        "roles": poa.get("roles", _MOCK_SCENARIO_RESULT["roles"]),
-        "goal": poa.get("goal", _MOCK_SCENARIO_RESULT["goal"]),
-        "context_constraints": poa.get("context_constraints", _MOCK_SCENARIO_RESULT["context_constraints"]),
-        "evaluation_criteria": eval_str or _MOCK_SCENARIO_RESULT["evaluation_criteria"],
-        "variant_plot": parsed.get("variant_plot", _MOCK_SCENARIO_RESULT["variant_plot"]),
+        "scene_label": parsed.get("scene_label", ""),
+        "roles": poa.get("roles", ""),
+        "goal": poa.get("goal", ""),
+        "context_constraints": ctx,
+        "evaluation_criteria": eval_str,
+        "variant_plot": parsed.get("variant_plot", ""),
     }
 
     logger.info(f"[analyze_scenario] 成功 — scene_label={result['scene_label']}")
@@ -186,9 +254,17 @@ def get_or_analyze_scenario(image_path: str, db: Session) -> Dict[str, Any]:
         with open(image_path, "rb") as f:
             file_bytes = f.read()
         image_hash = hashlib.md5(file_bytes).hexdigest()
-    except OSError:
-        logger.warning(f"[get_or_analyze] 无法读取文件: {image_path}，降级直调 VLM")
-        return analyze_scenario(image_path)
+    except OSError as e:
+        logger.warning(f"[get_or_analyze] 无法读取文件: {image_path}")
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error_type": "file_not_found",
+                "message": f"图片文件不存在: {image_path}",
+                "detail": str(e),
+                "suggestion": "请重新上传图片",
+            },
+        )
 
     logger.info(f"[get_or_analyze] image_path={image_path}  hash={image_hash}")
 

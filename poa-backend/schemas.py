@@ -236,3 +236,19 @@ class EvaluateResponse(BaseModel):
     dimension_scores: Dict[str, DimensionScore]
     problem_improved: str
     full_report: str
+
+
+# --- Health Check ---
+class ErrorDetail(BaseModel):
+    error_type: str
+    message: str
+    detail: str = ""
+    suggestion: str = ""
+
+
+class VLMHealthResponse(BaseModel):
+    vlm_available: bool
+    model: str = ""
+    latency_ms: int = 0
+    error_type: str = ""
+    detail: str = ""
