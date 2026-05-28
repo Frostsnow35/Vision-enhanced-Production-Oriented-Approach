@@ -85,6 +85,38 @@ async def upload_image(file: UploadFile = File(...)):
         )
 
 
+# === GET /api/upload/test ===
+@router.get("/test")
+async def test_upload():
+    """测试上传功能是否正常"""
+    try:
+        test_dir = os.path.join(UPLOAD_ROOT, "images")
+        os.makedirs(test_dir, exist_ok=True)
+        
+        test_file = os.path.join(test_dir, "test.txt")
+        with open(test_file, "w") as f:
+            f.write("test")
+        
+        if os.path.exists(test_file):
+            os.remove(test_file)
+            return {
+                "status": "ok",
+                "upload_root": UPLOAD_ROOT,
+                "test_dir": test_dir,
+                "writable": True,
+                "message": "上传目录可写"
+            }
+        else:
+            return {"status": "error", "message": "文件写入后不存在"}
+    except Exception as e:
+        return {
+            "status": "error",
+            "upload_root": UPLOAD_ROOT,
+            "error": str(e),
+            "message": "上传目录不可写"
+        }
+
+
 # === POST /api/upload/audio ===
 @router.post("/audio")
 async def upload_audio(file: UploadFile = File(...)):
