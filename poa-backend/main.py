@@ -84,3 +84,22 @@ def root():
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
+
+
+@app.get("/debug")
+def debug_info():
+    import traceback
+    try:
+        return {
+            "cwd": os.getcwd(),
+            "backend_root": BACKEND_ROOT,
+            "upload_dir": UPLOAD_DIR,
+            "upload_images_exists": os.path.exists(os.path.join(UPLOAD_DIR, "images")),
+            "upload_audio_exists": os.path.exists(os.path.join(UPLOAD_DIR, "audio")),
+            "upload_tts_exists": os.path.exists(os.path.join(UPLOAD_DIR, "tts")),
+            "main_file": __file__,
+            "env": {k: v for k, v in os.environ.items() if k.startswith(('RAILWAY', 'PORT'))},
+            "routes": [route.path for route in app.routes],
+        }
+    except Exception as e:
+        return {"error": str(e), "traceback": traceback.format_exc()}
