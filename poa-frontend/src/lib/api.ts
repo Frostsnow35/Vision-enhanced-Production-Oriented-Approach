@@ -38,7 +38,16 @@ export async function uploadImage(file: File): Promise<{ image_url: string }> {
     method: "POST",
     body: form,
   });
-  if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
+  if (!res.ok) {
+    let errorDetail = "";
+    try {
+      const json = await res.json();
+      errorDetail = json.detail || JSON.stringify(json);
+    } catch {
+      errorDetail = await res.text().catch(() => "");
+    }
+    throw new Error(`Upload failed: ${res.status}${errorDetail ? ` - ${errorDetail}` : ""}`);
+  }
   return res.json();
 }
 

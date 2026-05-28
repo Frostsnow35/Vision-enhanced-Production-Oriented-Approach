@@ -20,18 +20,19 @@ from routers.facilitate import router as facilitate_router
 from routers.exercise import router as exercise_router
 from routers.chat import router as chat_router
 
+# 使用绝对路径，避免 cwd 问题
+BACKEND_ROOT = os.path.dirname(os.path.abspath(__file__))
+UPLOAD_DIR = os.path.join(BACKEND_ROOT, "uploads")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # ensure upload directories exist
-    os.makedirs("uploads/images", exist_ok=True)
-    os.makedirs("uploads/audio", exist_ok=True)
-    os.makedirs("uploads/tts", exist_ok=True)
+    os.makedirs(os.path.join(UPLOAD_DIR, "images"), exist_ok=True)
+    os.makedirs(os.path.join(UPLOAD_DIR, "audio"), exist_ok=True)
+    os.makedirs(os.path.join(UPLOAD_DIR, "tts"), exist_ok=True)
 
-    # auto-create tables
     Base.metadata.create_all(bind=engine)
 
-    # migrate: add image_hash column for older databases (SQLite 3.35+)
     try:
         from sqlalchemy import text
         with engine.connect() as conn:
@@ -40,7 +41,7 @@ async def lifespan(app: FastAPI):
             ))
             conn.commit()
     except Exception:
-        pass  # column already exists, ignore
+        pass
 
     yield
 
@@ -68,11 +69,11 @@ app.include_router(facilitate_router)
 app.include_router(exercise_router)
 app.include_router(chat_router)
 
-os.makedirs("uploads/images", exist_ok=True)
-os.makedirs("uploads/audio", exist_ok=True)
-os.makedirs("uploads/tts", exist_ok=True)
+os.makedirs(os.path.join(UPLOAD_DIR, "images"), exist_ok=True)
+os.makedirs(os.path.join(UPLOAD_DIR, "audio"), exist_ok=True)
+os.makedirs(os.path.join(UPLOAD_DIR, "tts"), exist_ok=True)
 
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 
 @app.get("/")
