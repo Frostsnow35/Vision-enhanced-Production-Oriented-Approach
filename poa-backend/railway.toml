@@ -7,6 +7,7 @@
 
 [nixpacks]
   providers = ["python"]
+  packages = ["ffmpeg"]
 
 [nixpacks.python]
   pythonVersion = "3.11"

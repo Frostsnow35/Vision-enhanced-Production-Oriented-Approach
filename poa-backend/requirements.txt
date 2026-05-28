@@ -5,3 +5,5 @@ python-multipart
 pydantic
 httpx
 gtts
+openai-whisper
+pyttsx3

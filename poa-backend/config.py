@@ -1,3 +1,5 @@
+import os
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 
@@ -14,7 +16,7 @@ def get_db():
     finally:
         db.close()
 
-DOUBAO_API_KEY = "ark-97813ace-af3d-4995-a7bf-8f3e7afd0ab2-59639"
+DOUBAO_API_KEY = os.getenv("DOUBAO_API_KEY", "ark-97813ace-af3d-4995-a7bf-8f3e7afd0ab2-59639")
 DOUBAO_MODEL_ID = "doubao-seed-2.0-mini-260428"
 DOUBAO_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
 
