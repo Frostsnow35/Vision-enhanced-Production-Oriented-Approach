@@ -30,7 +30,7 @@ DOUBAO_BASE_URL = os.getenv("DOUBAO_BASE_URL", "https://ark.cn-beijing.volces.co
 
 # Ark SDK 配置
 ARK_API_KEY = os.getenv("ARK_API_KEY", DOUBAO_API_KEY)
-ARK_MODEL_ID = os.getenv("ARK_MODEL_ID", "doubao-1.5-vision-pro-32k")
+ARK_MODEL_ID = os.getenv("ARK_MODEL_ID", "doubao-1.5-vision-pro-250328")
 
 # 服务端口
 PORT = int(os.getenv("PORT", "8000"))

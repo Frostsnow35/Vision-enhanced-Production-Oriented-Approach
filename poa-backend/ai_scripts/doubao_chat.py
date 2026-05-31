@@ -23,7 +23,7 @@ import httpx
 BASE_URL = os.environ.get("DOUBAO_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3")
 API_KEY = os.environ.get("DOUBAO_API_KEY") or os.environ.get("ARK_API_KEY", "")
 MODEL_ID = os.environ.get("DOUBAO_MODEL_ID", "doubao-seed-2.0-mini-260428")
-VISION_MODEL_ID = os.environ.get("DOUBAO_VISION_MODEL_ID", "doubao-1.5-vision-pro-32k")
+VISION_MODEL_ID = os.environ.get("DOUBAO_VISION_MODEL_ID", "doubao-1.5-vision-pro-250328")
 
 CHAT_URL = f"{BASE_URL}/chat/completions"
 
