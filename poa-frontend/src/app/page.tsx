@@ -9,16 +9,15 @@ export default function Home() {
 
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
-      <div className="mb-8 flex items-center gap-4">
-        <Image
-          src="/logo.png"
-          alt="GlimpSay Logo"
-          width={240}
-          height={240}
-          className="h-60 w-60 drop-shadow-xl"
-          priority
-        />
-      </div>
+      <Image
+        src="/logo.png"
+        alt="GlimpSay Logo"
+        width={280}
+        height={280}
+        className="mb-8 drop-shadow-2xl"
+        priority
+        unoptimized
+      />
 
       <h1 className="max-w-2xl text-3xl font-extrabold tracking-tight sm:text-4xl animate-float gradient-text">
         GlimpSay：AI实景英语交际学习平台
