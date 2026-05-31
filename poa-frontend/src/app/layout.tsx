@@ -8,6 +8,10 @@ import { Providers } from "./providers";
 export const metadata: Metadata = {
   title: "GlimpSay - POA英语学习闭环",
   description: "视觉语言模型赋能POA英语实景交际闭环",
+  icons: {
+    icon: "/logo.png",
+    apple: "/logo.png",
+  },
 };
 
 const navItems = [
