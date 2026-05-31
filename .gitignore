@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.env
+*.db
+
+# Node
+node_modules/
+.next/
+out/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Uploads
+uploads/
+sample_images/
+
+# Temp files
+*.pyc
+*.py[cod]
+*.tmp
+*.log
+*.swp
+*.swo
+
+# Temporary scripts
+check_*.py
+final_*.py
+fix_*.py
+verify_*.py
+resolve_*.py
+
+# AI assistant files
+.claude/
+.kilo/
+.trae/
+skills/
+
+# Build artifacts
+*.tsbuildinfo
+
+# Screenshots
+logo.png
+openapi.json
+
+# Old project folders
+poa-project-*/
