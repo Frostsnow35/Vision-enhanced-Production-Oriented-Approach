@@ -62,7 +62,9 @@ export default function TaskPage() {
     );
   }
 
-  const { user, ai } = parseRoles(scenarioResult.roles);
+  // 优先用独立字段，兜底解析旧 roles
+  const userRole = scenarioResult.user_role?.trim() || parseRoles(scenarioResult.roles).user;
+  const aiRole = scenarioResult.ai_role?.trim() || parseRoles(scenarioResult.roles).ai;
 
   return (
     <div className="mx-auto max-w-2xl space-y-8">
@@ -86,13 +88,13 @@ export default function TaskPage() {
         <RoleCard
           label="你的角色"
           icon={UserIcon}
-          content={user}
+          content={userRole}
           variant="user"
         />
         <RoleCard
           label="对话方"
           icon={AiIcon}
-          content={ai}
+          content={aiRole}
           variant="ai"
         />
       </div>
