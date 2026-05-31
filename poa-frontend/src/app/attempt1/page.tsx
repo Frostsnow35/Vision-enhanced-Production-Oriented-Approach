@@ -33,34 +33,23 @@ const BASE_URL = process.env.NEXT_PUBLIC_API_BASE ?? "";
 function parseRoles(raw: string): { user: string; ai: string } {
   if (!raw) return { user: "你", ai: "AI 对话伙伴" };
 
-  // 尝试多种分隔格式
-  let userPart = "";
-  let aiPart = "";
-
   // 格式 1: "A: xxx; B: yyy" 或 "A：xxx；B：yyy"
   const abRe = /A\s*[:：]\s*(.+?)\s*[;；]\s*B\s*[:：]\s*(.+)/i;
   const abMatch = raw.match(abRe);
   if (abMatch) {
-    userPart = abMatch[1].trim();
-    aiPart = abMatch[2].trim();
-    return { user: userPart || "你", ai: aiPart || "AI 对话伙伴" };
+    return { user: abMatch[1].trim() || "你", ai: abMatch[2].trim() || "AI 对话伙伴" };
   }
 
-  // 格式 2: 直接用 "；" 或 ";" 分割
+  // 格式 2: "；" 或 ";" 分割
   const parts = raw.split(/[;；]/);
   if (parts.length >= 2) {
-    userPart = parts[0].replace(/^(A|用户|我方|你的角色)\s*[:：]\s*/i, "").trim();
-    aiPart = parts[1].replace(/^(B|AI|对方|AI角色|对话方)\s*[:：]\s*/i, "").trim();
-    return { user: userPart || "你", ai: aiPart || "AI 对话伙伴" };
+    const u = parts[0].replace(/^(A|用户|我方|你的角色)\s*[:：]\s*/i, "").trim();
+    const a = parts[1].replace(/^(B|AI|对方|AI角色|对话方)\s*[:：]\s*/i, "").trim();
+    return { user: u || "你", ai: a || "AI 对话伙伴" };
   }
 
-  // 格式 3: 整个字符串当描述
-  return { user: "你", ai: raw.trim() || "AI 对话伙伴" };
-}
-
-/** 提取角色简短名称（去掉"——"后的描述） */
-function shortRole(role: string): string {
-  return role.split(/[——\-–]/)[0]?.trim() || role;
+  // 格式 3: 无法拆分，将原始字符串作为场景描述
+  return { user: "你（" + raw.trim() + "）", ai: "AI 对话伙伴（" + raw.trim() + "）" };
 }
 
 /* ============================================================
@@ -222,7 +211,7 @@ export default function Attempt1Page() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const startedRef = useRef(false);
   const recordingStreamRef = useRef<MediaStream | null>(null);
-  const lastAiTextRef = useRef("");
+  const [lastAiText, setLastAiText] = useState("");
 
   // ---- TTS：朗读英文文本 ----
   const speakText = useCallback((text: string): Promise<void> => {
@@ -298,7 +287,7 @@ export default function Attempt1Page() {
         const data = (await res.json()) as { ai_text: string };
 
         if (data.ai_text) {
-          lastAiTextRef.current = data.ai_text;
+          setLastAiText(data.ai_text);
           await speakText(data.ai_text);
         }
       } catch (err: any) {
@@ -452,7 +441,7 @@ export default function Attempt1Page() {
 
           // Step 4: TTS 朗读 AI 回复
           if (chatData.ai_text) {
-            lastAiTextRef.current = chatData.ai_text;
+            setLastAiText(chatData.ai_text);
             await speakText(chatData.ai_text);
           }
         } catch (err: any) {
@@ -614,21 +603,11 @@ export default function Attempt1Page() {
         <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
           <div className="min-w-0">
             <span className="text-xs font-semibold text-primary">🟢 你的角色</span>
-            <p className="font-medium text-card-foreground break-words mt-0.5">
-              {shortRole(user)}
-            </p>
-            {user !== shortRole(user) && (
-              <p className="text-xs text-muted-foreground mt-0.5">{user}</p>
-            )}
+            <p className="font-medium text-card-foreground mt-0.5">{user}</p>
           </div>
           <div className="min-w-0">
             <span className="text-xs font-semibold text-rose-500">🤖 AI 角色</span>
-            <p className="font-medium text-card-foreground break-words mt-0.5">
-              {shortRole(ai)}
-            </p>
-            {ai !== shortRole(ai) && (
-              <p className="text-xs text-muted-foreground mt-0.5">{ai}</p>
-            )}
+            <p className="font-medium text-card-foreground mt-0.5">{ai}</p>
           </div>
         </div>
         <div className="mt-2 text-sm border-t border-border pt-2">
@@ -702,9 +681,9 @@ export default function Attempt1Page() {
           <AiAvatar speaking={aiSpeaking} />
           <SoundWaveBars active={aiSpeaking} />
 
-          {lastAiTextRef.current && !aiSpeaking && (
+          {lastAiText && !aiSpeaking && (
             <button
-              onClick={() => speakText(lastAiTextRef.current)}
+              onClick={() => speakText(lastAiText)}
               className="inline-flex items-center gap-1.5 rounded-full bg-muted px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors"
             >
               <svg className="size-3.5" viewBox="0 0 24 24" fill="currentColor">
