@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import RecordingWaveform from "@/components/RecordingWaveform";
 
 /* ============================================================
    类型定义
@@ -30,11 +31,27 @@ const BASE_URL = process.env.NEXT_PUBLIC_API_BASE ?? "";
    工具函数
    ============================================================ */
 function parseRoles(raw: string): { user: string; ai: string } {
-  const splitRe = /(?:；|;)\s*B[:：]\s*/i;
-  const parts = raw.split(splitRe);
-  const partA = parts[0]?.replace(/^A[:：]\s*/i, "").trim() ?? raw;
-  const partB = parts[1]?.trim() ?? "";
-  return { user: partA || "未指定", ai: partB || "未指定" };
+  if (!raw) return { user: "你", ai: "AI 对话伙伴" };
+  let userPart = "";
+  let aiPart = "";
+  const abRe = /A\s*[:：]\s*(.+?)\s*[;；]\s*B\s*[:：]\s*(.+)/i;
+  const abMatch = raw.match(abRe);
+  if (abMatch) {
+    userPart = abMatch[1].trim();
+    aiPart = abMatch[2].trim();
+    return { user: userPart || "你", ai: aiPart || "AI 对话伙伴" };
+  }
+  const parts = raw.split(/[;；]/);
+  if (parts.length >= 2) {
+    userPart = parts[0].replace(/^(A|用户|我方|你的角色)\s*[:：]\s*/i, "").trim();
+    aiPart = parts[1].replace(/^(B|AI|对方|AI角色|对话方)\s*[:：]\s*/i, "").trim();
+    return { user: userPart || "你", ai: aiPart || "AI 对话伙伴" };
+  }
+  return { user: "你", ai: raw.trim() || "AI 对话伙伴" };
+}
+
+function shortRole(role: string): string {
+  return role.split(/[——\-–]/)[0]?.trim() || role;
 }
 
 /* ============================================================
@@ -195,6 +212,8 @@ export default function Attempt2Page() {
   const chunksRef = useRef<Blob[]>([]);
   const videoRef = useRef<HTMLVideoElement>(null);
   const startedRef = useRef(false);
+  const recordingStreamRef = useRef<MediaStream | null>(null);
+  const lastAiTextRef = useRef("");
 
   // ---- TTS：朗读英文文本 ----
   const speakText = useCallback((text: string): Promise<void> => {
@@ -272,6 +291,7 @@ export default function Attempt2Page() {
         const data = (await res.json()) as { ai_text: string };
 
         if (data.ai_text) {
+          lastAiTextRef.current = data.ai_text;
           await speakText(data.ai_text);
         }
       } catch (err: any) {
@@ -433,6 +453,7 @@ export default function Attempt2Page() {
       };
 
       recorder.start();
+      recordingStreamRef.current = audioStream;
       setRecording(true);
     } catch (err: any) {
       alert("无法开始录音: " + (err.message ?? String(err)));
@@ -448,6 +469,7 @@ export default function Attempt2Page() {
       mediaRecorderRef.current.stop();
     }
     setRecording(false);
+    recordingStreamRef.current = null;
   }, []);
 
   // ---- 键盘事件：空格键按住说话 ----
@@ -582,25 +604,29 @@ export default function Attempt2Page() {
           </span>
         </div>
 
-        <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm">
+        <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
           <div className="min-w-0">
-            <span className="text-muted-foreground">你的角色: </span>
-            <span className="font-medium text-card-foreground break-words">
-              {user.split("——")[0]?.trim() ?? user}
-            </span>
+            <span className="text-xs font-semibold text-primary">🟢 你的角色</span>
+            <p className="font-medium text-card-foreground break-words mt-0.5">
+              {shortRole(user)}
+            </p>
+            {user !== shortRole(user) && (
+              <p className="text-xs text-muted-foreground mt-0.5">{user}</p>
+            )}
           </div>
           <div className="min-w-0">
-            <span className="text-muted-foreground">AI 角色: </span>
-            <span className="font-medium text-card-foreground break-words">
-              {ai.split("——")[0]?.trim() ?? ai}
-            </span>
+            <span className="text-xs font-semibold text-rose-500">🤖 AI 角色</span>
+            <p className="font-medium text-card-foreground break-words mt-0.5">
+              {shortRole(ai)}
+            </p>
+            {ai !== shortRole(ai) && (
+              <p className="text-xs text-muted-foreground mt-0.5">{ai}</p>
+            )}
           </div>
-          <div className="min-w-0">
-            <span className="text-muted-foreground">新情境: </span>
-            <span className="font-medium text-card-foreground">
-              {variantPlot}
-            </span>
-          </div>
+        </div>
+        <div className="mt-2 text-sm border-t border-border pt-2">
+          <span className="text-xs font-semibold text-muted-foreground">新情境: </span>
+          <span className="text-card-foreground">{variantPlot}</span>
         </div>
       </div>
 
@@ -623,10 +649,19 @@ export default function Attempt2Page() {
 
           {/* 状态指示器 */}
           {recording && (
-            <div className="absolute top-3 left-3 flex items-center gap-2 rounded-full bg-destructive/85 px-3 py-1.5 backdrop-blur-sm">
-              <span className="size-2 animate-pulse rounded-full bg-white" />
-              <span className="text-xs text-white font-medium">录音中</span>
-            </div>
+            <>
+              <div className="absolute top-3 left-3 z-20 flex items-center gap-2 rounded-full bg-destructive/85 px-3 py-1.5 backdrop-blur-sm">
+                <span className="size-2 animate-pulse rounded-full bg-white" />
+                <span className="text-xs text-white font-medium">录音中</span>
+              </div>
+              {/* 实时波形图 */}
+              <div className="absolute bottom-3 left-3 right-3 z-20">
+                <RecordingWaveform
+                  stream={recordingStreamRef.current}
+                  isRecording={recording}
+                />
+              </div>
+            </>
           )}
           {uploading && (
             <div className="absolute top-3 left-3 flex items-center gap-2 rounded-full bg-primary/85 px-3 py-1.5 backdrop-blur-sm">
@@ -659,6 +694,18 @@ export default function Attempt2Page() {
         <div className="flex-1 rounded-xl border border-border bg-card flex flex-col items-center justify-center gap-6 p-8">
           <AiAvatar speaking={aiSpeaking} />
           <SoundWaveBars active={aiSpeaking} />
+
+          {lastAiTextRef.current && !aiSpeaking && (
+            <button
+              onClick={() => speakText(lastAiTextRef.current)}
+              className="inline-flex items-center gap-1.5 rounded-full bg-muted px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors"
+            >
+              <svg className="size-3.5" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M8 5v14l11-7z"/>
+              </svg>
+              重听一遍
+            </button>
+          )}
 
           {initializing && (
             <p className="text-sm text-muted-foreground animate-pulse">
