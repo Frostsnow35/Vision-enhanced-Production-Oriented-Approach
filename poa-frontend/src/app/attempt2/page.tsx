@@ -582,22 +582,22 @@ export default function Attempt2Page() {
           </span>
         </div>
 
-        <div className="mt-2 grid grid-cols-3 gap-3 text-sm">
+        <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm">
           <div className="min-w-0">
             <span className="text-muted-foreground">你的角色: </span>
-            <span className="font-medium text-card-foreground">
+            <span className="font-medium text-card-foreground break-words">
               {user.split("——")[0]?.trim() ?? user}
             </span>
           </div>
           <div className="min-w-0">
             <span className="text-muted-foreground">AI 角色: </span>
-            <span className="font-medium text-card-foreground">
+            <span className="font-medium text-card-foreground break-words">
               {ai.split("——")[0]?.trim() ?? ai}
             </span>
           </div>
           <div className="min-w-0">
             <span className="text-muted-foreground">新情境: </span>
-            <span className="font-medium text-card-foreground line-clamp-1">
+            <span className="font-medium text-card-foreground">
               {variantPlot}
             </span>
           </div>

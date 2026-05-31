@@ -12,10 +12,10 @@ export default function Home() {
       <div className="mb-8 flex items-center gap-4">
         <Image
           src="/logo.png"
-          alt="POA Logo"
-          width={160}
-          height={160}
-          className="h-40 w-40"
+          alt="GlimpSay Logo"
+          width={240}
+          height={240}
+          className="h-60 w-60 drop-shadow-xl"
           priority
         />
       </div>

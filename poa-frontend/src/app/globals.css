@@ -25,7 +25,11 @@
 
 @layer base {
   body {
-    background-color: var(--color-background);
+    background:
+      radial-gradient(ellipse 80% 60% at 50% 0%, oklch(0.82 0.10 280 / 0.18), transparent),
+      radial-gradient(ellipse 60% 50% at 100% 100%, oklch(0.85 0.18 75 / 0.12), transparent),
+      oklch(0.97 0.02 270);
+    background-attachment: fixed;
     color: var(--color-foreground);
     border-color: var(--color-border);
   }
