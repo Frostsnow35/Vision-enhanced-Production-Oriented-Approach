@@ -1,46 +1,49 @@
+
 /**
  * API 客户端 —— 封装对后端所有接口的 fetch 调用。
+ * 后端默认地址 http://localhost:8000，可通过环境变量 NEXT_PUBLIC_API_BASE 覆盖。
  */
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+export const BASE_URL = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8010";
 
-export interface VLMError {
-  error_type: string;
-  message: string;
-  detail?: string;
-  suggestion?: string;
+/**
+ * 构建图片 URL
+ * 后端静态文件：/uploads/ → uploads/ 目录
+ */
+export function buildImageUrl(imagePath: string): string {
+  if (!imagePath) return "";
+  if (imagePath.startsWith("http")) return imagePath;
+  
+  // 过滤掉无效的样例图片路径
+  if (imagePath.includes("sample_images") || imagePath.includes("/samples/")) {
+    return "";
+  }
+  
+  // 用户上传的图片：/uploads/images/xxx.jpg → 直接拼接
+  if (imagePath.startsWith("/")) {
+    return `${BASE_URL}${imagePath}`;
+  }
+  
+  // 其他情况直接拼接
+  return `${BASE_URL}/${imagePath}`;
 }
 
 async function request<T>(path: string, body: Record<string, unknown>): Promise<T> {
-  const url = `${BACKEND_URL}${path}`;
-  const res = await fetch(url, {
+  const res = await fetch(`${BASE_URL}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    let errorMsg = `API ${path} 返回 ${res.status}`;
-    try {
-      const json = await res.json();
-      const detail = json.detail;
-      if (detail && typeof detail === "object" && detail.message) {
-        errorMsg = detail.message;
-        if (detail.suggestion) errorMsg += `\n→ ${detail.suggestion}`;
-      } else if (typeof detail === "string") {
-        errorMsg = detail;
-      } else {
-        errorMsg += `: ${JSON.stringify(detail)}`;
-      }
-    } catch {
-      const text = await res.text().catch(() => "");
-      if (text) errorMsg += `: ${text.slice(0, 300)}`;
-    }
-    throw new Error(errorMsg);
+    const detail = await res.text().catch(() => "Unknown error");
+    throw new Error(`API ${path} 返回 ${res.status}: ${detail}`);
   }
   return res.json();
 }
 
+// ---- 场景分析 ----
 export interface ScenarioResult {
+  scenario_id?: number;
   scene_label: string;
   roles: string;
   goal: string;
@@ -50,53 +53,22 @@ export interface ScenarioResult {
 }
 
 export async function analyzeScenario(image_path: string): Promise<ScenarioResult> {
-  const url = `${BACKEND_URL}/api/scenario/analyze`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ image_path }),
-  });
-  if (!res.ok) {
-    let vlmError: VLMError | null = null;
-    try {
-      const json = await res.json();
-      const detail = json.detail;
-      if (detail && typeof detail === "object" && detail.error_type) {
-        vlmError = detail as VLMError;
-      }
-    } catch {}
-    if (vlmError) {
-      const err = new Error(vlmError.message) as Error & { vlmError: VLMError };
-      (err as any).vlmError = vlmError;
-      throw err;
-    }
-    const text = await res.text().catch(() => "Unknown error");
-    throw new Error(`场景分析失败 (HTTP ${res.status}): ${text}`);
-  }
-  return res.json();
+  return request<ScenarioResult>("/api/scenario/analyze", { image_path });
 }
 
+// ---- 上传图片 ----
 export async function uploadImage(file: File): Promise<{ image_url: string }> {
-  const url = `${BACKEND_URL}/api/upload/image`;
   const form = new FormData();
   form.append("file", file);
-  const res = await fetch(url, {
+  const res = await fetch(`${BASE_URL}/api/upload/image`, {
     method: "POST",
     body: form,
   });
-  if (!res.ok) {
-    let errorDetail = "";
-    try {
-      const json = await res.json();
-      errorDetail = json.detail || JSON.stringify(json);
-    } catch {
-      errorDetail = await res.text().catch(() => "");
-    }
-    throw new Error(`Upload failed: ${res.status}${errorDetail ? ` - ${errorDetail}` : ""}`);
-  }
+  if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
   return res.json();
 }
 
+// ---- 产出诊断 ----
 export interface GapItem {
   label: string;
   evidence_sentence: string | null;
@@ -111,6 +83,7 @@ export async function diagnoseAttempt(attempt_text: string): Promise<DiagnoseRes
   return request<DiagnoseResult>("/api/attempt1/submit", { attempt_text });
 }
 
+// ---- 学习材料包 ----
 export interface ChunkItem {
   chunk: string;
   meaning: string;
@@ -133,6 +106,7 @@ export async function generateInputPack(gaps: GapItem[]): Promise<InputPackResul
   return request<InputPackResult>("/api/generate-input-pack", { gaps });
 }
 
+// ---- 练习题 ----
 export interface ExerciseItem {
   id: number;
   type: "multiple_choice" | "fill_in_blank";
@@ -151,6 +125,7 @@ export async function generateExercises(gaps: GapItem[]): Promise<ExercisesResul
   return request<ExercisesResult>("/api/generate-exercises", { gaps });
 }
 
+// ---- 双轨评价 ----
 export interface DimensionScore {
   attempt1: number;
   attempt2: number;
@@ -167,4 +142,53 @@ export async function evaluateAttempts(
   attempt2_text: string
 ): Promise<EvaluateResult> {
   return request<EvaluateResult>("/api/evaluate", { attempt1_text, attempt2_text });
+}
+
+// ---- 对话 API ----
+export interface ChatStartResponse {
+  ai_text: string;
+  ai_audio_url: string;
+}
+
+export interface ChatTurnResponse {
+  ai_text: string;
+  ai_audio_url: string;
+  is_final: boolean;
+}
+
+export async function chatStart(
+  scene_label: string,
+  roles: string,
+  goal: string,
+  evaluation_criteria?: string,
+  variant_context?: string
+): Promise<ChatStartResponse> {
+  return request<ChatStartResponse>("/api/chat/start", { 
+    scene_label, 
+    roles, 
+    goal,
+    evaluation_criteria: evaluation_criteria || "",
+    is_variant: !!variant_context,
+    variant_context: variant_context || "" 
+  });
+}
+
+export async function chatTurn(
+  user_text: string,
+  audio_url: string,
+  conversation_history: any[],
+  scene_label: string,
+  roles: string,
+  goal?: string,
+  evaluation_criteria?: string
+): Promise<ChatTurnResponse> {
+  return request<ChatTurnResponse>("/api/chat/turn", { 
+    user_text, 
+    audio_url, 
+    conversation_history,
+    scene_label,
+    roles,
+    goal: goal || "",
+    evaluation_criteria: evaluation_criteria || ""
+  });
 }

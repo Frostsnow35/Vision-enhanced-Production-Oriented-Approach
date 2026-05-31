@@ -1,0 +1,16 @@
+[build]
+  builder = "nixpacks"
+  buildCommand = "npm run build"
+  installCommand = "npm install"
+
+[deploy]
+  startCommand = "npm start"
+
+[nixpacks]
+  providers = ["node"]
+
+[nixpacks.node]
+  nodeVersion = "22"
+
+[service]
+name = "poa-frontend"

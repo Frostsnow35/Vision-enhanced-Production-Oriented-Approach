@@ -1,6 +1,6 @@
 [build]
   builder = "nixpacks"
-  buildCommand = "pip install -r requirements.txt"
+  buildCommand = "pip install --no-cache-dir -r requirements.txt"
 
 [deploy]
   startCommand = "uvicorn main:app --host 0.0.0.0 --port $PORT"
@@ -11,3 +11,10 @@
 
 [nixpacks.python]
   pythonVersion = "3.11"
+
+[service]
+name = "poa-backend"
+
+[service.volume]
+name = "data"
+mountPath = "/data"
