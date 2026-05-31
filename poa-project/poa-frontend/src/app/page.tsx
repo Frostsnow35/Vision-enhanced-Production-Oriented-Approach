@@ -61,3 +61,4 @@ export default function Home() {
     </div>
   );
 }
+// 2026-05-31 配色优化版本
