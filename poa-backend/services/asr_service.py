@@ -34,36 +34,18 @@ def _load_model():
 def _is_valid_transcription(text: str) -> bool:
     """
     校验转写文本是否包含有效语音内容。
-    返回 True 表示有效。
+    只拒绝：纯空、纯空白、纯 ASR 失败标记。
     """
     stripped = text.strip()
     if not stripped:
         return False
 
-    # 过短：少于 3 个字符（允许 "Yes", "No", "Hi" 等短回复）
-    if len(stripped) < 3:
-        return False
-
-    # 字母/数字/中文太少（纯标点、符号、空白）
-    alpha_num = len(re.findall(r"[a-zA-Z0-9一-鿿]", stripped))
-    if alpha_num < 2:
-        return False
-
-    # 高频重复单一字符（取前 20 个，同一字符超 60% 视为乱码）
-    sample = stripped[:20]
-    char_counts: dict[str, int] = {}
-    for ch in sample:
-        char_counts[ch] = char_counts.get(ch, 0) + 1
-    most_freq = max(char_counts.values())
-    if len(sample) >= 5 and most_freq / len(sample) > 0.6:
-        return False
-
-    # ASR 失败标记占主导
-    garbage_markers = ["[inaudible]", "[unk]", "[silence]", "<unk>"]
+    # 去掉 ASR 失败标记后，还有字母/数字/中文即可
     remaining = stripped.lower()
-    for marker in garbage_markers:
+    for marker in ["[inaudible]", "[unk]", "[silence]", "<unk>"]:
         remaining = remaining.replace(marker, "")
-    if len(remaining.strip()) < 5:
+    remaining = remaining.strip()
+    if not remaining or len(re.findall(r"[a-zA-Z0-9一-鿿]", remaining)) == 0:
         return False
 
     return True

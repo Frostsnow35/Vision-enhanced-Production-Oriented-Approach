@@ -45,10 +45,17 @@ function parseRoles(raw: string): { user: string; ai: string } {
   if (parts.length >= 2) {
     const u = parts[0].replace(/^(A|用户|我方|你的角色)\s*[:：]\s*/i, "").trim();
     const a = parts[1].replace(/^(B|AI|对方|AI角色|对话方)\s*[:：]\s*/i, "").trim();
-    return { user: u || "你", ai: a || "AI 对话伙伴" };
+    if (u && a) return { user: u, ai: a };
   }
 
-  // 格式 3: 无法拆分，将原始字符串作为场景描述
+  // 格式 3: "我方xxx，AIxxx" 或 "学生xxx，AIxxx"（逗号分隔，含角色关键词）
+  const commaRe = /(?:我方|学生|用户|你的角色)[\s：:为是]*(.+?)[，,]\s*(?:AI|对方|对话方|AI角色)[\s：:为是]*(.+)/i;
+  const commaMatch = raw.match(commaRe);
+  if (commaMatch) {
+    return { user: commaMatch[1].trim() || "你", ai: commaMatch[2].trim() || "AI 对话伙伴" };
+  }
+
+  // 格式 4: 无法拆分，将原始字符串作为场景描述
   return { user: "你（" + raw.trim() + "）", ai: "AI 对话伙伴（" + raw.trim() + "）" };
 }
 
