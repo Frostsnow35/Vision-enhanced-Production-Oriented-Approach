@@ -11,7 +11,7 @@ export default function Home() {
     <div className="flex flex-col items-center justify-center py-16 text-center">
       <div className="mb-8 flex items-center gap-4">
         <Image
-          src="/logo.svg"
+          src="/logo.png"
           alt="POA Logo"
           width={160}
           height={160}
