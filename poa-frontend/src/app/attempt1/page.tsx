@@ -597,9 +597,18 @@ export default function Attempt1Page() {
     );
   }
 
-  // 优先使用独立字段，兼容旧 roles 格式
-  const userRole = task.user_role || parseRoles(task.roles).user;
-  const aiRole = task.ai_role || parseRoles(task.roles).ai;
+  // 优先使用独立字段
+  let userRole = task.user_role?.trim() || "";
+  let aiRole = task.ai_role?.trim() || "";
+  // 如果独立字段为空，尝试解析旧 roles
+  if (!userRole && !aiRole) {
+    const parsed = parseRoles(task.roles);
+    userRole = parsed.user;
+    aiRole = parsed.ai;
+  }
+  // 最终兜底
+  if (!userRole) userRole = "请在场景描述中查看";
+  if (!aiRole) aiRole = "请在场景描述中查看";
 
   /* ============================================================
      Render

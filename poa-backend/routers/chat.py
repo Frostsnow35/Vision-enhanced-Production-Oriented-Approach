@@ -105,6 +105,21 @@ async def chat_turn(req: ChatTurnRequest):
                 user_text="",
             )
 
+    # 检查音频文件大小：太小说明录制有问题
+    try:
+        file_size = os.path.getsize(audio_path)
+        if file_size < 500:
+            logger.warning(f"[chat] 音频文件过小: {file_size} bytes")
+            return JSONResponse(
+                status_code=422,
+                content={
+                    "error": "audio_unclear",
+                    "message": "录音时长过短，请按住按钮说话至少1秒后再松开。",
+                },
+            )
+    except OSError:
+        pass
+
     user_text = transcribe_audio(audio_path)
 
     # ASR 失败 / 空转写 → 不调用 LLM，直接返回 422

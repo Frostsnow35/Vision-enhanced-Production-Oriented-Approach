@@ -245,10 +245,33 @@ def analyze_scenario(image_path: str) -> Dict[str, Any]:
 def _split_roles(roles_str: str):
     """从 roles 字符串中提取 user_role 和 ai_role。"""
     import re as _re
+    if not roles_str:
+        return "", ""
+    # A: xxx; B: yyy
     m = _re.match(r"A\s*[:：]\s*(.+?)\s*[;；]\s*B\s*[:：]\s*(.+)", roles_str)
     if m:
         return m.group(1).strip(), m.group(2).strip()
-    return roles_str, ""
+    # 我方xxx，AIxxx / 学生xxx，AIxxx
+    m2 = _re.match(r"(?:我方|学生|用户|你的角色)[\s：:为是]*(.+?)[，,]\s*(?:AI|对方|对话方|AI角色)[\s：:为是]*(.+)", roles_str)
+    if m2:
+        return m2.group(1).strip(), m2.group(2).strip()
+    # xxx与AIxxx / xxx和AIxxx
+    m3 = _re.match(r"(.+?)[与和]\s*AI\s*(.+)", roles_str)
+    if m3:
+        left = _re.sub(r"(?:我方|学生|用户|你的角色)[\s：:为是]*", "", m3.group(1)).strip()
+        right = _re.sub(r"(?:AI|对方|对话方|AI角色)[\s：:为是]*", "", m3.group(2)).strip()
+        if left and right:
+            return left, right
+    # xxx；yyy
+    parts = _re.split(r"[;；]", roles_str)
+    if len(parts) >= 2 and parts[0].strip() and parts[1].strip():
+        return _re.sub(r"^(?:A|用户|我方|你的角色)\s*[:：]\s*", "", parts[0]).strip(), _re.sub(r"^(?:B|AI|对方|AI角色)\s*[:：]\s*", "", parts[1]).strip()
+    # xxx，yyy
+    parts = _re.split(r"[，,]", roles_str)
+    if len(parts) >= 2 and parts[0].strip() and parts[1].strip():
+        return _re.sub(r"^(?:A|用户|我方|你的角色)\s*[:：]\s*", "", parts[0]).strip(), _re.sub(r"^(?:B|AI|对方|AI角色)\s*[:：]\s*", "", parts[1]).strip()
+    # 兜底
+    return roles_str.strip(), ""
 
 
 # ============================================================

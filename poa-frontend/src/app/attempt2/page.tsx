@@ -587,8 +587,15 @@ export default function Attempt2Page() {
     );
   }
 
-  const userRole = task.user_role || parseRoles(task.roles).user;
-  const aiRole = task.ai_role || parseRoles(task.roles).ai;
+  let userRole = task.user_role?.trim() || "";
+  let aiRole = task.ai_role?.trim() || "";
+  if (!userRole && !aiRole) {
+    const parsed = parseRoles(task.roles);
+    userRole = parsed.user;
+    aiRole = parsed.ai;
+  }
+  if (!userRole) userRole = "请在场景描述中查看";
+  if (!aiRole) aiRole = "请在场景描述中查看";
   const variantPlot = task.variant_plot || "暂无新情境描述";
 
   /* ============================================================
