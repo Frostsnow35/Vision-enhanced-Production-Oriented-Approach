@@ -53,6 +53,8 @@ export interface ScenarioResult {
   id?: number;
   scenario_id?: number;
   scene_label: string;
+  user_role?: string;
+  ai_role?: string;
   roles: string;
   goal: string;
   context_constraints: string;

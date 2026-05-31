@@ -10,6 +10,8 @@ import RecordingWaveform from "@/components/RecordingWaveform";
    ============================================================ */
 interface TaskData {
   scene_label: string;
+  user_role?: string;
+  ai_role?: string;
   roles: string;
   goal: string;
   context_constraints: string;
@@ -346,10 +348,18 @@ export default function Attempt2Page() {
           audioStream.getTracks().forEach((t) => t.stop());
         }
 
-        if (chunksRef.current.length === 0) return;
+        if (chunksRef.current.length === 0) {
+          alert("未录制到音频，请重试");
+          return;
+        }
 
         const blob = new Blob(chunksRef.current, { type: recorder.mimeType });
         chunksRef.current = [];
+
+        if (blob.size < 100) {
+          alert("录音内容过短，请重新录制");
+          return;
+        }
 
         setUploading(true);
         try {
@@ -447,7 +457,7 @@ export default function Attempt2Page() {
         }
       };
 
-      recorder.start();
+      recorder.start(100);
       recordingStreamRef.current = audioStream;
       setRecording(true);
     } catch (err: any) {
@@ -577,7 +587,8 @@ export default function Attempt2Page() {
     );
   }
 
-  const { user, ai } = parseRoles(task.roles);
+  const userRole = task.user_role || parseRoles(task.roles).user;
+  const aiRole = task.ai_role || parseRoles(task.roles).ai;
   const variantPlot = task.variant_plot || "暂无新情境描述";
 
   /* ============================================================
@@ -602,11 +613,11 @@ export default function Attempt2Page() {
         <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
           <div className="min-w-0">
             <span className="text-xs font-semibold text-primary">🟢 你的角色</span>
-            <p className="font-medium text-card-foreground mt-0.5">{user}</p>
+            <p className="font-medium text-card-foreground mt-0.5">{userRole}</p>
           </div>
           <div className="min-w-0">
             <span className="text-xs font-semibold text-rose-500">🤖 AI 角色</span>
-            <p className="font-medium text-card-foreground mt-0.5">{ai}</p>
+            <p className="font-medium text-card-foreground mt-0.5">{aiRole}</p>
           </div>
         </div>
         <div className="mt-2 text-sm border-t border-border pt-2">

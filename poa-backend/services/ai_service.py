@@ -35,7 +35,8 @@ _SYSTEM_PROMPT = """\
     "people": "画面中人物的角色和关系"
   },
   "poa_task": {
-    "roles": "学生角色和AI角色，使用格式 A: 学生角色描述; B: AI角色描述（示例: A: 顾客（有乳糖不耐受）; B: 咖啡师（高峰期忙碌））",
+    "user_role": "学生扮演的角色（只写学生角色，不要包含AI角色。示例: 顾客（有乳糖不耐受））",
+    "ai_role": "AI扮演的角色（只写AI角色，不要包含学生角色。示例: 咖啡师（高峰期忙碌））",
     "goal": "交际目标（用中文描述）",
     "context_constraints": "语境要求列表（用序号列出）",
     "evaluation_criteria": ["评价维度1", "评价维度2", "评价维度3", "评价维度4", "评价维度5"]
@@ -228,7 +229,9 @@ def analyze_scenario(image_path: str) -> Dict[str, Any]:
 
     result = {
         "scene_label": parsed.get("scene_label", ""),
-        "roles": poa.get("roles", ""),
+        "user_role": poa.get("user_role", poa.get("roles", "")),
+        "ai_role": poa.get("ai_role", ""),
+        "roles": f"A: {poa.get('user_role', '')}; B: {poa.get('ai_role', '')}",
         "goal": poa.get("goal", ""),
         "context_constraints": ctx,
         "evaluation_criteria": eval_str,
@@ -237,6 +240,15 @@ def analyze_scenario(image_path: str) -> Dict[str, Any]:
 
     logger.info(f"[analyze_scenario] 成功 — scene_label={result['scene_label']}")
     return result
+
+
+def _split_roles(roles_str: str):
+    """从 roles 字符串中提取 user_role 和 ai_role。"""
+    import re as _re
+    m = _re.match(r"A\s*[:：]\s*(.+?)\s*[;；]\s*B\s*[:：]\s*(.+)", roles_str)
+    if m:
+        return m.group(1).strip(), m.group(2).strip()
+    return roles_str, ""
 
 
 # ============================================================
@@ -282,10 +294,15 @@ def get_or_analyze_scenario(image_path: str, db: Session) -> Dict[str, Any]:
             logger.info(
                 f"[get_or_analyze] 缓存命中 — scenario_id={existing_scenario.id}"
             )
+            # 解析 DB 中的 roles 字段，提取 user_role 和 ai_role
+            db_roles = existing_task.roles or ""
+            u_role, a_role = _split_roles(db_roles)
             return {
                 "scenario_id": existing_scenario.id,
                 "scene_label": existing_scenario.scene_label,
-                "roles": existing_task.roles or "",
+                "user_role": u_role,
+                "ai_role": a_role,
+                "roles": db_roles,
                 "goal": existing_task.goal or "",
                 "context_constraints": existing_task.context_constraints or "",
                 "evaluation_criteria": existing_task.evaluation_criteria or "",

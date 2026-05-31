@@ -143,7 +143,9 @@ class ScenarioAnalyzeResponse(BaseModel):
     """POST /api/scenario/analyze 响应体"""
     scenario_id: Optional[int] = None
     scene_label: str
-    roles: str
+    user_role: str = ""
+    ai_role: str = ""
+    roles: str = ""
     goal: str
     context_constraints: str
     evaluation_criteria: str
