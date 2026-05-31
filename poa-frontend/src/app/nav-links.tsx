@@ -13,7 +13,7 @@ export function NavLinks({ items }: { items: NavItem[] }) {
   const pathname = usePathname();
 
   return (
-    <>
+    <div className="flex gap-1">
       {items.map((item) => {
         const isActive =
           item.href === "/"
@@ -35,6 +35,6 @@ export function NavLinks({ items }: { items: NavItem[] }) {
           </Link>
         );
       })}
-    </>
+    </div>
   );
 }
