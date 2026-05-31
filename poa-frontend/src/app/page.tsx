@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useRouter } from "next/navigation";
 import Image from "next/image";
@@ -33,7 +33,7 @@ export default function Home() {
           GlimpSay 将你身边的校园、餐厅、商店、街角变成英语交际课堂。
           只需拍下眼前场景，AI 就能识别语境、生成任务，并与你展开真实对话练习；
         </p>
-        
+
         <div className="mt-6 grid grid-cols-3 gap-4">
           <div className="rounded-xl bg-primary p-4 text-center shadow-lg shadow-primary/30">
             <div className="text-3xl font-bold text-primary-foreground">7</div>
