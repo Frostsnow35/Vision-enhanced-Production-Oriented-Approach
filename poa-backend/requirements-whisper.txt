@@ -1,0 +1,11 @@
+# 可选：本地 ASR 语音转写（Whisper）
+# 仅在本地开发或 GPU 实例上安装，Railway 部署请跳过
+# pip install -r requirements-whisper.txt
+openai-whisper==20250625
+torch==2.12.0
+numpy==2.4.6
+numba==0.65.1
+llvmlite==0.47.0
+sympy==1.14.0
+networkx==3.6.1
+mpmath==1.3.0
