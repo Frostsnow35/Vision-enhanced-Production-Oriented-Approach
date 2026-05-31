@@ -567,12 +567,9 @@ export default function Attempt2Page() {
      Render
      ============================================================ */
   return (
-    <div
-      className="mx-auto flex max-w-5xl flex-col gap-3"
-      style={{ minHeight: "calc(100vh - 120px)" }}
-    >
+    <div className="mx-auto max-w-5xl space-y-3 pb-8">
       {/* ---- 顶部任务卡片（新情境任务） ---- */}
-      <div className="shrink-0 rounded-xl border border-border bg-card p-3 shadow-sm">
+      <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
         <div className="flex items-center gap-2">
           <span className="inline-flex items-center rounded-md bg-secondary/20 px-2 py-0.5 text-xs font-semibold text-secondary-foreground">
             新情境任务
@@ -608,7 +605,7 @@ export default function Attempt2Page() {
       </div>
 
       {/* ---- 左右分屏主区域 ---- */}
-      <div className="flex flex-1 gap-4 min-h-0" style={{ maxHeight: "50vh" }}>
+      <div className="flex flex-col sm:flex-row gap-4" style={{ minHeight: "320px" }}>
         {/* 左：摄像头实时画面 */}
         <div className="flex-1 rounded-xl border border-border bg-black overflow-hidden relative flex items-center justify-center">
           <video

@@ -567,12 +567,9 @@ export default function Attempt1Page() {
      Render
      ============================================================ */
   return (
-    <div
-      className="mx-auto flex max-w-5xl flex-col gap-3"
-      style={{ minHeight: "calc(100vh - 120px)" }}
-    >
+    <div className="mx-auto max-w-5xl space-y-3 pb-8">
       {/* ---- 顶部任务卡片 ---- */}
-      <div className="shrink-0 rounded-xl border border-border bg-card p-3 shadow-sm">
+      <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
         <div className="flex items-center gap-2">
           <span className="inline-flex items-center rounded-md bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
             {task.scene_label}
@@ -582,22 +579,22 @@ export default function Attempt1Page() {
           </span>
         </div>
 
-        <div className="mt-2 grid grid-cols-3 gap-3 text-sm">
+        <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm">
           <div className="min-w-0">
             <span className="text-muted-foreground">你的角色: </span>
-            <span className="font-medium text-card-foreground">
+            <span className="font-medium text-card-foreground break-words">
               {user.split("——")[0]?.trim() ?? user}
             </span>
           </div>
           <div className="min-w-0">
             <span className="text-muted-foreground">AI 角色: </span>
-            <span className="font-medium text-card-foreground">
+            <span className="font-medium text-card-foreground break-words">
               {ai.split("——")[0]?.trim() ?? ai}
             </span>
           </div>
           <div className="min-w-0">
             <span className="text-muted-foreground">交际目标: </span>
-            <span className="font-medium text-card-foreground line-clamp-1">
+            <span className="font-medium text-card-foreground">
               {task.goal}
             </span>
           </div>
@@ -605,7 +602,7 @@ export default function Attempt1Page() {
       </div>
 
       {/* ---- 左右分屏主区域 ---- */}
-      <div className="flex flex-1 gap-4 min-h-0" style={{ maxHeight: "50vh" }}>
+      <div className="flex flex-col sm:flex-row gap-4" style={{ minHeight: "320px" }}>
         {/* 左：摄像头实时画面 */}
         <div className="flex-1 rounded-xl border border-border bg-black overflow-hidden relative flex items-center justify-center">
           <video
