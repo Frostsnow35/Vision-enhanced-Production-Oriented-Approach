@@ -1,6 +1,4 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
 @layer base {
   :root {
@@ -47,9 +45,7 @@
     --input: oklch(0.25 0.06 260);
     --ring: oklch(0.60 0.18 260);
   }
-}
 
-@layer base {
   * {
     border-color: var(--border);
   }
