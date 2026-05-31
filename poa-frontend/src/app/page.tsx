@@ -16,7 +16,6 @@ export default function Home() {
         height={280}
         className="mb-8 drop-shadow-2xl"
         priority
-        unoptimized
       />
 
       <h1 className="max-w-2xl text-3xl font-extrabold tracking-tight sm:text-4xl animate-float gradient-text">
