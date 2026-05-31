@@ -19,6 +19,7 @@ from routers.evaluate import router as evaluate_router
 from routers.facilitate import router as facilitate_router
 from routers.exercise import router as exercise_router
 from routers.chat import router as chat_router
+from routers.report import router as report_router
 
 # 使用绝对路径，避免 cwd 问题
 BACKEND_ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -68,6 +69,7 @@ app.include_router(evaluate_router)
 app.include_router(facilitate_router)
 app.include_router(exercise_router)
 app.include_router(chat_router)
+app.include_router(report_router)
 
 os.makedirs(os.path.join(UPLOAD_DIR, "images"), exist_ok=True)
 os.makedirs(os.path.join(UPLOAD_DIR, "audio"), exist_ok=True)

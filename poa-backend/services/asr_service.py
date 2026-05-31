@@ -40,13 +40,13 @@ def _is_valid_transcription(text: str) -> bool:
     if not stripped:
         return False
 
-    # 过短：少于 10 个有效字符
-    if len(stripped) < 10:
+    # 过短：少于 3 个字符（允许 "Yes", "No", "Hi" 等短回复）
+    if len(stripped) < 3:
         return False
 
     # 字母/数字/中文太少（纯标点、符号、空白）
     alpha_num = len(re.findall(r"[a-zA-Z0-9一-鿿]", stripped))
-    if alpha_num < 3:
+    if alpha_num < 2:
         return False
 
     # 高频重复单一字符（取前 20 个，同一字符超 60% 视为乱码）

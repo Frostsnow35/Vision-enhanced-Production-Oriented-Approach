@@ -25,7 +25,7 @@ interface TurnRecord {
   user_text: string;
 }
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_BASE ?? "";
+const BASE_URL = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
 
 /* ============================================================
    工具函数
@@ -402,7 +402,10 @@ export default function Attempt1Page() {
               audio_url,
               scene_label: taskContext.scene_label,
               roles: taskContext.roles,
-              conversation_history: [],
+              conversation_history: turnsRef.current.map((t) => ({
+                role: "user",
+                text: t.user_text || "",
+              })),
             }),
           });
 
@@ -424,12 +427,6 @@ export default function Attempt1Page() {
             throw new Error(`对话请求失败 (${chatRes.status}): ${detail}`);
           }
           const chatData = (await chatRes.json()) as { ai_text: string; user_text?: string };
-
-          // 跳过空转写：不加入对话列表
-          if (!chatData.user_text || !chatData.user_text.trim()) {
-            alert("没听清，请重新说一次");
-            return;
-          }
 
           // Step 3: 记录轮次
           turnsRef.current.push({

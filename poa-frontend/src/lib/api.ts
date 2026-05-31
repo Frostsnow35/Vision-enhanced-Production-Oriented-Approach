@@ -4,6 +4,13 @@
  * 后端默认地址 http://localhost:8000，可通过环境变量 NEXT_PUBLIC_API_BASE 覆盖。
  */
 
+export interface VLMError {
+  error_type: string;
+  message: string;
+  detail?: string;
+  suggestion?: string;
+}
+
 export const BASE_URL = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
 
 /**
