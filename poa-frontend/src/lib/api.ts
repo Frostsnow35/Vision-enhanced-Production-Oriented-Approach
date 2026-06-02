@@ -4,7 +4,7 @@
  * 后端默认地址 http://localhost:8000，可通过环境变量 NEXT_PUBLIC_API_BASE 覆盖。
  */
 
-export const BASE_URL = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
+export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 /**
  * 构建图片 URL
@@ -21,15 +21,15 @@ export function buildImageUrl(imagePath: string): string {
   
   // 用户上传的图片：/uploads/images/xxx.jpg → 直接拼接
   if (imagePath.startsWith("/")) {
-    return `${BASE_URL}${imagePath}`;
+    return `${API_URL}${imagePath}`;
   }
   
   // 其他情况直接拼接
-  return `${BASE_URL}/${imagePath}`;
+  return `${API_URL}/${imagePath}`;
 }
 
 async function request<T>(path: string, body: Record<string, unknown>): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
+  const res = await fetch(`${API_URL}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -61,7 +61,7 @@ export async function analyzeScenario(image_path: string): Promise<ScenarioResul
 export async function uploadImage(file: File): Promise<{ image_url: string }> {
   const form = new FormData();
   form.append("file", file);
-  const res = await fetch(`${BASE_URL}/api/upload/image`, {
+  const res = await fetch(`${API_URL}/api/upload/image`, {
     method: "POST",
     body: form,
   });

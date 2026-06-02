@@ -13,9 +13,9 @@ export default function Home() {
         <Image
           src="/logo.png"
           alt="POA Logo"
-          width={160}
-          height={160}
-          className="h-40 w-40"
+          width={240}
+          height={240}
+          className="w-60 h-60"
           priority
         />
       </div>
@@ -45,7 +45,7 @@ export default function Home() {
           </div>
           <div className="rounded-xl bg-primary p-4 text-center shadow-lg shadow-primary/30">
             <div className="text-3xl font-bold text-primary-foreground">2</div>
-            <div className="text-sm text-primary-foreground/90">轮练习</div>
+            <div className="text-sm text-primary-foreground/90">迭代练习</div>
           </div>
         </div>
       </div>
