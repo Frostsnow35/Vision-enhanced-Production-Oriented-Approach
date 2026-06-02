@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { API_URL } from "@/lib/api";
 
 /* ============================================================
    类型定义
@@ -24,7 +25,7 @@ interface TurnRecord {
   user_text: string;
 }
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
+// API_URL imported from @/lib/api
 
 /* ============================================================
    工具函数
@@ -253,7 +254,7 @@ export default function Attempt1Page() {
         }
 
         // 2. 调用开场白
-        const res = await fetch(`${BASE_URL}/api/chat/start`, {
+        const res = await fetch(`${API_URL}/api/chat/start`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -339,7 +340,7 @@ export default function Attempt1Page() {
           // Step 1: 上传音频
           const form = new FormData();
           form.append("file", blob, `recording-${Date.now()}.webm`);
-          const uploadRes = await fetch(`${BASE_URL}/api/upload/audio`, {
+          const uploadRes = await fetch(`${API_URL}/api/upload/audio`, {
             method: "POST",
             body: form,
           });
@@ -376,7 +377,7 @@ export default function Attempt1Page() {
             return;
           }
 
-          const chatRes = await fetch(`${BASE_URL}/api/chat/turn`, {
+          const chatRes = await fetch(`${API_URL}/api/chat/turn`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -504,7 +505,7 @@ export default function Attempt1Page() {
 
       const rawId = task?.id ?? task?.scenario_id;
       const taskId = parseInt(String(rawId ?? ""), 10);
-      const res = await fetch(`${BASE_URL}/api/attempt1/submit`, {
+      const res = await fetch(`${API_URL}/api/attempt1/submit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

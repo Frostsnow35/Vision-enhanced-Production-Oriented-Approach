@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import {
   generateInputPack,
   generateExercises,
+  API_URL,
   type GapItem,
   type InputPackResult,
   type ExerciseItem,
@@ -16,7 +17,7 @@ import * as echarts from "echarts";
 /* ============================================================
    常量
    ============================================================ */
-const BASE_URL = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
+const API_URL = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
 
 /** 国创标准 7 维度（固定顺序，cnName 匹配后端返回的中文维度名） */
 const RADAR_DIMENSIONS = [
@@ -275,7 +276,7 @@ export default function FacilitatePage() {
           }
         } catch { /* ignore */ }
 
-        const res = await fetch(`${BASE_URL}/api/evaluate-single`, {
+        const res = await fetch(`${API_URL}/api/evaluate-single`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ attempt_text: text, task_context: taskContext }),

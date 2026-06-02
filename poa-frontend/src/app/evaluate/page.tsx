@@ -4,12 +4,13 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { usePOA } from "@/lib/store";
+import { API_URL } from "@/lib/api";
 import * as echarts from "echarts";
 
 /* ============================================================
    常量
    ============================================================ */
-const BASE_URL = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
+const API_URL = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
 
 /** 国创标准 7 维度 — 固定顺序，雷达图 indicator 与 series value 严格对齐 */
 const RADAR_DIMENSIONS = [
@@ -410,7 +411,7 @@ export default function EvaluatePage() {
     setError("");
     setLoading(true);
     try {
-      const res = await fetch(`${BASE_URL}/api/evaluate-compare`, {
+      const res = await fetch(`${API_URL}/api/evaluate-compare`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
