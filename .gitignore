@@ -47,7 +47,8 @@ skills/
 *.tsbuildinfo
 
 # Screenshots
-# logo.svg — app logo, keep tracked
+# Logo — must always be tracked
+!public/logo.png
 openapi.json
 
 # Old project folders

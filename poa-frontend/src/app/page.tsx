@@ -11,7 +11,7 @@ export default function Home() {
     <div className="flex flex-col items-center justify-center py-16 text-center">
       <div className="mb-8 flex items-center gap-4">
         <Image
-          src="/logo.svg"
+          src="/logo.png"
           alt="POA Logo"
           width={160}
           height={160}
@@ -54,7 +54,15 @@ export default function Home() {
         className="mt-10 shadow-lg shadow-primary/30"
         variant="default"
         size="lg"
-        onClick={() => router.push("/scenario")}
+        onClick={() => {
+          const keepKeys = ["poa_scenarios", "currentScenarioId"];
+          for (const key of Object.keys(localStorage)) {
+            if (!keepKeys.includes(key) && !key.startsWith("NEXT_")) {
+              localStorage.removeItem(key);
+            }
+          }
+          router.push("/scenario");
+        }}
       >
         开始体验
       </Button>

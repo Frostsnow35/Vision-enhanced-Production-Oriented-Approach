@@ -24,7 +24,7 @@ interface TurnRecord {
   user_text: string;
 }
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_BASE ?? "";
+const BASE_URL = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
 
 /* ============================================================
    工具函数

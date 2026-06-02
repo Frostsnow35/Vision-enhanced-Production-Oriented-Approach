@@ -46,6 +46,16 @@ export default function ScenarioPage() {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const toastCounter = useRef(0);
 
+  // 新任务开始时清除旧数据
+  useEffect(() => {
+    const keepKeys = ["poa_scenarios", "currentScenarioId"];
+    for (const key of Object.keys(localStorage)) {
+      if (!keepKeys.includes(key) && !key.startsWith("NEXT_")) {
+        localStorage.removeItem(key);
+      }
+    }
+  }, []);
+
   useEffect(() => {
     if (submitting) {
       timerRef.current = setInterval(() => {

@@ -37,7 +37,7 @@ export default function RootLayout({
           <nav className="mx-auto flex max-w-6xl items-center gap-6 overflow-x-auto px-4 py-2">
             <Link href="/" className="flex items-center gap-2 shrink-0">
               <Image
-                src="/logo.svg"
+                src="/logo.png"
                 alt="POA Logo"
                 width={40}
                 height={40}

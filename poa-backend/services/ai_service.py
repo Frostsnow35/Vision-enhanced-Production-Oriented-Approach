@@ -25,22 +25,31 @@ logger = logging.getLogger("ai_service")
 DOUBAO_CHAT_URL = f"{DOUBAO_BASE_URL}/chat/completions"
 
 _SYSTEM_PROMPT = """\
-你是一个英语教学场景分析专家。请分析这张照片，严格输出如下 JSON 格式（不要输出任何其他内容）：
+看这张照片。判断这是什么场所，然后为照片中的两个人物分别命名角色。
 
+规则（必须遵守）：
+1. user_role 和 ai_role 必须分开写在两个字段里，绝对禁止合并
+2. 角色必须是照片场景中真实存在的身份。例如：
+   - 医院 → user_role: "患者" / ai_role: "医生"
+   - 咖啡店 → user_role: "顾客" / ai_role: "咖啡师"
+   - 餐厅 → user_role: "食客" / ai_role: "服务员"
+   - 机场 → user_role: "旅客" / ai_role: "值机员"
+   - 图书馆 → user_role: "读者" / ai_role: "管理员"
+   - 商场 → user_role: "顾客" / ai_role: "导购员"
+3. 绝对禁止输出以下词汇：英语教师、教学助手、AI练习伙伴、场景分析专家、教学任务设计者
+4. 角色名要简短，只写身份，不要加描述
+
+输出 JSON（不要输出其他内容）：
 {
-  "scene_label": "场景名称（中文）",
-  "scene_elements": {
-    "location": "识别到的场所类型",
-    "objects": "画面中的关键物体",
-    "people": "画面中人物的角色和关系"
-  },
+  "scene_label": "场所名称",
   "poa_task": {
-    "roles": "你的角色和AI角色",
-    "goal": "交际目标（用中文描述）",
-    "context_constraints": "语境要求列表（用序号列出）",
-    "evaluation_criteria": ["评价维度1", "评价维度2", "评价维度3", "评价维度4", "评价维度5"]
+    "user_role": "仅角色名",
+    "ai_role": "仅角色名",
+    "goal": "交际目标",
+    "context_constraints": "语境限制",
+    "evaluation_criteria": ["标准1","标准2","标准3","标准4","标准5"]
   },
-  "variant_plot": "用于二次产出的新情节变体（中文），在原场景基础上增加一个变化"
+  "variant_plot": "情节变体"
 }"""
 
 
@@ -226,9 +235,19 @@ def analyze_scenario(image_path: str) -> Dict[str, Any]:
     else:
         eval_str = str(eval_criteria)
 
+    user_role = poa.get("user_role", "") or ""
+    ai_role = poa.get("ai_role", "") or ""
+    if not user_role and not ai_role:
+        old = poa.get("roles", "")
+        parts = old.replace("A:", "").replace("B:", "").split(";") if ";" in old else old.split("；") if "；" in old else [old, ""]
+        user_role = parts[0].strip() if len(parts) > 0 else ""
+        ai_role = parts[1].strip() if len(parts) > 1 else ""
+
     result = {
         "scene_label": parsed.get("scene_label", ""),
-        "roles": poa.get("roles", ""),
+        "user_role": user_role,
+        "ai_role": ai_role,
+        "roles": f"A: {user_role}; B: {ai_role}",
         "goal": poa.get("goal", ""),
         "context_constraints": ctx,
         "evaluation_criteria": eval_str,
@@ -242,11 +261,12 @@ def analyze_scenario(image_path: str) -> Dict[str, Any]:
 # ============================================================
 # 1b. 带缓存的场景分析 —— DB 哈希去重
 # ============================================================
-def get_or_analyze_scenario(image_path: str, db: Session) -> Dict[str, Any]:
+def get_or_analyze_scenario(image_path: str, db: Session, force_refresh: bool = False) -> Dict[str, Any]:
     """
     读取图片 → 计算 MD5 → 查 scenarios 表 →
-      命中: 直接从 DB 读出已有的场景+任务数据
-      未命中: 调用 analyze_scenario(VLM) → 写入 scenarios + poa_tasks → 返回
+      force_refresh=True: 跳过缓存，直接调用 VLM
+      命中 + force_refresh=False: 从 DB 读取
+      未命中: 调用 VLM → 写入 DB → 返回
     """
     # 1. 计算图片 MD5
     try:
@@ -267,10 +287,15 @@ def get_or_analyze_scenario(image_path: str, db: Session) -> Dict[str, Any]:
 
     logger.info(f"[get_or_analyze] image_path={image_path}  hash={image_hash}")
 
-    # 2. 查缓存 — 按 hash 查找 Scenario，再取关联的 POATask
-    existing_scenario = (
-        db.query(Scenario).filter(Scenario.image_hash == image_hash).first()
-    )
+    # 2. 查缓存（force_refresh 时跳过）
+    if not force_refresh:
+        existing_scenario = (
+            db.query(Scenario).filter(Scenario.image_hash == image_hash).first()
+        )
+    else:
+        existing_scenario = None
+        logger.info("[get_or_analyze] force_refresh=True，跳过缓存")
+
     if existing_scenario is not None:
         existing_task = (
             db.query(POATask)

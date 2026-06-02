@@ -52,7 +52,9 @@ async def analyze_scene(req: ScenarioAnalyzeRequest, db: Session = Depends(get_d
     image_path = os.path.normpath(image_path)
     logger.info(f"[analyze_scene] 最终路径: {image_path}")
 
-    result = get_or_analyze_scenario(image_path=image_path, db=db)
+    result = get_or_analyze_scenario(
+        image_path=image_path, db=db, force_refresh=req.clear_cache
+    )
     return result
 
 

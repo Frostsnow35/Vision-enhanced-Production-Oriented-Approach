@@ -137,6 +137,7 @@ class EvaluationResponse(BaseModel):
 class ScenarioAnalyzeRequest(BaseModel):
     """POST /api/scenario/analyze 请求体"""
     image_path: str
+    clear_cache: bool = False
 
 
 class ScenarioAnalyzeResponse(BaseModel):

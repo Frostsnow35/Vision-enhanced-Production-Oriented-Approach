@@ -62,11 +62,19 @@ export default function TaskPage() {
     );
   }
 
-  const { user, ai } = parseRoles(scenarioResult.roles);
+  const getUserRole = () => {
+    const r = (scenarioResult as any).user_role;
+    return r?.trim() || null;
+  };
+  const getAiRole = () => {
+    const r = (scenarioResult as any).ai_role;
+    return r?.trim() || null;
+  };
+  const userRole = getUserRole() || parseRoles(scenarioResult.roles).user || "角色未识别";
+  const aiRole = getAiRole() || parseRoles(scenarioResult.roles).ai || "角色未识别";
 
   return (
     <div className="mx-auto max-w-2xl space-y-8">
-      {/* ---- 页面标题 ---- */}
       <header>
         <div className="flex items-center gap-2">
           <span className="inline-flex items-center rounded-lg bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
@@ -80,6 +88,41 @@ export default function TaskPage() {
           基于场景分析结果，明确本次交际任务的目标与要求
         </p>
       </header>
+
+      {/* ---- 角色信息 ---- */}
+      <div className="rounded-xl border border-border bg-card p-5 shadow-sm space-y-3">
+        <div className="flex items-start gap-3">
+          <span className="text-lg">🟢</span>
+          <div className="min-w-0">
+            <p className="text-xs font-semibold text-primary">你的角色</p>
+            <p className="text-base font-medium text-card-foreground">{userRole}</p>
+          </div>
+        </div>
+        <div className="border-t border-border" />
+        <div className="flex items-start gap-3">
+          <span className="text-lg">🤖</span>
+          <div className="min-w-0">
+            <p className="text-xs font-semibold text-rose-500">AI 角色</p>
+            <p className="text-base font-medium text-card-foreground">{aiRole}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* ---- 原角色双栏（保留兼容）---- */}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <RoleCard
+          label="你的角色"
+          icon={UserIcon}
+          content={userRole}
+          variant="user"
+        />
+        <RoleCard
+          label="对话方"
+          icon={AiIcon}
+          content={aiRole}
+          variant="ai"
+        />
+      </div>
 
       {/* ---- 角色双栏 ---- */}
       <div className="grid gap-4 sm:grid-cols-2">

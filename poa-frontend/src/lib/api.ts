@@ -54,7 +54,7 @@ export interface ScenarioResult {
 }
 
 export async function analyzeScenario(image_path: string): Promise<ScenarioResult> {
-  return request<ScenarioResult>("/api/scenario/analyze", { image_path });
+  return request<ScenarioResult>("/api/scenario/analyze", { image_path, clear_cache: true });
 }
 
 // ---- 上传图片 ----
