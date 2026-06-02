@@ -17,7 +17,7 @@ import * as echarts from "echarts";
 /* ============================================================
    常量
    ============================================================ */
-const API_URL = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
+// API_URL imported from @/lib/api
 
 /** 国创标准 7 维度（固定顺序，cnName 匹配后端返回的中文维度名） */
 const RADAR_DIMENSIONS = [
