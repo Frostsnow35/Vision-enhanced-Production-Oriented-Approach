@@ -129,13 +129,13 @@ export default function TaskPage() {
         <RoleCard
           label="你的角色"
           icon={UserIcon}
-          content={user}
+          content={userRole}
           variant="user"
         />
         <RoleCard
           label="对话方"
           icon={AiIcon}
-          content={ai}
+          content={aiRole}
           variant="ai"
         />
       </div>

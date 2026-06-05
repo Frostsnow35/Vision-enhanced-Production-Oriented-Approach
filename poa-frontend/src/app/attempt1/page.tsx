@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { API_URL } from "@/lib/api";
+import RecordingWaveform from "@/components/RecordingWaveform";
 
 /* ============================================================
    类型定义
@@ -433,7 +434,7 @@ export default function Attempt1Page() {
         }
       };
 
-      recorder.start();
+      recorder.start(100);
       setRecording(true);
     } catch (err: any) {
       alert("无法开始录音: " + (err.message ?? String(err)));
