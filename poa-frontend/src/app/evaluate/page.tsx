@@ -14,13 +14,13 @@ import * as echarts from "echarts";
 
 /** 国创标准 7 维度 — 固定顺序，雷达图 indicator 与 series value 严格对齐 */
 const RADAR_DIMENSIONS = [
-  { key: "fluency",                  label: "流利度" },
-  { key: "accuracy",                 label: "语法准确性" },
-  { key: "pragmatics",               label: "语用得体性" },
-  { key: "complexity",               label: "句式复杂度" },
-  { key: "task_completion",          label: "任务完成度" },
-  { key: "vocabulary",               label: "词汇丰富度" },
-  { key: "pronunciation_intonation", label: "发音语调" },
+  { key: "pronunciation",   label: "Pronunciation" },
+  { key: "grammar",         label: "Grammar" },
+  { key: "vocabulary",      label: "Vocabulary" },
+  { key: "task_completion", label: "Task Completion" },
+  { key: "pragmatics",      label: "Pragmatics" },
+  { key: "turn_taking",     label: "Turn-taking" },
+  { key: "paralinguistic",  label: "Paralinguistic" },
 ] as const;
 
 const RADAR_MAX = 10;
@@ -53,41 +53,17 @@ interface EvalCompareResponse {
    辅助：安全收集产出文本
    ============================================================ */
 function collectAttemptText(attempt: 1 | 2): string {
-  // A) 优先从提交时存储的完整 ASR 转写文本读取
-  const fullKey = attempt === 1 ? "attempt1_full_text" : "attempt2_full_text";
+  const convKey = attempt === 1 ? "attempt1_conversation" : "attempt2_conversation";
   try {
-    const raw = localStorage.getItem(fullKey);
-    if (raw && raw.trim()) return raw;
-  } catch { /* ignore */ }
-
-  // B) 回退：从 user_texts 数组拼接
-  const textsKey = attempt === 1 ? "attempt1_user_texts" : "attempt2_user_texts";
-  try {
-    const raw = localStorage.getItem(textsKey);
+    const raw = localStorage.getItem(convKey);
     if (raw) {
-      const texts = JSON.parse(raw);
-      if (Array.isArray(texts)) {
-        const joined = texts.filter(Boolean).join("\n");
-        if (joined.trim()) return joined;
-      }
+      const parsed = JSON.parse(raw);
+      if (typeof parsed === "string" && parsed.trim()) return parsed;
     }
   } catch { /* ignore */ }
-
-  // C) 回退：从 diagnosis/evaluation 的 evidence_sentence 提取
-  try {
-    const key = attempt === 1 ? "diagnosis" : "evaluation";
-    const raw = localStorage.getItem(key);
-    if (raw) {
-      const data = JSON.parse(raw);
-      const gaps = Array.isArray(data) ? data : (data.gaps ?? []);
-      const parts = gaps
-        .map((g: { evidence_sentence?: string }) => g?.evidence_sentence || "")
-        .filter(Boolean);
-      if (parts.length > 0) return parts.join("\n");
-    }
-  } catch { /* ignore */ }
-
-  return "";
+  // 回退
+  const fbKey = attempt === 1 ? "attempt1_text" : "attempt2_text";
+  return (localStorage.getItem(fbKey) || "").trim();
 }
 
 /* ============================================================
@@ -394,22 +370,40 @@ export default function EvaluatePage() {
   const [error, setError] = useState("");
   const [noData, setNoData] = useState(false);
 
-  // 挂载时从 POA + localStorage 收集文本
+  // 挂载时从 localStorage 收集文本
   useEffect(() => {
-    const t1 = attempt1Text?.trim() || collectAttemptText(1);
-    const t2 = attempt2Text?.trim() || collectAttemptText(2);
+    const t1 = collectAttemptText(1);
+    const t2 = collectAttemptText(2);
+    console.log("[evaluate] attempt1_text length:", t1.length, "preview:", t1.slice(0, 80));
+    console.log("[evaluate] attempt2_text length:", t2.length, "preview:", t2.slice(0, 80));
     setText1(t1);
     setText2(t2);
     if (!t1 || !t2) setNoData(true);
-  }, [attempt1Text, attempt2Text]);
+  }, []);
 
   async function handleEvaluate() {
     if (!text1.trim() || !text2.trim()) {
+      if (!text1.trim()) alert("未找到初次产出对话记录，请重新完成初次产出");
+      else if (!text2.trim()) alert("未找到二次产出对话记录，请重新完成二次产出");
       setError("请确保两次产出文本均已填写");
       return;
     }
     setError("");
     setLoading(true);
+
+    // 尝试复用促成学习的初次评估结果
+    let cachedA1Scores: Record<string, number> | null = null;
+    try {
+      const raw = localStorage.getItem("attempt1_eval_single");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed?.dimension_scores && Object.keys(parsed.dimension_scores).length === 7) {
+          cachedA1Scores = parsed.dimension_scores;
+          console.log("[evaluate] 复用促成学习初次评估结果");
+        }
+      }
+    } catch { /* ignore */ }
+
     try {
       const res = await fetch(`${API_URL}/api/evaluate-compare`, {
         method: "POST",
@@ -425,10 +419,40 @@ export default function EvaluatePage() {
       }
       const json = await res.json();
 
-      if (json.error === "no_voice") {
+      if (json.error === "no_voice" || json.error === "empty_text") {
         setError(json.message || "对比文本无效，请确保两次产出均包含有效语音内容");
         setLoading(false);
         return;
+      }
+
+      // 如果有缓存的促成学习初次评估，覆盖 compare 结果中 attempt1 部分
+      if (cachedA1Scores) {
+        const dimScores = json.dimension_scores || {};
+        for (const key of Object.keys(cachedA1Scores)) {
+          if (dimScores[key]) {
+            dimScores[key].attempt1 = cachedA1Scores[key];
+          }
+        }
+        json.dimension_scores = dimScores;
+        // 更新 attempt1_scores
+        json.attempt1_scores = cachedA1Scores;
+        // 更新 comparison 中每个维度的 attempt1_score
+        const comp = json.comparison || [];
+        const keyToDnum: Record<string, string> = {
+          pronunciation: "d1", grammar: "d2", vocabulary: "d3",
+          task_completion: "d4", pragmatics: "d5", turn_taking: "d6", paralinguistic: "d7",
+        };
+        for (const item of comp) {
+          for (const [engKey, dNum] of Object.entries(keyToDnum)) {
+            if (item.dimension === dNum && cachedA1Scores[engKey] != null) {
+              item.attempt1_score = cachedA1Scores[engKey] / 2; // convert back to 1-5 scale
+              const a2 = item.attempt2_score || 0;
+              const diff = a2 - item.attempt1_score;
+              item.change = (diff >= 0 ? "+" : "") + diff.toFixed(1);
+            }
+          }
+        }
+        json.comparison = comp;
       }
 
       setResult(json as EvalCompareResponse);

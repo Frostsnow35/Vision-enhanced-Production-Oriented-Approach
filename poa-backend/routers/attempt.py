@@ -59,7 +59,19 @@ async def submit_attempt1(req: AttemptSubmitRequest):
     if text == NO_VOICE_MARKER:
         return _build_no_voice_response(text)
 
-    result = diagnose_attempt(attempt_text=text)
+    try:
+        result = diagnose_attempt(attempt_text=text)
+    except Exception as e:
+        logger.error(f"[attempt1] 诊断失败: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": "diagnosis_failed",
+                "message": "AI诊断服务暂时不可用，请稍后重试",
+                "gaps": [],
+                "note": str(e)[:200],
+            },
+        )
     result["transcribed_text"] = text
     return result
 
@@ -67,21 +79,27 @@ async def submit_attempt1(req: AttemptSubmitRequest):
 # === POST /api/attempt2/submit ===
 @router.post("/attempt2/submit")
 async def submit_attempt2(req: AttemptSubmitRequest):
-    """
-    提交第二次作答（改进后），AI 诊断并返回剩余不足列表。
-    参数与 attempt1 一致。
-    """
+    """提交第二次作答，AI 诊断。"""
     text = (req.attempt_text or "").strip()
     logger.info(f"[attempt2] 收到转写文本 ({len(text)} chars): {text[:200]}")
 
-    # 文本为空 → 返回空诊断 + note
     if not text:
         return _build_empty_diagnosis(text)
-
-    # ASR 无效 → 返回提示
     if text == NO_VOICE_MARKER:
         return _build_no_voice_response(text)
 
-    result = diagnose_attempt(attempt_text=text)
+    try:
+        result = diagnose_attempt(attempt_text=text)
+    except Exception as e:
+        logger.error(f"[attempt2] 诊断失败: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": "diagnosis_failed",
+                "message": "AI诊断服务暂时不可用，请稍后重试",
+                "gaps": [],
+                "note": str(e)[:200],
+            },
+        )
     result["transcribed_text"] = text
     return result

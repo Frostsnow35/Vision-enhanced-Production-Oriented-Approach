@@ -64,27 +64,29 @@ export default function DiagnosisPage() {
   useEffect(() => {
     let hasData = false;
 
-    // 读取诊断数据
+    // 读取转写文本（多源回退：diagnosis.transcribed_text → attempt1_full_text → diagnosis.evidence_sentence）
+    let savedText = "";
     try {
       const raw = localStorage.getItem("diagnosis");
       if (raw) {
         const data = JSON.parse(raw);
         const parsed = parseDiagnosisGaps(raw);
-        if (parsed.length > 0) {
-          setGaps(parsed);
-          hasData = true;
-        }
-        // 读取 note 字段
-        if (data?.note && typeof data.note === "string") {
-          setDiagnosisNote(data.note);
-          hasData = true;
-        }
-        // 读取后端返回的转写文本（权威来源）
+        if (parsed.length > 0) { setGaps(parsed); hasData = true; }
+        if (data?.note && typeof data.note === "string") { setDiagnosisNote(data.note); hasData = true; }
+        // 优先从 diagnosis 读取
         if (data?.transcribed_text && typeof data.transcribed_text === "string") {
-          setTranscribedText(data.transcribed_text);
+          savedText = data.transcribed_text;
         }
       }
     } catch { /* ignore */ }
+    // 回退：从 attempt1_full_text 读取
+    if (!savedText) {
+      try {
+        const raw = localStorage.getItem("attempt1_full_text");
+        if (raw && raw.trim()) savedText = raw;
+      } catch { /* ignore */ }
+    }
+    if (savedText) setTranscribedText(savedText);
 
     // 读取任务数据
     try {
@@ -191,19 +193,19 @@ export default function DiagnosisPage() {
       {/* 系统识别的转写文本 */}
       <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
         <h3 className="text-sm font-semibold text-card-foreground mb-2">
-          系统识别到的内容
+          系统识别到您说了：
         </h3>
-        {transcribedText ? (
-          <div className="rounded-md bg-muted/50 p-3">
-            <p className="text-sm text-card-foreground leading-relaxed whitespace-pre-wrap">
+        <div className="rounded-md bg-gray-100 dark:bg-gray-800 p-3">
+          {transcribedText ? (
+            <p className="text-sm text-gray-700 dark:text-gray-200 leading-relaxed whitespace-pre-wrap font-mono">
               {transcribedText}
             </p>
-          </div>
-        ) : (
-          <p className="text-sm text-muted-foreground italic">
-            未获取到语音内容
-          </p>
-        )}
+          ) : (
+            <p className="text-sm text-muted-foreground italic font-mono">
+              （未获取到语音内容）
+            </p>
+          )}
+        </div>
         <p className="mt-2 text-xs text-muted-foreground/60">
           上方为 Whisper 语音识别转写结果。若与您实际说话内容不符，诊断可能不准确。
         </p>

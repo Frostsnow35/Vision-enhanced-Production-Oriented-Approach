@@ -38,36 +38,37 @@ def _load_model():
 
 def transcribe_audio(audio_path: str) -> str:
     """
-    转写音频为文本。whisper 不可用时返回文件名哈希作为标识。
+    转写音频为文本。
+    - 成功返回文本
+    - 文件不存在抛出 FileNotFoundError
+    - 模型加载失败抛出 RuntimeError
+    - 转写无内容返回 NO_VOICE_MARKER
     """
     if not os.path.isfile(audio_path):
-        logger.error(f"[ASR] 文件不存在: {audio_path}")
-        return ""
+        raise FileNotFoundError(f"音频文件不存在: {audio_path}")
 
-    # whisper 不可用 → 返回占位文本让对话继续
     model = _load_model()
     if model is None:
-        logger.warning("[ASR] Whisper 不可用，返回占位文本")
-        return "[audio message]"
+        raise RuntimeError("Whisper 语音识别模型不可用，请检查服务端依赖")
 
-    try:
-        logger.info(f"[ASR] 转写: {audio_path}")
-        result = model.transcribe(audio_path)
-        text = result["text"].strip()
-        logger.info(f"[ASR] 结果: {text[:100]}")
+    abs_path = os.path.abspath(audio_path)
+    logger.info(f"[ASR] audio_path 原始: {audio_path}")
+    logger.info(f"[ASR] audio_path 绝对路径: {abs_path}")
+    logger.info(f"[ASR] 文件存在: {os.path.isfile(abs_path)}, 大小: {os.path.getsize(abs_path) if os.path.isfile(abs_path) else 'N/A'}")
 
-        # 只拒绝完全空白的输出
-        stripped = text.strip()
-        if not stripped:
-            return NO_VOICE_MARKER
-        # 去掉失败标记后至少有一个字母/数字/中文
-        clean = stripped.lower()
-        for m in ["[inaudible]", "[unk]", "[silence]", "<unk>"]:
-            clean = clean.replace(m, "")
-        if not clean.strip() or len(re.findall(r"[a-zA-Z0-9一-鿿]", clean)) == 0:
-            return NO_VOICE_MARKER
+    result = model.transcribe(str(abs_path))
+    text = result["text"].strip()
+    logger.info(f"[ASR] 结果: {text[:100]}")
 
-        return text
-    except Exception as e:
-        logger.error(f"[ASR] 转写失败: {e}")
-        return ""
+    stripped = text.strip()
+    if not stripped:
+        return NO_VOICE_MARKER
+
+    # 去掉 ASR 失败标记后无有效内容 → 视为空
+    clean = stripped.lower()
+    for m in ["[inaudible]", "[unk]", "[silence]", "<unk>"]:
+        clean = clean.replace(m, "")
+    if not clean.strip() or len(re.findall(r"[a-zA-Z0-9一-鿿]", clean)) == 0:
+        return NO_VOICE_MARKER
+
+    return text

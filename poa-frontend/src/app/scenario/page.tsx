@@ -59,7 +59,10 @@ export default function ScenarioPage() {
   useEffect(() => {
     if (submitting) {
       timerRef.current = setInterval(() => {
-        setElapsed((s) => s + 1);
+        setElapsed((s) => {
+          if (s === 30) addToast("分析时间较长，请耐心等待...", "error");
+          return s + 1;
+        });
       }, 1000);
       tipTimerRef.current = setInterval(() => {
         setTipIndex((s) => (s + 1) % LOADING_TIPS.length);
@@ -163,8 +166,8 @@ export default function ScenarioPage() {
       if (vlmError) {
         const errorLabels: Record<string, string> = {
           api_key_missing: "API Key 未配置",
-          network_timeout: "网络请求超时",
-          network_error: "网络连接失败",
+          network_timeout: "场景分析超时，请稍后重试（图片过大或服务繁忙）",
+          network_error: "网络连接失败，请检查网络后重试",
           http_error: "模型服务异常",
           json_parse_error: "模型返回解析失败",
           file_not_found: "图片文件丢失",
@@ -175,7 +178,14 @@ export default function ScenarioPage() {
         const fullMsg = vlmError.suggestion ? `${msg} → ${vlmError.suggestion}` : msg;
         addToast(fullMsg, "error");
       } else {
-        addToast(err.message ?? "请求失败，请确认后端已启动", "error");
+        const status = (err as any).status;
+        if (status === 504) {
+          addToast("场景分析超时，图片可能过大或服务繁忙，请稍后重试", "error");
+        } else if (status === 500 || status === 502 || status === 503) {
+          addToast("AI 服务暂时不可用，请稍后重试", "error");
+        } else {
+          addToast(err.message ?? "请求失败，请确认后端已启动", "error");
+        }
       }
     } finally {
       setSubmitting(false);

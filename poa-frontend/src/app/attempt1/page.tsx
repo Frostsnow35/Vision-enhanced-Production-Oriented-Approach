@@ -189,6 +189,7 @@ export default function Attempt1Page() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [turnCount, setTurnCount] = useState(0);
+  const [showGoalModal, setShowGoalModal] = useState(false);
 
   // ---- 会话 refs ----
   const turnsRef = useRef<TurnRecord[]>([]);
@@ -357,23 +358,23 @@ export default function Attempt1Page() {
           }
 
           // Step 2: 发送对话轮次
-          // 从 localStorage 重新读取 task，确保拿到最新数据
-          let taskContext = { id: 0, scene_label: "", roles: "", goal: "" };
+          // 从 localStorage 重新读取 task
+          let taskId = 0;
+          let sceneLabel = "";
+          let rolesVal = "";
           try {
             const raw = localStorage.getItem("currentTask");
             if (raw) {
               const t = JSON.parse(raw);
-              taskContext = {
-                id: t.id ?? t.scenario_id ?? 0,
-                scene_label: t.scene_label || "",
-                roles: t.roles || "",
-                goal: t.goal || "",
-              };
+              taskId = parseInt(String(t.id ?? t.scenario_id ?? 0), 10);
+              sceneLabel = t.scene_label || "";
+              rolesVal = t.roles || "";
             }
           } catch { /* ignore */ }
 
-          const taskId = parseInt(String(taskContext.id), 10);
-          if (isNaN(taskId)) {
+          console.log("[attempt1] task_id:", taskId, "scene:", sceneLabel);
+
+          if (isNaN(taskId) || taskId < 0) {
             alert("任务数据缺失，请重新生成任务");
             return;
           }
@@ -384,36 +385,31 @@ export default function Attempt1Page() {
             body: JSON.stringify({
               task_id: taskId,
               audio_url,
-              scene_label: taskContext.scene_label,
-              roles: taskContext.roles,
-              conversation_history: [],
+              scene_label: sceneLabel,
+              roles: rolesVal,
+              conversation_history: turnsRef.current.map((t) => ({
+                role: "user",
+                text: t.user_text || "",
+              })),
             }),
           });
 
-          // 422: 检查具体原因
-          if (chatRes.status === 422) {
-            const errData = await chatRes.json().catch(() => ({}));
-            if (errData.error === "audio_unclear") {
-              alert("没听清，请重新说一次");
-              return;
-            }
-            // 其他 422：显示详情
-            const detail = JSON.stringify(errData.detail || errData).slice(0, 200);
-            alert("请求数据校验失败: " + detail);
-            return;
-          }
-
+          // 错误处理：区分不同失败原因
           if (!chatRes.ok) {
-            const detail = await chatRes.text().catch(() => "Unknown");
-            throw new Error(`对话请求失败 (${chatRes.status}): ${detail}`);
-          }
-          const chatData = (await chatRes.json()) as { ai_text: string; user_text?: string };
-
-          // 跳过空转写：不加入对话列表
-          if (!chatData.user_text || !chatData.user_text.trim()) {
-            alert("没听清，请重新说一次");
+            const errData = await chatRes.json().catch(() => ({}));
+            const code = errData.error || "";
+            const msg: Record<string, string> = {
+              invalid_audio: "音频文件无效或已过期，请重新录制",
+              empty_audio: "未检测到语音，请大声说话或检查麦克风",
+              transcription_failed: "语音识别服务异常，请稍后重试",
+              upload_failed: "音频上传失败，请检查网络后重试",
+              audio_unclear: "语音未能识别，请大声重新说一次",
+            };
+            alert(msg[code] || errData.message || "发生未知错误，请重试");
             return;
           }
+
+          const chatData = (await chatRes.json()) as { ai_text: string; user_text?: string };
 
           // Step 3: 记录轮次
           turnsRef.current.push({
@@ -528,9 +524,10 @@ export default function Attempt1Page() {
         return;
       }
 
-      // 持久化诊断结果 + 完整转写文本
+      // 持久化诊断结果 + 完整对话文本
       localStorage.setItem("diagnosis", JSON.stringify(data));
-      localStorage.setItem("attempt1_user_texts", JSON.stringify(userTexts));
+      localStorage.setItem("attempt1_conversation", JSON.stringify(fullText));
+      localStorage.setItem("attempt1_text", fullText);
       localStorage.setItem("attempt1_full_text", fullText);
       router.push("/diagnosis");
     } catch (err: any) {
@@ -598,12 +595,28 @@ export default function Attempt1Page() {
             </span>
           </div>
           <div className="min-w-0">
-            <span className="text-muted-foreground">交际目标: </span>
+            <div className="flex items-center gap-1">
+              <span className="text-muted-foreground shrink-0">交际目标: </span>
+              <button onClick={() => setShowGoalModal(true)} className="text-xs text-primary hover:underline shrink-0">展开</button>
+            </div>
             <span className="font-medium text-card-foreground line-clamp-1">
               {task.goal}
             </span>
           </div>
         </div>
+
+        {/* Goal Modal */}
+        {showGoalModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setShowGoalModal(false)}>
+            <div className="mx-4 max-h-[80vh] w-full max-w-lg overflow-y-auto rounded-xl border border-border bg-card p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-card-foreground">交际目标</h3>
+                <button onClick={() => setShowGoalModal(false)} className="text-muted-foreground hover:text-foreground text-xl leading-none">&times;</button>
+              </div>
+              <p className="whitespace-pre-line text-sm leading-relaxed text-card-foreground">{task.goal}</p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ---- 左右分屏主区域 ---- */}
@@ -623,12 +636,17 @@ export default function Attempt1Page() {
             </p>
           )}
 
-          {/* 状态指示器 */}
+          {/* 状态指示器 + 波形 */}
           {recording && (
-            <div className="absolute top-3 left-3 flex items-center gap-2 rounded-full bg-destructive/85 px-3 py-1.5 backdrop-blur-sm">
-              <span className="size-2 animate-pulse rounded-full bg-white" />
-              <span className="text-xs text-white font-medium">录音中</span>
-            </div>
+            <>
+              <div className="absolute top-3 left-3 flex items-center gap-2 rounded-full bg-destructive/85 px-3 py-1.5 backdrop-blur-sm">
+                <span className="size-2 animate-pulse rounded-full bg-white" />
+                <span className="text-xs text-white font-medium">录音中</span>
+              </div>
+              <div className="absolute bottom-3 left-3 right-3">
+                <RecordingWaveform stream={cameraStreamRef.current} isRecording={true} />
+              </div>
+            </>
           )}
           {uploading && (
             <div className="absolute top-3 left-3 flex items-center gap-2 rounded-full bg-primary/85 px-3 py-1.5 backdrop-blur-sm">

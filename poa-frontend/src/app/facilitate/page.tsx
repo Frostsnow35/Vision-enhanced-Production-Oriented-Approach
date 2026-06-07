@@ -21,13 +21,13 @@ import * as echarts from "echarts";
 
 /** 国创标准 7 维度（固定顺序，cnName 匹配后端返回的中文维度名） */
 const RADAR_DIMENSIONS = [
-  { key: "pronunciation",   label: "发音标准度",       cnName: "发音标准度" },
-  { key: "grammar",         label: "语法规范性",       cnName: "语法规范性" },
-  { key: "vocabulary",      label: "词汇适配性",       cnName: "词汇适配性" },
-  { key: "task_completion", label: "语言功能达成度",    cnName: "语言功能达成度" },
-  { key: "pragmatics",      label: "语用策略得体性",    cnName: "语用策略得体性" },
-  { key: "turn_taking",     label: "话语回合适配性",    cnName: "话语回合适配性" },
-  { key: "paralinguistic",  label: "副语言匹配度",     cnName: "副语言匹配度" },
+  { key: "pronunciation",   label: "Pronunciation" },
+  { key: "grammar",         label: "Grammar" },
+  { key: "vocabulary",      label: "Vocabulary" },
+  { key: "task_completion", label: "Task Completion" },
+  { key: "pragmatics",      label: "Pragmatics" },
+  { key: "turn_taking",     label: "Turn-taking" },
+  { key: "paralinguistic",  label: "Paralinguistic" },
 ] as const;
 
 const RADAR_MAX = 10;
@@ -43,37 +43,18 @@ interface EvaluateSingleResponse {
 /* ============================================================
    辅助函数：从可用来源拼凑 attempt1 文本
    ============================================================ */
-function collectAttempt1Text(): string {
-  // 1. 优先从 attempt1_full_text（提交时存储的完整 ASR 转写）读取
+function getAttempt1Text(): string {
+  // 优先从 attempt1_conversation 读取
   try {
-    const raw = localStorage.getItem("attempt1_full_text");
-    if (raw && raw.trim()) return raw;
-  } catch { /* ignore */ }
-
-  // 2. 回退：从 attempt1_user_texts（ASR 转写数组）拼接
-  try {
-    const raw = localStorage.getItem("attempt1_user_texts");
+    const raw = localStorage.getItem("attempt1_conversation");
     if (raw) {
-      const texts = JSON.parse(raw);
-      if (Array.isArray(texts)) {
-        const joined = texts.filter(Boolean).join("\n");
-        if (joined.trim()) return joined;
-      }
+      const parsed = JSON.parse(raw);
+      if (typeof parsed === "string" && parsed.trim()) return parsed;
     }
   } catch { /* ignore */ }
-
-  // 3. 回退：从 diagnosis 的 evidence_sentence 提取
-  try {
-    const raw = localStorage.getItem("diagnosis");
-    if (raw) {
-      const data = JSON.parse(raw);
-      const gaps = Array.isArray(data) ? data : (data.gaps ?? []);
-      const parts = gaps.map((g: { evidence_sentence?: string }) => g.evidence_sentence || "").filter(Boolean);
-      if (parts.length > 0) return parts.join("\n");
-    }
-  } catch { /* ignore */ }
-
-  return "";
+  // 回退
+  const raw2 = localStorage.getItem("attempt1_text") || localStorage.getItem("attempt1_full_text") || "";
+  return raw2.trim();
 }
 
 /* ============================================================
@@ -87,7 +68,7 @@ function EChartsRadar({ data }: { data: EvaluateSingleResponse | null }) {
     // 按 RADAR_DIMENSIONS 固定顺序从 dimension_scores 中取值
     const scores = data?.dimension_scores ?? {};
 
-    const values = RADAR_DIMENSIONS.map((dim) => scores[dim.cnName] ?? 0);
+    const values = RADAR_DIMENSIONS.map((dim) => scores[dim.key] ?? 0);
     const indicator = RADAR_DIMENSIONS.map((dim) => ({
       name: dim.label,
       max: RADAR_MAX,
@@ -170,7 +151,7 @@ function DimensionScoreList({ data }: { data: EvaluateSingleResponse }) {
       <h3 className="text-lg font-semibold text-card-foreground">维度详情</h3>
 
       {RADAR_DIMENSIONS.map((dim) => {
-        const score = scores[dim.cnName] ?? 0;
+        const score = scores[dim.key] ?? 0;
         const comment = comments[dim.cnName] ?? "";
 
         return (
@@ -253,10 +234,11 @@ export default function FacilitatePage() {
       setEvalLoading(true);
       setEvalError("");
       try {
-        const text = collectAttempt1Text();
+        const text = getAttempt1Text();
+        console.log("[facilitate] attempt1_text length:", text.length, "preview:", text.slice(0, 80));
 
-        // 无初次产出记录 → 提前提示
         if (!text.trim()) {
+          alert("未找到对话记录，请重新完成产出");
           setEvalError("未找到初次产出记录，无法评估。请先完成初次产出并提交诊断。");
           setEvalLoading(false);
           return;
@@ -292,6 +274,8 @@ export default function FacilitatePage() {
         }
 
         setEvalData(json as EvaluateSingleResponse);
+        // 保存到 localStorage，供评价页复用
+        localStorage.setItem("attempt1_eval_single", JSON.stringify(json));
       } catch {
         setEvalError("评估数据暂不可用");
       } finally {

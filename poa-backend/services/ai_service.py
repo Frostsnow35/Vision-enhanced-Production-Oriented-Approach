@@ -25,31 +25,24 @@ logger = logging.getLogger("ai_service")
 DOUBAO_CHAT_URL = f"{DOUBAO_BASE_URL}/chat/completions"
 
 _SYSTEM_PROMPT = """\
-看这张照片。判断这是什么场所，然后为照片中的两个人物分别命名角色。
+Look at this photo carefully. Identify the place type, then create a role-play task for English speaking practice.
 
-规则（必须遵守）：
-1. user_role 和 ai_role 必须分开写在两个字段里，绝对禁止合并
-2. 角色必须是照片场景中真实存在的身份。例如：
-   - 医院 → user_role: "患者" / ai_role: "医生"
-   - 咖啡店 → user_role: "顾客" / ai_role: "咖啡师"
-   - 餐厅 → user_role: "食客" / ai_role: "服务员"
-   - 机场 → user_role: "旅客" / ai_role: "值机员"
-   - 图书馆 → user_role: "读者" / ai_role: "管理员"
-   - 商场 → user_role: "顾客" / ai_role: "导购员"
-3. 绝对禁止输出以下词汇：英语教师、教学助手、AI练习伙伴、场景分析专家、教学任务设计者
-4. 角色名要简短，只写身份，不要加描述
+Rules:
+- user_role and ai_role must be SEPARATE fields based on the REAL scene (e.g., hospital=patient/doctor, cafe=customer/barista, restaurant=diner/waiter, airport=traveler/check-in agent, library=reader/librarian, store=customer/clerk)
+- NEVER output: English teacher, AI assistant, teaching designer, practice partner
+- All fields in Chinese
 
-输出 JSON（不要输出其他内容）：
+Output this JSON (be specific and detailed):
 {
-  "scene_label": "场所名称",
+  "scene_label": "place name in Chinese",
   "poa_task": {
-    "user_role": "仅角色名",
-    "ai_role": "仅角色名",
-    "goal": "交际目标",
-    "context_constraints": "语境限制",
-    "evaluation_criteria": ["标准1","标准2","标准3","标准4","标准5"]
+    "user_role": "student plays this person (e.g., customer with lactose intolerance)",
+    "ai_role": "AI plays this person (e.g., busy barista during rush hour)",
+    "goal": "full communication goal with dialogue flow (greeting->ordering->confirming->payment->farewell), 30-50 chars",
+    "context_constraints": "2-3 specific constraints (noise level, time pressure, special requests), 20-40 chars",
+    "evaluation_criteria": ["specific criterion 1", "criterion 2", "criterion 3", "criterion 4"]
   },
-  "variant_plot": "情节变体"
+  "variant_plot": "a twist in the same scene (e.g., wrong order, missing item, price dispute)"
 }"""
 
 
@@ -125,7 +118,7 @@ def analyze_scenario(image_path: str) -> Dict[str, Any]:
     )
     start_time = time.time()
     try:
-        with httpx.Client(timeout=120.0) as client:
+        with httpx.Client(timeout=180.0) as client:
             resp = client.post(
                 DOUBAO_CHAT_URL,
                 headers={
@@ -162,17 +155,14 @@ def analyze_scenario(image_path: str) -> Dict[str, Any]:
         raise
     except httpx.TimeoutException as e:
         elapsed_ms = int((time.time() - start_time) * 1000)
-        logger.error(
-            f"[analyze_scenario] 网络超时 — elapsed_ms={elapsed_ms}\n"
-            f"{traceback.format_exc()}"
-        )
+        logger.error(f"[analyze_scenario] 超时 — {elapsed_ms}ms")
         raise HTTPException(
-            status_code=503,
+            status_code=504,
             detail={
                 "error_type": "network_timeout",
-                "message": "豆包 API 调用超时",
+                "message": "场景分析超时，请稍后重试",
                 "detail": str(e),
-                "suggestion": "请稍后重试",
+                "suggestion": "图片可能过大或服务繁忙，请稍后再试",
             },
         )
     except (httpx.HTTPError, KeyError, json.JSONDecodeError) as e:
@@ -376,99 +366,6 @@ def _call_llm(messages: List[Dict[str, str]], timeout: float = 120.0) -> str:
     return resp.json()["choices"][0]["message"]["content"]
 
 
-def _build_llm_error_gap(reason: str = "API 调用失败") -> Dict[str, Any]:
-    """构建 LLM 调用失败时的降级 Gap 记录，数据结构与正常诊断完全一致。"""
-    return {
-        "gaps": [
-            {
-                "label": "诊断服务暂不可用",
-                "evidence_sentence": "",
-                "explanation": (
-                    f"诊断服务{reason}，请稍后重试。"
-                    f"若持续出现此问题，请检查网络连接或联系管理员。"
-                ),
-            }
-        ]
-    }
-
-
-def _build_input_pack_fallback() -> Dict[str, Any]:
-    """构建学习材料包降级数据，数据结构与 LLM 正常返回完全一致。"""
-    return {
-        "scene_chunks": [
-            {"chunk": "I'd like a ..., please.", "meaning": "我想要一...", "usage": "点单开场句式"},
-            {"chunk": "Could I have ... instead?", "meaning": "可以换成...吗？", "usage": "调整或替换订单"},
-            {"chunk": "for here / to go", "meaning": "堂食 / 外带", "usage": "回应用餐方式询问"},
-            {"chunk": "How much is it?", "meaning": "多少钱？", "usage": "询问价格"},
-            {"chunk": "Thank you. Have a nice day!", "meaning": "谢谢，祝愉快！", "usage": "结束对话"},
-        ],
-        "functional_sentences": [
-            {"function": "打招呼", "sentence": "Hi, I'd like to order ..., please."},
-            {"function": "询问信息", "sentence": "Could you tell me ...?"},
-            {"function": "特殊需求", "sentence": "I'm ... Could you ... instead?"},
-            {"function": "确认", "sentence": "Yes, that's correct. Thank you."},
-            {"function": "结束", "sentence": "Thank you so much. Have a great day!"},
-        ],
-        "demo_dialogue": (
-            "Customer: Hi, I'd like a medium latte, please.\n"
-            "Server: Sure. For here or to go?\n"
-            "Customer: For here, thanks. How much is it?\n"
-            "Server: That'll be $4.50.\n"
-            "Customer: Here's my card. Thank you!\n"
-            "Server: You're welcome. Have a nice day!"
-        ),
-        "strategy_tip": (
-            "（学习材料生成服务暂时不可用，以下为通用策略）\n"
-            "1. 用 'I'd like...' 替代 'I want...' 更礼貌。\n"
-            "2. 'Could you...?' 比 'Can you...?' 更加委婉。\n"
-            "3. 每次互动结尾加上 'please' 和 'thank you'。\n"
-            "4. 没听清时用 'Sorry, could you say that again?'。"
-        ),
-    }
-
-
-def _build_exercises_fallback() -> Dict[str, Any]:
-    """构建练习题降级数据，数据结构与 LLM 正常返回完全一致。"""
-    return {
-        "exercises": [
-            {
-                "id": 1,
-                "type": "multiple_choice",
-                "gap_target": "通用练习",
-                "question": "在服务场景中，以下哪种表达最礼貌得体？",
-                "options": [
-                    {"key": "A", "text": "I want a coffee."},
-                    {"key": "B", "text": "Give me a coffee."},
-                    {"key": "C", "text": "I'd like a coffee, please."},
-                    {"key": "D", "text": "Coffee, now."},
-                ],
-                "answer": "C",
-                "feedback": "C 使用 'I'd like...' + 'please' 是最礼貌的表达。",
-            },
-            {
-                "id": 2,
-                "type": "fill_in_blank",
-                "gap_target": "通用练习",
-                "question": "请填写正确的词：\"Could I have a cappuccino with _____ milk instead of regular milk?\"",
-                "options": [],
-                "answer": "oat",
-                "feedback": "'oat milk' 是常见的植物奶选项，也可用 'almond' 或 'soy'。",
-            },
-        ]
-    }
-
-
-def _build_evaluate_fallback() -> Dict[str, Any]:
-    """构建评价降级数据，数据结构与 LLM 正常返回完全一致。"""
-    dims = ["fluency", "accuracy", "pragmatics", "complexity",
-            "task_completion", "vocabulary", "pronunciation_intonation"]
-    return {
-        "dimension_scores": {d: {"attempt1": 50, "attempt2": 50} for d in dims},
-        "problem_improved": "评价服务暂时不可用，无法生成问题改善分析。请稍后重试。",
-        "full_report": "评价服务暂时不可用，无法生成综合评价报告。请检查网络连接或稍后重试。",
-    }
-
-
 def _parse_json(raw: str) -> Dict[str, Any]:
     """解析 LLM 返回的 JSON，自动处理 markdown 代码块包裹。"""
     raw = raw.strip()
@@ -486,20 +383,20 @@ def _parse_json(raw: str) -> Dict[str, Any]:
 # 2. 产出诊断 → LLM 分析核心不足列表
 # ============================================================
 _DIAGNOSE_PROMPT = """\
-你是一个英语语言诊断专家。请分析学生的英语对话文本，找出 3-5 个核心语言/语用不足（gaps）。
+你是一个严格的英语语言诊断专家。请基于学生的实际对话内容，找出 Top 3 最突出的语言/语用不足（gaps）。
 
-对于每个 gap，请提供：
-- label: 简洁的分类标签（如 "语法-主谓一致缺失"、"词汇-场景术语不准确"、"语用-礼貌策略缺失"）
-- evidence_sentence: 学生原文中的具体句子（必须原样引用）
-- explanation: 中文解释（40-80字），说明为何这是问题、母语者如何表达、如何改进
+重要规则：
+1. 必须引用学生对话中的原始句子作为 evidence_sentence，一字不改。
+2. 绝对禁止编造学生没说过的话。如果对话内容过短或无法找到不足，返回空数组 []。
+3. 每个 gap 的 label 要简洁准确，explanation 用中文解释（40-80字）：为何是问题、对比母语者表达、给出改进示例。
 
-严格输出如下 JSON（不要输出任何其他内容）：
+输出 JSON（不要输出其他内容）：
 {
   "gaps": [
     {
       "label": "语法-主谓一致缺失",
       "evidence_sentence": "He go to school every day.",
-      "explanation": "..."
+      "explanation": "第三人称单数 'he' 后动词应为 'goes' 而非 'go'..."
     }
   ]
 }"""
@@ -568,21 +465,21 @@ def diagnose_attempt(attempt_text: str) -> Dict[str, Any]:
             ]
         }
 
-    try:
-        raw = _call_llm([
-            {"role": "system", "content": _DIAGNOSE_PROMPT},
-            {"role": "user", "content": f"学生对话文本:\n{attempt_text[:3000]}"},
-        ])
-        data = _parse_json(raw)
+    raw = _call_llm([
+        {"role": "system", "content": _DIAGNOSE_PROMPT},
+        {"role": "user", "content": f"学生对话文本:\n{attempt_text[:3000]}"},
+    ])
+    data = _parse_json(raw)
+    # LLM 可能返回 {"gaps": [...]} 或直接返回 [...]
+    if isinstance(data, list):
+        gaps = data
+    elif isinstance(data, dict):
         gaps = data.get("gaps", [])
-        logger.info(f"[diagnose_attempt] LLM 诊断出 {len(gaps)} 个不足")
-        return {"gaps": gaps}
-    except httpx.ReadTimeout:
-        logger.warning("[diagnose_attempt] LLM 调用超时，降级返回")
-        return _build_llm_error_gap("请求超时")
-    except Exception as e:
-        logger.error(f"[diagnose_attempt] LLM 调用失败: {e}，降级返回")
-        return _build_llm_error_gap("暂时不可用")
+    else:
+        logger.error(f"[diagnose_attempt] 无法解析 LLM 返回: {type(data)}")
+        raise ValueError(f"Unexpected LLM response type: {type(data)}")
+    logger.info(f"[diagnose_attempt] LLM 诊断出 {len(gaps)} 个不足")
+    return {"gaps": gaps}
 
 
 # ============================================================
@@ -636,12 +533,9 @@ def generate_input_pack(gaps: List[Dict[str, Any]]) -> Dict[str, Any]:
         data = _parse_json(raw)
         logger.info(f"[generate_input_pack] LLM 生成完成")
         return data
-    except httpx.ReadTimeout:
-        logger.warning("[generate_input_pack] LLM 调用超时，降级返回")
-        return _build_input_pack_fallback()
     except Exception as e:
-        logger.error(f"[generate_input_pack] LLM 调用失败: {e}，降级返回")
-        return _build_input_pack_fallback()
+        logger.error(f"[generate_input_pack] LLM 调用失败: {e}")
+        raise
 
 
 # ============================================================
@@ -707,15 +601,17 @@ def generate_exercises(gaps: List[Dict[str, Any]]) -> Dict[str, Any]:
             {"role": "user", "content": f"学生不足列表:\n{gaps_text}\n\n请生成针对性的练习题。"},
         ])
         data = _parse_json(raw)
-        exercises = data.get("exercises", [])
+        if isinstance(data, list):
+            exercises = data
+        elif isinstance(data, dict):
+            exercises = data.get("exercises", [])
+        else:
+            raise ValueError(f"Unexpected LLM response type: {type(data)}")
         logger.info(f"[generate_exercises] LLM 生成 {len(exercises)} 道题")
         return {"exercises": exercises}
-    except httpx.ReadTimeout:
-        logger.warning("[generate_exercises] LLM 调用超时，降级返回")
-        return _build_exercises_fallback()
     except Exception as e:
-        logger.error(f"[generate_exercises] LLM 调用失败: {e}，降级返回")
-        return _build_exercises_fallback()
+        logger.error(f"[generate_exercises] LLM 调用失败: {e}")
+        raise
 
 
 # ============================================================
@@ -781,9 +677,6 @@ def evaluate(attempt1_text: str, attempt2_text: str) -> Dict[str, Any]:
         data = _parse_json(raw)
         logger.info(f"[evaluate] LLM 评价完成")
         return data
-    except httpx.ReadTimeout:
-        logger.warning("[evaluate] LLM 调用超时，降级返回")
-        return _build_evaluate_fallback()
     except Exception as e:
-        logger.error(f"[evaluate] LLM 调用失败: {e}，降级返回")
-        return _build_evaluate_fallback()
+        logger.error(f"[evaluate] LLM 调用失败: {e}")
+        raise

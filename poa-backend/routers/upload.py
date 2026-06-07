@@ -133,7 +133,10 @@ async def upload_audio(file: UploadFile = File(...)):
             logger.error(f"[upload_audio] 不支持的格式: {ext}")
             raise HTTPException(
                 status_code=400,
-                detail=f"不支持的音频格式 '{ext}'，允许: {allowed_exts}",
+                detail={
+                    "error": "upload_failed",
+                    "message": f"不支持的音频格式 '{ext}'，请使用 webm/mp3/wav/ogg 格式",
+                },
             )
 
         save_dir = os.path.join(UPLOAD_ROOT, "audio")
@@ -157,14 +160,20 @@ async def upload_audio(file: UploadFile = File(...)):
             logger.error(f"[upload_audio] 文件写入失败: {str(e)}")
             raise HTTPException(
                 status_code=500,
-                detail=f"文件保存失败: {str(e)}",
+                detail={
+                    "error": "upload_failed",
+                    "message": "音频文件上传失败，请重试",
+                },
             )
 
         if not os.path.exists(filepath):
             logger.error(f"[upload_audio] 文件保存后不存在: {filepath}")
             raise HTTPException(
                 status_code=500,
-                detail="文件保存失败，请检查目录权限",
+                detail={
+                    "error": "upload_failed",
+                    "message": "音频文件上传失败，请重试",
+                },
             )
 
         audio_url = f"uploads/audio/{filename}"

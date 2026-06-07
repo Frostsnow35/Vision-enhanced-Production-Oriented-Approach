@@ -82,49 +82,71 @@ async def chat_turn(req: ChatTurnRequest):
     1. ASR 转写用户音频 → user_text
     2. LLM 生成 AI 回复 → ai_text
     """
-    task_context = {
-        "scene_label": req.scene_label,
-        "roles": req.roles,
-        "variant_context": req.variant_context,
-    }
+    try:
+        task_context = {
+            "scene_label": req.scene_label,
+            "roles": req.roles,
+            "variant_context": req.variant_context,
+        }
 
-    # 1. ASR 转写
-    audio_path = req.audio_url
-    if audio_path.startswith("/"):
-        audio_path = audio_path[1:]  # 去掉前导 /，变成相对路径
-    if not os.path.isfile(audio_path):
-        logger.warning(f"[chat] 音频文件不可访问: {audio_path}")
-        # 尝试在 uploads 下查找
-        alt_path = os.path.join("uploads", "audio", os.path.basename(audio_path))
-        if os.path.isfile(alt_path):
-            audio_path = alt_path
-        else:
-            return ChatTurnResponse(
-                ai_text="Sorry, I couldn't hear that. Could you try again?",
-                ai_audio_url="",
-                user_text="",
+        # 1. ASR 转写
+        audio_path = req.audio_url
+        if audio_path.startswith("/"):
+            audio_path = audio_path[1:]
+
+        if not os.path.isfile(audio_path):
+            alt_path = os.path.join("uploads", "audio", os.path.basename(audio_path))
+            if os.path.isfile(alt_path):
+                audio_path = alt_path
+            else:
+                return JSONResponse(
+                    status_code=422,
+                    content={
+                        "error": "invalid_audio",
+                        "message": "音频文件无效或已过期，请重新录制",
+                    },
+                )
+
+        try:
+            user_text = transcribe_audio(audio_path)
+        except Exception as e:
+            logger.error(f"[chat] ASR 异常: {e}")
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "error": "transcription_failed",
+                    "message": "语音识别服务异常，请稍后重试",
+                },
             )
 
-    user_text = transcribe_audio(audio_path)
+        if not user_text or not user_text.strip() or user_text == NO_VOICE_MARKER:
+            logger.warning(f"[chat] ASR 空 — text={user_text!r}")
+            return JSONResponse(
+                status_code=422,
+                content={
+                    "error": "empty_audio",
+                    "message": "未检测到语音内容，请大声说话或检查麦克风",
+                },
+            )
 
-    # ASR 失败 / 空转写 → 不调用 LLM，直接返回 422
-    if not user_text or not user_text.strip() or user_text == NO_VOICE_MARKER:
-        logger.warning(f"[chat] ASR 无效 — text={user_text!r}")
-        return JSONResponse(
-            status_code=422,
-            content={
-                "error": "audio_unclear",
-                "message": "语音未能识别，请大声重试。",
-            },
+        logger.info(f"[chat] ASR 结果: {user_text[:100]}")
+
+        ai_text = generate_reply(
+            conversation_history=req.conversation_history,
+            user_text=user_text,
+            task_context=task_context,
         )
 
-    logger.info(f"[chat] ASR 结果: {user_text[:100]}")
+        return ChatTurnResponse(ai_text=ai_text, ai_audio_url="", user_text=user_text)
 
-    # 2. 生成回复
-    ai_text = generate_reply(
-        conversation_history=req.conversation_history,
-        user_text=user_text,
-        task_context=task_context,
-    )
-
-    return ChatTurnResponse(ai_text=ai_text, ai_audio_url="", user_text=user_text)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        logger.error(f"[chat] 未捕获异常: {e}\n{traceback.format_exc()}")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": "internal_error",
+                "message": f"服务器内部错误: {str(e)[:200]}",
+            },
+        )

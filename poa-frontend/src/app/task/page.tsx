@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { usePOA } from "@/lib/store";
@@ -30,6 +31,7 @@ function parseRoles(raw: string): { user: string; ai: string } {
 export default function TaskPage() {
   const router = useRouter();
   const { scenarioResult } = usePOA();
+  const [expandGoal, setExpandGoal] = useState(false);
 
   // ---- 空状态：未接收到任务数据 ----
   if (!scenarioResult) {
@@ -108,38 +110,6 @@ export default function TaskPage() {
         </div>
       </div>
 
-      {/* ---- 原角色双栏（保留兼容）---- */}
-      <div className="grid gap-4 sm:grid-cols-2">
-        <RoleCard
-          label="你的角色"
-          icon={UserIcon}
-          content={userRole}
-          variant="user"
-        />
-        <RoleCard
-          label="对话方"
-          icon={AiIcon}
-          content={aiRole}
-          variant="ai"
-        />
-      </div>
-
-      {/* ---- 角色双栏 ---- */}
-      <div className="grid gap-4 sm:grid-cols-2">
-        <RoleCard
-          label="你的角色"
-          icon={UserIcon}
-          content={userRole}
-          variant="user"
-        />
-        <RoleCard
-          label="对话方"
-          icon={AiIcon}
-          content={aiRole}
-          variant="ai"
-        />
-      </div>
-
       {/* ---- 任务详情卡片 ---- */}
       <div className="rounded-xl border border-border bg-card shadow-sm">
         {/* 交际目标 */}
@@ -149,12 +119,35 @@ export default function TaskPage() {
               <TargetIcon />
             </span>
             <div className="min-w-0">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                交际目标
-              </h3>
-              <p className="mt-1 whitespace-pre-line text-sm leading-relaxed text-card-foreground">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  交际目标
+                </h3>
+                <button
+                  onClick={() => setExpandGoal(true)}
+                  className="text-xs text-primary hover:underline shrink-0 ml-2"
+                >
+                  展开全文
+                </button>
+              </div>
+              <div className="mt-1 max-h-24 overflow-y-auto whitespace-pre-line text-sm leading-relaxed text-card-foreground">
                 {scenarioResult.goal}
-              </p>
+              </div>
+
+              {/* 模态框 */}
+              {expandGoal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setExpandGoal(false)}>
+                  <div className="mx-4 max-h-[80vh] w-full max-w-lg overflow-y-auto rounded-xl border border-border bg-card p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-lg font-semibold text-card-foreground">交际目标</h3>
+                      <button onClick={() => setExpandGoal(false)} className="text-muted-foreground hover:text-foreground text-xl leading-none">&times;</button>
+                    </div>
+                    <p className="whitespace-pre-line text-sm leading-relaxed text-card-foreground">
+                      {scenarioResult.goal}
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

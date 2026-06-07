@@ -33,13 +33,10 @@ async def evaluate_attempts(req: EvaluateRequest):
     """对比改进前后的七维度双轨评价。"""
     if _is_empty_or_no_voice(req.attempt1_text) or _is_empty_or_no_voice(req.attempt2_text):
         return JSONResponse(
-            status_code=200,
+            status_code=422,
             content={
-                "error": "no_voice",
-                "message": "评价文本无效，请确保两次产出均包含有效语音内容。",
-                "dimension_scores": {},
-                "problem_improved": "",
-                "full_report": "",
+                "error": "empty_text",
+                "message": "对话文本不能为空，请确保两次产出均包含有效语音内容。",
             },
         )
     result = evaluate(
