@@ -8,6 +8,7 @@ import { BASE_URL } from "@/lib/api";
 import { getScenarioHistory, isTaskSelectedInSession, markTaskSelectedInSession, type ScenarioHistoryItem, addJourneyEntry, type JourneyDimensionScore } from "@/lib/store";
 import HistoryTaskSelector from "@/components/HistoryTaskSelector";
 import SkeletonCard from "@/components/ui/skeleton-card";
+import ClickableEnglish from "@/components/ClickableEnglish";
 
 /* ============================================================
    类型 & 常量
@@ -284,6 +285,8 @@ export default function EvaluatePage() {
       <div className="flex h-[calc(100vh-100px)] items-center justify-center">
         <div className="w-full max-w-md px-4">
           <HistoryTaskSelector
+            autoRedirectIfEmpty
+            reloadOnSelect
             onSelected={(item: ScenarioHistoryItem) => {
               localStorage.setItem("currentTask", JSON.stringify(item));
               markTaskSelectedInSession();
@@ -448,7 +451,9 @@ export default function EvaluatePage() {
                 </div>
               </div>
 
-              <p className="text-xs text-muted-foreground">{s.explanation || ""}</p>
+              <p className="text-xs text-muted-foreground">
+                {s.explanation ? <ClickableEnglish text={s.explanation} /> : ""}
+              </p>
             </div>
           );
         })}

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { BASE_URL, buildImageUrl } from "@/lib/api";
 import { getScenarioHistory, selectScenario, type ScenarioHistoryItem } from "@/lib/store";
 import HistoryTaskSelector from "@/components/HistoryTaskSelector";
+import ClickableEnglish from "@/components/ClickableEnglish";
 import {
   Camera,
   ClipboardList,
@@ -253,10 +254,10 @@ function DiagnosisContent({ gaps }: { gaps: Record<string, any>[] }) {
             <div className="flex-1">
               <p className="text-sm font-medium text-amber-800">{gap.label || gap.description}</p>
               {gap.suggestion && (
-                <p className="mt-1 text-xs text-amber-600">建议：{gap.suggestion}</p>
+                <p className="mt-1 text-xs text-amber-600">建议：<ClickableEnglish text={gap.suggestion} /></p>
               )}
               {gap.explanation && (
-                <p className="mt-1 text-xs text-amber-600">{gap.explanation}</p>
+                <p className="mt-1 text-xs text-amber-600"><ClickableEnglish text={gap.explanation} /></p>
               )}
             </div>
           </div>
@@ -372,7 +373,7 @@ function EvaluationContent({ evaluation }: { evaluation: Record<string, any> | n
         <div className="space-y-2">
           <p className="text-xs font-medium text-muted-foreground">综合评价</p>
           <pre className="whitespace-pre-wrap rounded-lg bg-muted/30 p-4 text-sm text-card-foreground">
-            {evaluation.full_report}
+            <ClickableEnglish text={evaluation.full_report} />
           </pre>
         </div>
       )}
@@ -381,7 +382,7 @@ function EvaluationContent({ evaluation }: { evaluation: Record<string, any> | n
         <div className="rounded-lg bg-green-50/50 border border-green-100 p-4">
           <p className="text-xs font-medium text-green-700 mb-2">改善情况</p>
           <pre className="whitespace-pre-wrap text-xs text-green-600">
-            {evaluation.problem_improved}
+            <ClickableEnglish text={evaluation.problem_improved} />
           </pre>
         </div>
       )}

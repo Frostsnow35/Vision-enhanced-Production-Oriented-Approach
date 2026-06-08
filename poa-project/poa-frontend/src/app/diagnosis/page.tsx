@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import HistoryTaskSelector from "@/components/HistoryTaskSelector";
 import SkeletonCard from "@/components/ui/skeleton-card";
+import ClickableEnglish from "@/components/ClickableEnglish";
 import {
   getScenarioHistory,
   isTaskSelectedInSession,
@@ -69,6 +70,8 @@ export default function DiagnosisPage() {
       <div className="flex h-[calc(100vh-100px)] items-center justify-center">
         <div className="w-full max-w-md px-4">
           <HistoryTaskSelector
+            autoRedirectIfEmpty
+            reloadOnSelect
             onSelected={(item: ScenarioHistoryItem) => {
               markTaskSelectedInSession();
               localStorage.setItem("currentTask", JSON.stringify(item));
@@ -164,7 +167,7 @@ export default function DiagnosisPage() {
               {gap.evidence_sentence && (
                 <blockquote className="mt-4 rounded-lg border-l-3 border-muted-foreground/30 bg-muted/50 px-4 py-2.5">
                   <p className="text-sm italic text-muted-foreground">
-                    &ldquo;{gap.evidence_sentence}&rdquo;
+                    &ldquo;<ClickableEnglish text={gap.evidence_sentence} />&rdquo;
                   </p>
                 </blockquote>
               )}

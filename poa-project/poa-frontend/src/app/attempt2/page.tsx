@@ -6,7 +6,9 @@ import { Button } from "@/components/ui/button";
 import { BASE_URL, chatStart, chatTurn, type TurnFeedback } from "@/lib/api";
 import RecordingWaveform from "@/components/RecordingWaveform";
 import { getScenarioHistory, isTaskSelectedInSession, markTaskSelectedInSession, type ScenarioHistoryItem } from "@/lib/store";
+import { isDeviceCheckPassed } from "@/lib/device-check";
 import HistoryTaskSelector from "@/components/HistoryTaskSelector";
+import ClickableEnglish from "@/components/ClickableEnglish";
 
 /* ============================================================
    类型定义
@@ -113,9 +115,15 @@ export default function Attempt2Page() {
   const [cameraStatus, setCameraStatus] = useState<"pending" | "ready" | "error">("pending");
   const [micStatus, setMicStatus] = useState<"pending" | "ready" | "error">("pending");
   const [micLevel, setMicLevel] = useState(0);
+  const [micSpectrum, setMicSpectrum] = useState<number[]>(Array(12).fill(0));
   const [showDevicePanel, setShowDevicePanel] = useState(false);
+  const [devicePassed, setDevicePassed] = useState(false);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
+
+  useEffect(() => {
+    setDevicePassed(isDeviceCheckPassed());
+  }, []);
 
   useEffect(() => {
     if (!initDone) return;
@@ -142,12 +150,39 @@ export default function Attempt2Page() {
         const source = ctx.createMediaStreamSource(audioStream);
         source.connect(analyser);
         analyserRef.current = analyser;
-        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+        const timeData = new Uint8Array(analyser.fftSize);
+        const freqData = new Uint8Array(analyser.frequencyBinCount);
+        const BARS = 12;
+        const smoothedBars = Array(BARS).fill(0);
         const updateLevel = () => {
           if (analyserRef.current) {
-            analyserRef.current.getByteFrequencyData(dataArray);
-            const avg = dataArray.reduce((a, b) => a + b) / dataArray.length;
-            setMicLevel(Math.min(avg / 255, 1));
+            // 时域 RMS（对人声敏感）
+            analyserRef.current.getByteTimeDomainData(timeData);
+            let sumSquares = 0;
+            for (let i = 0; i < timeData.length; i++) {
+              const v = (timeData[i] - 128) / 128;
+              sumSquares += v * v;
+            }
+            const rms = Math.sqrt(sumSquares / timeData.length);
+            const boosted = Math.min(rms * 2.5, 1);
+            setMicLevel((prev) => prev * 0.4 + boosted * 0.6);
+
+            // 频谱分桶
+            analyserRef.current.getByteFrequencyData(freqData);
+            const binCount = freqData.length;
+            const buckets: number[] = [];
+            for (let b = 0; b < BARS; b++) {
+              const start = Math.floor((binCount * b) / BARS);
+              const end = Math.floor((binCount * (b + 1)) / BARS);
+              let sum = 0;
+              for (let i = start; i < end; i++) sum += freqData[i];
+              const avg = sum / Math.max(1, end - start);
+              buckets.push(avg / 255);
+            }
+            for (let b = 0; b < BARS; b++) {
+              smoothedBars[b] = smoothedBars[b] * 0.5 + buckets[b] * 0.5;
+            }
+            setMicSpectrum([...smoothedBars]);
           }
           requestAnimationFrame(updateLevel);
         };
@@ -600,10 +635,23 @@ export default function Attempt2Page() {
             </span>
           </div>
           <div className="flex items-center gap-2">
+            {/* 设备检测独立页入口 */}
+            <button
+              onClick={() => router.push("/device-check")}
+              className={`flex items-center gap-1.5 rounded-md px-2 py-1 transition-colors ${
+                devicePassed
+                  ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
+                  : "bg-rose-100 text-rose-700 hover:bg-rose-200"
+              }`}
+              title={devicePassed ? "设备检测已通过" : "点击进行设备检测"}
+            >
+              <span className={`size-2 rounded-full ${devicePassed ? "bg-emerald-500" : "bg-rose-500"}`} />
+              <span>🎛 {devicePassed ? "设备就绪" : "设备检测"}</span>
+            </button>
             <button onClick={() => setShowDevicePanel(!showDevicePanel)} className="flex items-center gap-1.5 rounded-md bg-muted/50 px-2 py-1 hover:bg-muted transition-colors">
               <span className={`size-2 rounded-full ${cameraReady ? "bg-green-500" : "bg-red-500"}`} title="摄像头" />
               <span className={`size-2 rounded-full ${micReady ? "bg-green-500" : "bg-red-500"}`} title="麦克风" />
-              <span className="text-muted-foreground">设备</span>
+              <span className="text-muted-foreground">调试</span>
             </button>
             <span className="rounded-md bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-950 dark:text-amber-400">
               二次产出
@@ -625,8 +673,17 @@ export default function Attempt2Page() {
             {micReady && (
               <div className="flex items-center gap-2">
                 <span className="text-xs text-muted-foreground">音量:</span>
-                <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
-                  <div className="h-full bg-green-500 transition-all duration-100" style={{ width: `${micLevel * 100}%` }} />
+                <div className="flex-1 h-6 flex items-end gap-0.5">
+                  {micSpectrum.map((v, i) => (
+                    <div
+                      key={i}
+                      className="flex-1 rounded-sm transition-all duration-75"
+                      style={{
+                        height: `${Math.max(4, v * 100)}%`,
+                        backgroundColor: v > 0.7 ? "#22c55e" : v > 0.4 ? "#84cc16" : "#3b82f6",
+                      }}
+                    />
+                  ))}
                 </div>
                 <span className="text-xs text-muted-foreground w-9 text-right">{Math.round(micLevel * 100)}%</span>
               </div>
@@ -716,7 +773,7 @@ export default function Attempt2Page() {
                 </p>
               ) : (
                 <p className={`text-xs ${aiSpeaking ? "text-card-foreground" : "text-muted-foreground"}`}>
-                  {subtitle || "按住下方按钮或空格键开始对话"}
+                  {subtitle ? <ClickableEnglish text={subtitle} /> : "按住下方按钮或空格键开始对话"}
                 </p>
               )}
             </div>
@@ -773,13 +830,22 @@ export default function Attempt2Page() {
           </div>
         )}
 
+        {!devicePassed && (
+          <p className="text-center text-xs text-rose-600">
+            请先完成设备检测
+            <button onClick={() => router.push("/device-check")} className="ml-2 underline hover:text-rose-800">
+              去检测
+            </button>
+          </p>
+        )}
+
         <div className="flex items-center gap-3">
           <button
             ref={holdBtnRef}
-            onMouseDown={() => { pressTimerRef.current = setTimeout(() => beginRecord(), 150); }}
+            onMouseDown={() => { if (micReady && !uploading && !isFinal) beginRecord(); }}
             onMouseUp={endRecord}
             onMouseLeave={endRecord}
-            onTouchStart={(e) => { e.preventDefault(); pressTimerRef.current = setTimeout(() => beginRecord(), 150); }}
+            onTouchStart={(e) => { e.preventDefault(); if (micReady && !uploading && !isFinal) beginRecord(); }}
             onTouchEnd={(e) => { e.preventDefault(); endRecord(); }}
             disabled={!micReady || uploading || isFinal}
             className={`

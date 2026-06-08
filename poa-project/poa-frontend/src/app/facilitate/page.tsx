@@ -8,6 +8,7 @@ import { BASE_URL } from "@/lib/api";
 import * as echarts from "echarts";
 import HistoryTaskSelector from "@/components/HistoryTaskSelector";
 import { getScenarioHistory, isTaskSelectedInSession, markTaskSelectedInSession, type ScenarioHistoryItem } from "@/lib/store";
+import { isDeviceCheckPassed } from "@/lib/device-check";
 
 /* ============================================================
    类型 & 常量
@@ -302,8 +303,13 @@ export default function FacilitatePage() {
   // ---- 学习进度 ----
   const [progress, setProgress] = useState<LearningProgress>(getInitialProgress());
   const [expandedDim, setExpandedDim] = useState<string | null>(null);
+  const [devicePassed, setDevicePassed] = useState(false);
 
   // ---- 初始化 ----
+  useEffect(() => {
+    setDevicePassed(isDeviceCheckPassed());
+  }, []);
+
   useEffect(() => {
     if (isTaskSelectedInSession()) {
       let hasData = false;
@@ -586,6 +592,8 @@ export default function FacilitatePage() {
     return (
       <div className="mx-auto max-w-2xl py-8">
         <HistoryTaskSelector
+          autoRedirectIfEmpty
+          reloadOnSelect
           onSelected={(item: ScenarioHistoryItem) => {
             markTaskSelectedInSession();
             localStorage.setItem("currentTask", JSON.stringify(item));
@@ -609,6 +617,21 @@ export default function FacilitatePage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-white to-primary/10">
       <div className="mx-auto max-w-4xl px-4 py-8">
+        {/* 设备检测入口提示 */}
+        <div className={`mb-4 flex items-center justify-between rounded-lg px-4 py-2 text-sm ${
+          devicePassed ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
+        }`}>
+          <span className="flex items-center gap-2">
+            <span className={`size-2 rounded-full ${devicePassed ? "bg-emerald-500" : "bg-rose-500"}`} />
+            {devicePassed ? "设备就绪：摄像头和麦克风可用" : "建议先进行设备检测，确保后续练习顺畅"}
+          </span>
+          <button
+            onClick={() => router.push("/device-check")}
+            className="rounded-md bg-white/60 px-3 py-1 text-xs font-medium hover:bg-white"
+          >
+            {devicePassed ? "重新检测" : "去检测"}
+          </button>
+        </div>
         {/* 顶部渐变区域 */}
         <div className="relative mb-8 overflow-hidden rounded-2xl bg-primary p-8 text-primary-foreground">
           <div className="absolute inset-0 opacity-20">
