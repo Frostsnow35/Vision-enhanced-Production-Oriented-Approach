@@ -6,6 +6,15 @@ import { Button } from "@/components/ui/button";
 import { BASE_URL, buildImageUrl } from "@/lib/api";
 import { getScenarioHistory, selectScenario, type ScenarioHistoryItem } from "@/lib/store";
 import HistoryTaskSelector from "@/components/HistoryTaskSelector";
+import {
+  Camera,
+  ClipboardList,
+  Mic,
+  Search,
+  BookOpen,
+  Repeat,
+  BarChart3,
+} from "lucide-react";
 
 /* ============================================================ */
 interface ReportData {
@@ -25,13 +34,15 @@ function TimelineNode({
   idx,
   icon,
   title,
+  borderColor,
   collapsed,
   onToggle,
   children,
 }: {
   idx: number;
-  icon: string;
+  icon: React.ReactNode;
   title: string;
+  borderColor?: string;
   collapsed: boolean;
   onToggle: () => void;
   children: React.ReactNode;
@@ -40,7 +51,7 @@ function TimelineNode({
     <div className="relative flex gap-4 pb-6 last:pb-0">
       {/* 竖线和图标 */}
       <div className="flex flex-col items-center">
-        <div className="flex size-10 shrink-0 items-center justify-center rounded-full border-2 border-primary/30 bg-gradient-to-br from-primary/10 to-primary/5 text-sm font-bold shadow-sm">
+        <div className={`flex size-10 shrink-0 items-center justify-center rounded-full border-2 ${borderColor || "border-primary/30"} bg-gradient-to-br from-primary/10 to-primary/5 shadow-sm`}>
           {icon}
         </div>
         <div className={`w-0.5 flex-1 transition-colors duration-300 ${collapsed ? "bg-border/50" : "bg-primary/20"}`} />
@@ -67,7 +78,7 @@ function TimelineNode({
         <div
           className={`overflow-hidden transition-all duration-300 ease-out ${collapsed ? "max-h-0 opacity-0" : "max-h-[2000px] opacity-100"}`}
         >
-          <div className="mt-3 rounded-xl border border-border/80 bg-card/80 backdrop-blur-sm p-5 shadow-sm">
+          <div className="mt-3 card backdrop-blur-sm border-border/80 bg-card/80 p-5">
             {children}
           </div>
         </div>
@@ -262,7 +273,7 @@ function FacilitationContent({ packs }: { packs: Record<string, any>[] }) {
   return (
     <div className="space-y-4">
       {packs.map((pack, index) => (
-        <div key={index} className="rounded-lg border border-border/80 p-4">
+        <div key={index} className="card p-4">
           <p className="text-xs font-semibold uppercase tracking-wider text-primary mb-3">{pack.title || `学习材料 ${index + 1}`}</p>
           
           {pack.scene_chunks && (
@@ -557,7 +568,7 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
         </div>
 
         {/* 时间线 */}
-        <div className="rounded-2xl bg-card border border-border/50 p-6 shadow-sm">
+        <div className="card p-6 border-border/50">
           <div className="mb-6">
             <h2 className="text-lg font-semibold text-card-foreground">学习流程</h2>
             <p className="text-sm text-muted-foreground">按时间顺序记录您的学习过程</p>
@@ -566,8 +577,9 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
           <div className="relative ml-2">
             <TimelineNode
               idx={1}
-              icon="📷"
+              icon={<Camera className="size-5 text-sky-500" />}
               title="场景照片"
+              borderColor="border-sky-400/40"
               collapsed={collapsed["scene"] ?? false}
               onToggle={() => toggle("scene")}
             >
@@ -576,8 +588,9 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
 
             <TimelineNode
               idx={2}
-              icon="📋"
+              icon={<ClipboardList className="size-5 text-violet-500" />}
               title="交际任务"
+              borderColor="border-violet-400/40"
               collapsed={collapsed["task"] ?? false}
               onToggle={() => toggle("task")}
             >
@@ -586,8 +599,9 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
 
             <TimelineNode
               idx={3}
-              icon="🎤"
+              icon={<Mic className="size-5 text-fuchsia-500" />}
               title="初次产出"
+              borderColor="border-fuchsia-400/40"
               collapsed={collapsed["attempt1"] ?? false}
               onToggle={() => toggle("attempt1")}
             >
@@ -596,8 +610,9 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
 
             <TimelineNode
               idx={4}
-              icon="🔍"
+              icon={<Search className="size-5 text-red-500" />}
               title="诊断结果"
+              borderColor="border-red-400/40"
               collapsed={collapsed["diagnosis"] ?? false}
               onToggle={() => toggle("diagnosis")}
             >
@@ -606,8 +621,9 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
 
             <TimelineNode
               idx={5}
-              icon="📚"
+              icon={<BookOpen className="size-5 text-emerald-500" />}
               title="促成学习"
+              borderColor="border-emerald-400/40"
               collapsed={collapsed["facilitation"] ?? false}
               onToggle={() => toggle("facilitation")}
             >
@@ -616,8 +632,9 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
 
             <TimelineNode
               idx={6}
-              icon="🎤"
+              icon={<Repeat className="size-5 text-fuchsia-500" />}
               title="二次产出"
+              borderColor="border-fuchsia-400/40"
               collapsed={collapsed["attempt2"] ?? false}
               onToggle={() => toggle("attempt2")}
             >
@@ -626,8 +643,9 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
 
             <TimelineNode
               idx={7}
-              icon="📊"
+              icon={<BarChart3 className="size-5 text-amber-500" />}
               title="双轨评价"
+              borderColor="border-amber-400/40"
               collapsed={collapsed["evaluation"] ?? false}
               onToggle={() => toggle("evaluation")}
             >
