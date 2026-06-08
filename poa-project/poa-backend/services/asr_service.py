@@ -47,23 +47,48 @@ def _load_model():
 
 
 def transcribe_audio(audio_path: str) -> str:
+    text, _ = transcribe_audio_with_timestamps(audio_path)
+    return text
+
+
+def transcribe_audio_with_timestamps(audio_path: str) -> tuple:
+    """
+    @brief 转写音频并返回词级时间戳数据
+    @param audio_path 音频文件路径
+    @return (full_text: str, segments: list[dict])
+            segments 每项: {"start": float, "end": float, "text": str, "confidence": float}
+            若 Whisper 不可用或失败，返回 ("", [])
+    """
     if not os.path.isfile(audio_path):
         logger.error(f"[ASR] 音频文件不存在: {audio_path}")
-        return ""
+        return "", []
 
     if not _check_whisper():
         logger.warning("[ASR] Whisper 不可用，返回空文本")
-        return ""
+        return "", []
 
     try:
         model = _load_model()
         if model is None:
-            return ""
-        logger.info(f"[ASR] 开始转写: {audio_path}")
-        result = model.transcribe(audio_path)
+            return "", []
+        logger.info(f"[ASR] 开始转写(含时间戳): {audio_path}")
+        result = model.transcribe(audio_path, word_timestamps=True)
         text = result["text"].strip()
-        logger.info(f"[ASR] 转写结果: {text[:100]}...")
-        return text
+        raw_segments = result.get("segments", [])
+
+        # 提取词级数据为统一格式
+        segments = []
+        for seg in raw_segments:
+            for w in seg.get("words", []):
+                segments.append({
+                    "start": w.get("start", 0),
+                    "end": w.get("end", 0),
+                    "text": w.get("word", "").strip(),
+                    "confidence": w.get("probability", 0),
+                })
+
+        logger.info(f"[ASR] 转写结果: {text[:100]}... ({len(segments)} words)")
+        return text, segments
     except Exception as e:
         logger.error(f"[ASR] 转写失败: {e}")
-        return ""
+        return "", []

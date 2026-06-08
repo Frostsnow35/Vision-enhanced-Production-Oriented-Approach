@@ -25,6 +25,7 @@ function parseRoles(raw: string): { user: string; ai: string } {
 export default function TaskPage() {
   const router = useRouter();
   const { scenarioResult, setScenarioResult } = usePOA();
+  const [showDetails, setShowDetails] = useState(false);
 
   // ---- 初始化状态 ----
   const [initDone, setInitDone] = useState(false);
@@ -125,9 +126,9 @@ export default function TaskPage() {
       </div>
 
       {/* 场景卡片 */}
-      <div className="relative overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+      <div className="card relative overflow-hidden p-6">
         <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent" />
-        <div className="relative space-y-6 p-6">
+        <div className="relative space-y-6">
           {/* 场景标签 */}
           <div className="flex items-center gap-2">
             <span className="rounded-full bg-primary/10 px-3 py-1 text-sm font-semibold text-primary">
@@ -164,31 +165,68 @@ export default function TaskPage() {
                 交际目标
               </h3>
               <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">
-                <p className="text-sm leading-relaxed text-card-foreground">{task.goal}</p>
+                <div className="space-y-3">
+                  {task.goal.split(/(\d+\.\s*)/).filter(Boolean).map((part, index) => {
+                    const match = part.match(/^(\d+)\.\s*/);
+                    if (match) {
+                      return <span key={index} className="font-medium text-primary">{match[1]}.</span>;
+                    }
+                    const englishMatch = part.match(/^([A-Za-z].*?)(?=\s*[。.，,])/);
+                    const chinesePart = part.replace(/^[A-Za-z].*?[。.，,]\s*/, '').trim();
+                    return (
+                      <div key={index} className="flex flex-col gap-1">
+                        <p className="text-sm leading-relaxed text-card-foreground">{englishMatch?.[1] || part}</p>
+                        {chinesePart && <p className="text-xs leading-relaxed text-muted-foreground">{chinesePart}</p>}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
 
-            {/* 语境提示 */}
-            {task.context && (
-              <div className="space-y-2">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  语境提示
-                </h3>
-                <div className="rounded-lg bg-muted/50 p-4">
-                  <p className="text-sm leading-relaxed text-muted-foreground">{task.context}</p>
+            {/* 详情折叠切换 */}
+            <button
+              onClick={() => setShowDetails(!showDetails)}
+              className="w-full flex items-center justify-between rounded-lg bg-muted/50 px-4 py-2 text-xs font-medium text-muted-foreground hover:bg-muted transition-colors"
+            >
+              <span>约束条件与评价标准</span>
+              <svg
+                className={`size-4 transition-transform duration-200 ${showDetails ? "rotate-180" : ""}`}
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <path d="m6 9 6 6 6-6" />
+              </svg>
+            </button>
+
+            {/* 可折叠详情区 */}
+            {showDetails && (
+              <div className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-200">
+                {/* 语境提示 */}
+                {task.context && (
+                  <div className="space-y-2">
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      语境提示
+                    </h3>
+                    <div className="rounded-lg bg-muted/50 p-4">
+                      <p className="text-sm leading-relaxed text-muted-foreground">{task.context}</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* 成功标准 */}
+                <div className="space-y-2">
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    成功标准
+                  </h3>
+                  <div className="card p-4">
+                    <p className="text-sm leading-relaxed text-card-foreground">{task.evaluation_criteria}</p>
+                  </div>
                 </div>
               </div>
             )}
-
-            {/* 成功标准 */}
-            <div className="space-y-2">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                成功标准
-              </h3>
-              <div className="rounded-lg border border-border bg-card p-4">
-                <p className="text-sm leading-relaxed text-card-foreground">{task.evaluation_criteria}</p>
-              </div>
-            </div>
           </div>
         </div>
       </div>

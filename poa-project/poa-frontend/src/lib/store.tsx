@@ -34,6 +34,23 @@ export interface ScenarioHistoryItem {
   task: ScenarioResult;
 }
 
+// ---- 学习旅程类型（evaluate 完成时写入，用于首页 dashboard） ----
+export interface JourneyDimensionScore {
+  attempt1: number;
+  attempt2: number;
+  change: number;
+}
+
+export interface JourneyEntry {
+  id: string;
+  sceneLabel: string;
+  taskTitle: string;
+  imageUrl?: string;
+  completedAt: number;        // 时间戳
+  avgScore: number;           // 二次产出七维均分
+  dimensionScores: Record<string, JourneyDimensionScore>;
+}
+
 // ---- 场景历史工具函数 ----
 const SCENARIOS_KEY = "poa_scenarios";
 const CURRENT_ID_KEY = "currentScenarioId";
@@ -90,6 +107,34 @@ export function clearSessionTaskMark(): void {
   try {
     sessionStorage.removeItem(SESSION_TASK_KEY);
   } catch { /* ignore */ }
+}
+
+// ---- 学习旅程工具函数（持久化到 localStorage） ----
+const JOURNEY_KEY = "poa_learning_journey";
+
+export function getLearningJourney(): JourneyEntry[] {
+  try {
+    const raw = localStorage.getItem(JOURNEY_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function addJourneyEntry(entry: Omit<JourneyEntry, "id">): JourneyEntry {
+  const list = getLearningJourney();
+  const id = generateId();
+  const newEntry: JourneyEntry = { ...entry, id };
+  // 按场景去重（同一场景更新最新分数）
+  const filtered = list.filter((e) => e.sceneLabel !== newEntry.sceneLabel);
+  filtered.unshift(newEntry);
+  const trimmed = filtered.slice(0, 20);  // 最多保留 20 条
+  localStorage.setItem(JOURNEY_KEY, JSON.stringify(trimmed));
+  return newEntry;
+}
+
+export function clearLearningJourney(): void {
+  localStorage.removeItem(JOURNEY_KEY);
 }
 
 function generateId(): string {

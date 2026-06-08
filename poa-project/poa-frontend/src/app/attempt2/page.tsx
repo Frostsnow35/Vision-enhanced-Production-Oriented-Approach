@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { BASE_URL } from "@/lib/api";
+import { BASE_URL, chatStart, chatTurn, type TurnFeedback } from "@/lib/api";
 import RecordingWaveform from "@/components/RecordingWaveform";
 import { getScenarioHistory, isTaskSelectedInSession, markTaskSelectedInSession, type ScenarioHistoryItem } from "@/lib/store";
 import HistoryTaskSelector from "@/components/HistoryTaskSelector";
@@ -23,6 +23,8 @@ interface ConversationTurn {
   role: "user" | "ai";
   audio_url?: string;
   text?: string;
+  turn_feedback?: TurnFeedback;
+  feedback_collapsed?: boolean;
 }
 
 function parseRoles(raw: string): { user: string; ai: string } {
@@ -104,45 +106,71 @@ export default function Attempt2Page() {
 
   const task = localTask;
 
-  // ---- 摄像头 ----
+  // ---- 摄像头 & 设备状态 ----
   const videoRef = useRef<HTMLVideoElement>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const audioStreamRef = useRef<MediaStream | null>(null);
-  const [cameraReady, setCameraReady] = useState(false);
+  const [cameraStatus, setCameraStatus] = useState<"pending" | "ready" | "error">("pending");
+  const [micStatus, setMicStatus] = useState<"pending" | "ready" | "error">("pending");
+  const [micLevel, setMicLevel] = useState(0);
+  const [showDevicePanel, setShowDevicePanel] = useState(false);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
 
   useEffect(() => {
     if (!initDone) return;
     (async () => {
+      // 摄像头
       try {
-        const camStream = await navigator.mediaDevices.getUserMedia({
-          video: { width: 640, height: 480 },
-          audio: true,
-        });
+        const camStream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
         cameraStreamRef.current = camStream;
         if (videoRef.current) videoRef.current.srcObject = camStream;
-        setCameraReady(true);
-
-        try {
-          const audioStream = await navigator.mediaDevices.getUserMedia({
-            audio: true,
-            video: false,
-          });
-          audioStreamRef.current = audioStream;
-        } catch {
-          audioStreamRef.current = camStream;
+        setCameraStatus("ready");
+      } catch (err) {
+        console.error("摄像头获取失败:", err);
+        setCameraStatus("error");
+      }
+      // 麦克风
+      try {
+        const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        audioStreamRef.current = audioStream;
+        setMicStatus("ready");
+        const ctx = new AudioContext();
+        audioContextRef.current = ctx;
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 256;
+        const source = ctx.createMediaStreamSource(audioStream);
+        source.connect(analyser);
+        analyserRef.current = analyser;
+        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+        const updateLevel = () => {
+          if (analyserRef.current) {
+            analyserRef.current.getByteFrequencyData(dataArray);
+            const avg = dataArray.reduce((a, b) => a + b) / dataArray.length;
+            setMicLevel(Math.min(avg / 255, 1));
+          }
+          requestAnimationFrame(updateLevel);
+        };
+        updateLevel();
+      } catch (err) {
+        console.error("麦克风获取失败:", err);
+        setMicStatus("error");
+        if (cameraStreamRef.current) {
+          audioStreamRef.current = cameraStreamRef.current;
+          setMicStatus("ready");
         }
-      } catch {
-        setCameraReady(false);
       }
     })();
 
     return () => {
       cameraStreamRef.current?.getTracks().forEach((t) => t.stop());
-      audioStreamRef.current
-        ?.getTracks()
-        .forEach((t) => { if (t.kind === "audio") t.stop(); });
+      audioStreamRef.current?.getTracks().forEach((t) => { if (t.kind === "audio") t.stop(); });
+      audioContextRef.current?.close().catch(() => {});
     };
   }, [initDone]);
+
+  const cameraReady = cameraStatus === "ready";
+  const micReady = micStatus === "ready";
 
   // ---- 对话历史 ----
   const [history, setHistory] = useState<ConversationTurn[]>([]);
@@ -152,6 +180,15 @@ export default function Attempt2Page() {
   const [subtitle, setSubtitle] = useState("");
   const startedRef = useRef(false);
   const [isFinal, setIsFinal] = useState(false);
+
+  // ---- 键盘提示自动消失 ----
+  const [showHint, setShowHint] = useState(true);
+  useEffect(() => {
+    if (cameraReady && showHint) {
+      const timer = setTimeout(() => setShowHint(false), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [cameraReady, showHint]);
 
   // ---- 语音识别（Web Speech API）----
   const speechRecognitionRef = useRef<SpeechRecognition | null>(null);
@@ -388,8 +425,14 @@ export default function Attempt2Page() {
       });
 
       if (res.ok) {
-        const data = await res.json() as { ai_text: string; ai_audio_url?: string; is_final?: boolean };
-        const aiTurn: ConversationTurn = { role: "ai", text: data.ai_text, audio_url: data.ai_audio_url };
+        const data = await res.json() as { ai_text: string; ai_audio_url?: string; is_final?: boolean; turn_feedback?: TurnFeedback };
+        const aiTurn: ConversationTurn = {
+          role: "ai",
+          text: data.ai_text,
+          audio_url: data.ai_audio_url,
+          turn_feedback: data.turn_feedback && data.turn_feedback.short_comment ? data.turn_feedback : undefined,
+          feedback_collapsed: false,
+        };
         setHistory((prev) => [...prev, aiTurn]);
         setSubtitle(data.ai_text);
 
@@ -464,6 +507,11 @@ export default function Attempt2Page() {
         })),
         attempt_number: 2,
       };
+      // 收集用户录音的 audio_url，供后续评价页进行发音分析
+      const audioUrls = history.filter(h => h.role === "user" && h.audio_url).map(h => h.audio_url);
+      if (audioUrls.length > 0) {
+        localStorage.setItem("attempt2_audio_urls", JSON.stringify(audioUrls));
+      }
       const res = await fetch(`${BASE_URL}/api/attempt2/submit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -551,10 +599,40 @@ export default function Attempt2Page() {
               {user.split("——")[0]} × {ai.split("——")[0]}
             </span>
           </div>
-          <span className="rounded-md bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-950 dark:text-amber-400">
-            二次产出
-          </span>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setShowDevicePanel(!showDevicePanel)} className="flex items-center gap-1.5 rounded-md bg-muted/50 px-2 py-1 hover:bg-muted transition-colors">
+              <span className={`size-2 rounded-full ${cameraReady ? "bg-green-500" : "bg-red-500"}`} title="摄像头" />
+              <span className={`size-2 rounded-full ${micReady ? "bg-green-500" : "bg-red-500"}`} title="麦克风" />
+              <span className="text-muted-foreground">设备</span>
+            </button>
+            <span className="rounded-md bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-950 dark:text-amber-400">
+              二次产出
+            </span>
+          </div>
         </div>
+        {showDevicePanel && (
+          <div className="rounded-md bg-muted/30 px-3 py-2 space-y-1.5">
+            <div className="flex items-center gap-4 text-xs">
+              <div className="flex items-center gap-1.5">
+                <span className={`size-2 rounded-full ${cameraStatus === "ready" ? "bg-green-500" : cameraStatus === "error" ? "bg-red-500" : "bg-yellow-500"}`} />
+                <span>摄像头: {cameraStatus === "ready" ? "正常" : cameraStatus === "error" ? "失败" : "初始化中"}</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className={`size-2 rounded-full ${micStatus === "ready" ? "bg-green-500" : micStatus === "error" ? "bg-red-500" : "bg-yellow-500"}`} />
+                <span>麦克风: {micStatus === "ready" ? "正常" : micStatus === "error" ? "失败" : "初始化中"}</span>
+              </div>
+            </div>
+            {micReady && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">音量:</span>
+                <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                  <div className="h-full bg-green-500 transition-all duration-100" style={{ width: `${micLevel * 100}%` }} />
+                </div>
+                <span className="text-xs text-muted-foreground w-9 text-right">{Math.round(micLevel * 100)}%</span>
+              </div>
+            )}
+          </div>
+        )}
         {task.variant_plot && (
           <div className="flex items-start gap-1.5">
             <span className="mt-0.5 shrink-0 text-[10px] text-amber-600 dark:text-amber-400">◆</span>
@@ -646,6 +724,40 @@ export default function Attempt2Page() {
             <p className="text-xs text-muted-foreground/60">
               已对话 {history.length} 轮
             </p>
+            {(() => {
+              const lastFb = [...history].reverse().find((h) => h.role === "ai" && h.turn_feedback);
+              if (!lastFb || !lastFb.turn_feedback) return null;
+              const fb = lastFb.turn_feedback;
+              const collapsed = !!lastFb.feedback_collapsed;
+              const colorMap: Record<string, string> = {
+                "发音标准度": "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
+                "语法规范性": "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300",
+                "词汇适配性": "bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300",
+                "语言功能达成度": "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
+                "语用策略得体性": "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
+                "话语回适合配性": "bg-cyan-100 text-cyan-700 dark:bg-cyan-950 dark:text-cyan-300",
+                "副语言匹配度": "bg-pink-100 text-pink-700 dark:bg-pink-950 dark:text-pink-300",
+              };
+              return (
+                <div className="max-w-[90%] w-full rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 mt-1 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex flex-wrap gap-1">
+                      {fb.dimensions.length > 0 ? fb.dimensions.map((d) => (
+                        <span key={d} className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${colorMap[d] || "bg-muted text-muted-foreground"}`}>{d}</span>
+                      )) : <span className="text-[10px] text-muted-foreground">本轮反馈</span>}
+                    </div>
+                    <button
+                      onClick={() => setHistory((prev) => prev.map((h, i) => i === prev.findLastIndex((x) => x === lastFb) ? { ...h, feedback_collapsed: !collapsed } : h))}
+                      className="text-muted-foreground/60 hover:text-muted-foreground transition-colors text-xs"
+                      title={collapsed ? "展开" : "折叠"}
+                    >
+                      {collapsed ? "▼" : "▲"}
+                    </button>
+                  </div>
+                  {!collapsed && <p className="text-xs text-card-foreground/80 leading-relaxed">{fb.short_comment}</p>}
+                </div>
+              );
+            })()}
           </div>
         </div>
       </div>
@@ -669,25 +781,33 @@ export default function Attempt2Page() {
             onMouseLeave={endRecord}
             onTouchStart={(e) => { e.preventDefault(); pressTimerRef.current = setTimeout(() => beginRecord(), 150); }}
             onTouchEnd={(e) => { e.preventDefault(); endRecord(); }}
-            disabled={uploading || !cameraReady || isFinal}
+            disabled={!micReady || uploading || isFinal}
             className={`
               shrink-0 select-none rounded-full px-8 py-3 text-sm font-semibold transition-all duration-150
               active:scale-95 touch-none
               ${recording
-                ? "bg-destructive text-destructive-foreground shadow-lg scale-105"
-                : uploading || isFinal
+                ? elapsed >= 28
+                  ? "bg-destructive text-destructive-foreground shadow-lg scale-105 animate-pulse"
+                  : elapsed >= 25
+                    ? "bg-amber-500 text-white shadow-lg scale-105"
+                    : "bg-destructive text-destructive-foreground shadow-lg scale-105"
+                : !micReady
                   ? "bg-muted text-muted-foreground cursor-not-allowed"
-                  : "bg-primary text-primary-foreground shadow-md hover:shadow-lg hover:bg-primary/90"
+                  : uploading || isFinal
+                    ? "bg-muted text-muted-foreground cursor-not-allowed"
+                    : "bg-primary text-primary-foreground shadow-md hover:bg-primary/90"
               }
             `}
           >
-            {recording
-              ? `松开停止 (${formatTime(elapsed)})`
-              : uploading
-                ? "处理中..."
-                : isFinal
-                  ? "对话已结束"
-                  : "按住说话"}
+            {!micReady
+              ? "麦克风未就绪"
+              : recording
+                ? `松开停止 (${formatTime(elapsed)})`
+                : uploading
+                  ? "处理中..."
+                  : isFinal
+                    ? "对话已结束"
+                    : "按住说话"}
           </button>
 
           <span className="hidden sm:inline text-xs text-muted-foreground">

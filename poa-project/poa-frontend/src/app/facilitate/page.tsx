@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import SkeletonCard from "@/components/ui/skeleton-card";
 import { BASE_URL } from "@/lib/api";
 import * as echarts from "echarts";
 import HistoryTaskSelector from "@/components/HistoryTaskSelector";
@@ -447,10 +448,14 @@ export default function FacilitatePage() {
           /* ignore */
         }
 
+        const audioPaths = JSON.parse(localStorage.getItem("attempt1_audio_urls") || "[]");
         const res = await fetch(`${BASE_URL}/api/evaluate-single`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ conversation_text: text || "no text" }),
+          body: JSON.stringify({
+            conversation_text: text || "no text",
+            audio_paths: audioPaths,
+          }),
         });
         if (res.ok) {
           const data = await res.json();
@@ -658,7 +663,7 @@ export default function FacilitatePage() {
 
         {/* Tab 导航 */}
         <div className="mb-6">
-          <div className="flex flex-wrap gap-2 bg-card rounded-xl p-2 shadow-sm border border-border">
+          <div className="card flex flex-wrap gap-2 p-2">
             {(Object.keys(TAB_LABELS) as TabKey[]).map((t) => (
               <button
                 key={t}
@@ -689,7 +694,8 @@ export default function FacilitatePage() {
         </div>
 
         {/* 内容区 */}
-        <div className="rounded-2xl border border-border bg-card p-8 shadow-lg">
+        <div className="card p-8" key={tab}>
+          <div className="transition-opacity duration-200">
           {tab === "assessment" && (
             <AssessmentTab
               scores={scores}
@@ -755,8 +761,8 @@ export default function FacilitatePage() {
           )}
           {tab === "exercises" && (
             materialsLoading ? (
-              <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
-                正在生成即时练习...
+              <div className="flex items-center justify-center py-16">
+                <SkeletonCard card lines={4} width="max-w-md" />
               </div>
             ) : (
               <ExercisesTab
@@ -776,10 +782,11 @@ export default function FacilitatePage() {
               />
             )
           )}
+          </div>
         </div>
 
         {/* 底部操作区域 */}
-        <div className="mt-8 rounded-2xl border border-border bg-card p-6 shadow-lg">
+        <div className="mt-8 card p-6">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
             <div>
               <p className="text-sm font-medium text-foreground">准备好继续了吗？</p>
@@ -787,13 +794,9 @@ export default function FacilitatePage() {
                 完成学习后，用改进的表达进行第二次产出
               </p>
             </div>
-            <Button
-              size="lg"
-              className="w-full sm:w-auto bg-primary hover:bg-primary/80 text-primary-foreground shadow-lg hover:shadow-xl transition-all"
-              onClick={() => router.push("/attempt2")}
-            >
+              <button key="continue" className="w-full sm:w-auto card bg-primary hover:bg-primary/80 text-primary-foreground px-8 py-3 text-sm font-semibold transition-all" onClick={() => router.push("/attempt2")}>
               完成学习，进入二次产出 →
-            </Button>
+            </button>
           </div>
         </div>
       </div>
@@ -904,8 +907,8 @@ function AssessmentTab({
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
-        正在加载能力评估...
+      <div className="flex items-center justify-center py-16">
+        <SkeletonCard card lines={4} width="max-w-md" />
       </div>
     );
   }
@@ -1036,7 +1039,7 @@ function AssessmentTab({
           {DIM_ORDER.filter((d) => d in scoreMap).map((dim) => (
             <div
               key={dim}
-              className="rounded-xl border border-border bg-card p-4 hover:shadow-md transition-shadow"
+              className="card p-4 hover:shadow-md transition-shadow"
             >
               <div className="flex items-start justify-between">
                 <div className="flex-1">
@@ -1385,10 +1388,15 @@ function ExercisesTab({
               }`}
             >
               <div className="mb-4">
-                <div className="flex items-center gap-2 mb-2">
+                <div className="flex items-center gap-2 mb-2 flex-wrap">
                   <span className="text-xs font-bold text-primary-foreground bg-primary px-3 py-1 rounded-full">
                     第 {i + 1} 题
                   </span>
+                  {ex.gap_target && (
+                    <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300 border border-rose-200/50">
+                      🎯 针对你的 {ex.gap_target} 问题
+                    </span>
+                  )}
                   {revealed && (
                     <span
                       className={`text-xs font-bold px-3 py-1 rounded-full ${

@@ -149,10 +149,16 @@ export interface ChatStartResponse {
   ai_audio_url: string;
 }
 
+export interface TurnFeedback {
+  dimensions: string[];   // 七维名称（最多 3 个）
+  short_comment: string;  // 15-30 字短评（引用用户本轮原文中具体词句）
+}
+
 export interface ChatTurnResponse {
   ai_text: string;
   ai_audio_url: string;
   is_final: boolean;
+  turn_feedback?: TurnFeedback;  // 实时短反馈；空对象时前端不渲染
 }
 
 export async function chatStart(

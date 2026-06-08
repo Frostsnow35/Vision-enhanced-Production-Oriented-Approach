@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import HistoryTaskSelector from "@/components/HistoryTaskSelector";
+import SkeletonCard from "@/components/ui/skeleton-card";
 import {
   getScenarioHistory,
   isTaskSelectedInSession,
@@ -128,42 +129,59 @@ export default function DiagnosisPage() {
 
       {/* ---- Gap 卡片列表 ---- */}
       <div className="space-y-4">
-        {gaps?.map((gap, i) => (
-          <div
-            key={i}
-            className="rounded-xl border border-border bg-card p-6 shadow-sm"
-          >
-            {/* 序号 + 标签 */}
-            <div className="flex items-center gap-3">
-              <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-destructive/10 text-sm font-bold text-destructive">
-                {i + 1}
-              </span>
-              <h3 className="text-lg font-semibold text-destructive">
-                {gap.label}
-              </h3>
-            </div>
+        {gaps?.map((gap, i) => {
+          const borderColor =
+            i === 0
+              ? "border-l-4 border-l-destructive"
+              : i === 1
+                ? "border-l-4 border-l-amber-500"
+                : i === 2
+                  ? "border-l-4 border-l-muted-foreground"
+                  : "";
+          return (
+            <div
+              key={i}
+              className={`card p-6 relative ${borderColor}`}
+            >
+              {/* 最需关注角标 */}
+              {i === 0 && (
+                <span className="absolute -top-2 -right-2 rounded-full bg-destructive px-2.5 py-0.5 text-xs font-bold text-destructive-foreground shadow">
+                  最需关注
+                </span>
+              )}
 
-            {/* 证据句 */}
-            {gap.evidence_sentence && (
-              <blockquote className="mt-4 rounded-lg border-l-3 border-muted-foreground/30 bg-muted/50 px-4 py-2.5">
-                <p className="text-sm italic text-muted-foreground">
-                  &ldquo;{gap.evidence_sentence}&rdquo;
+              {/* 序号 + 标签 */}
+              <div className="flex items-center gap-3">
+                <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-destructive/10 text-sm font-bold text-destructive">
+                  {i + 1}
+                </span>
+                <h3 className="text-lg font-semibold text-destructive">
+                  {gap.label}
+                </h3>
+              </div>
+
+              {/* 证据句 */}
+              {gap.evidence_sentence && (
+                <blockquote className="mt-4 rounded-lg border-l-3 border-muted-foreground/30 bg-muted/50 px-4 py-2.5">
+                  <p className="text-sm italic text-muted-foreground">
+                    &ldquo;{gap.evidence_sentence}&rdquo;
+                  </p>
+                </blockquote>
+              )}
+
+              {/* 解释 */}
+              {gap.explanation && (
+                <p className="mt-4 text-sm leading-relaxed text-card-foreground">
+                  {gap.explanation}
                 </p>
-              </blockquote>
-            )}
-
-            {/* 解释 */}
-            {gap.explanation && (
-              <p className="mt-4 text-sm leading-relaxed text-card-foreground">
-                {gap.explanation}
-              </p>
-            )}
-          </div>
-        ))}
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {/* ---- 底部按钮 ---- */}
-      <div className="flex items-center justify-between rounded-xl border border-border bg-card px-6 py-4 shadow-sm">
+      <div className="card flex items-center justify-between px-6 py-4">
         <p className="text-sm text-muted-foreground">
           查看诊断结果后，进入针对性的促成学习
         </p>

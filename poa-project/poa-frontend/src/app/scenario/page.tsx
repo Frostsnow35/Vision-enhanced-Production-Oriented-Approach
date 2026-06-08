@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, type DragEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { Upload } from "lucide-react";
 import { uploadImage, type ScenarioResult, BASE_URL, buildImageUrl } from "@/lib/api";
 import { usePOA, getScenarioHistory, addScenarioToHistory, removeScenarioFromHistory, selectScenario, createScenarioFromResult, type ScenarioHistoryItem } from "@/lib/store";
 
@@ -190,9 +191,9 @@ export default function ScenarioPage() {
       </header>
 
       {/* 上传区域 */}
-      <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
+      <div className="card min-h-[320px] flex flex-col items-center justify-center p-6">
         {previewUrl ? (
-          <div className="space-y-4">
+          <div className="w-full space-y-4">
             <div className="overflow-hidden rounded-xl border border-border bg-muted/30">
               <img src={previewUrl} alt="预览" className="mx-auto max-h-64 w-full object-contain" />
             </div>
@@ -202,19 +203,17 @@ export default function ScenarioPage() {
             </div>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="w-full space-y-3">
             <label
               onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}
-              className={`flex cursor-pointer flex-col items-center gap-3 rounded-xl border-2 border-dashed px-6 py-12 text-center transition-colors ${
-                isDragging ? "border-primary bg-primary/5" : "border-border hover:border-muted-foreground/30 hover:bg-muted/20"
+              className={`flex cursor-pointer flex-col items-center gap-4 rounded-xl border-2 border-dashed px-6 py-12 text-center transition-colors ${
+                isDragging ? "border-primary bg-primary/5" : "border-muted-foreground/30 hover:border-muted-foreground/50 hover:bg-muted/20"
               }`}
             >
-              <svg className={`size-10 transition-colors ${isDragging ? "text-primary" : "text-muted-foreground/50"}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
-              </svg>
+              <Upload className={`w-14 h-14 transition-colors ${isDragging ? "text-primary" : "text-muted-foreground/40"}`} />
               <div className="space-y-1">
-                <p className="text-sm font-medium text-card-foreground">{isDragging ? "释放以上传图片" : "拖拽图片到此处，或点击选择"}</p>
-                <p className="text-xs text-muted-foreground">支持 JPG / PNG 格式，单张 ≤ 5MB</p>
+                <p className="text-sm text-muted-foreground">{isDragging ? "释放以上传图片" : "拖拽照片到此处 或 点击选择文件"}</p>
+                <p className="text-xs text-muted-foreground/60">支持 JPG / PNG 格式，单张 ≤ 5MB</p>
               </div>
               <input ref={fileInputRef} type="file" accept="image/jpeg,image/png" onChange={onFileInputChange} className="hidden" />
             </label>
@@ -224,35 +223,40 @@ export default function ScenarioPage() {
       </div>
 
       {/* 提交按钮 */}
-      <Button size="lg" className="w-full" disabled={!uploadedFile || submitting} onClick={handleGenerate}>
+      <Button size="lg" className="btn-hover w-full" disabled={!uploadedFile || submitting} onClick={handleGenerate}>
         {submitting ? (
-          <span className="flex items-center gap-2">
-            <svg className="size-4 animate-spin" viewBox="0 0 24 24" fill="none">
-              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" className="opacity-25" />
-              <path d="M4 12a8 8 0 018-8" stroke="currentColor" strokeWidth="4" className="opacity-75" />
-            </svg>
-            分析中...
+          <span className="flex items-center gap-3">
+            <div className="relative">
+              <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" className="opacity-25" />
+                <path d="M4 12a8 8 0 018-8" stroke="currentColor" strokeWidth="3" className="opacity-75" strokeLinecap="round" />
+              </svg>
+            </div>
+            <span className="flex flex-col items-start">
+              <span className="text-sm font-medium">分析中</span>
+              <span className="text-xs opacity-70">正在识别场景并生成任务...</span>
+            </span>
           </span>
         ) : "生成交际任务"}
       </Button>
 
       {/* 历史场景列表 */}
       {history.length > 0 && (
-        <div className="space-y-4">
-          <div className="flex items-center gap-2">
+        <div className="mt-6 overflow-x-auto">
+          <div className="flex items-center gap-2 mb-3">
             <h2 className="text-lg font-semibold text-card-foreground">历史场景</h2>
             <span className="rounded-md bg-muted px-2 py-0.5 text-xs text-muted-foreground">{history.length}</span>
           </div>
 
-          <div className="space-y-3">
+          <div className="flex gap-3 pb-2">
             {history.map((item) => (
-              <button
+              <div
                 key={item.id}
                 onClick={() => handleSelectHistory(item.id)}
-                className="w-full flex items-center gap-4 rounded-xl border border-border bg-card p-4 text-left shadow-sm transition-all hover:border-primary/40 hover:shadow-md"
+                className="shrink-0 w-40 card cursor-pointer hover:shadow-md transition-shadow p-3"
               >
                 {/* 缩略图 */}
-                <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted">
+                <div className="flex size-full aspect-[4/3] items-center justify-center overflow-hidden rounded-md bg-muted mb-2">
                   {item.imageUrl ? (
                     <img
                       src={item.imageUrl.startsWith("http") ? item.imageUrl : buildImageUrl(item.imageUrl)}
@@ -270,35 +274,32 @@ export default function ScenarioPage() {
                 </div>
 
                 {/* 信息 */}
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-card-foreground truncate">{item.sceneLabel}</p>
-                  <p className="text-xs text-muted-foreground/70 truncate">{item.goal.slice(0, 60)}</p>
-                  <p className="mt-0.5 text-xs text-muted-foreground/50">{formatTime(item.createdAt)}</p>
+                <p className="text-xs font-medium text-card-foreground truncate">{item.sceneLabel}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground/50">{formatTime(item.createdAt)}</p>
+
+                {/* 操作按钮 */}
+                <div className="flex items-center gap-1 mt-2">
+                  <span
+                    onClick={(e) => handleReanalyze(item, e)}
+                    className="inline-flex items-center justify-center size-6 cursor-pointer rounded text-muted-foreground/40 transition-colors hover:bg-primary/10 hover:text-primary"
+                    title="重新分析"
+                  >
+                    <svg className="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="23 4 23 10 17 10" />
+                      <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                    </svg>
+                  </span>
+                  <span
+                    onClick={(e) => handleDeleteHistory(item.id, e)}
+                    className="inline-flex items-center justify-center size-6 cursor-pointer rounded text-muted-foreground/40 transition-colors hover:bg-destructive/10 hover:text-destructive"
+                    title="删除"
+                  >
+                    <svg className="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                      <path d="M18 6L6 18M6 6l12 12" />
+                    </svg>
+                  </span>
                 </div>
-
-                {/* 重新分析 */}
-                <span
-                  onClick={(e) => handleReanalyze(item, e)}
-                  className="shrink-0 cursor-pointer rounded-lg p-1.5 text-muted-foreground/40 transition-colors hover:bg-primary/10 hover:text-primary"
-                  title="重新分析"
-                >
-                  <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="23 4 23 10 17 10" />
-                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-                  </svg>
-                </span>
-
-                {/* 删除 */}
-                <span
-                  onClick={(e) => handleDeleteHistory(item.id, e)}
-                  className="shrink-0 cursor-pointer rounded-lg p-1.5 text-muted-foreground/40 transition-colors hover:bg-destructive/10 hover:text-destructive"
-                  title="删除"
-                >
-                  <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                    <path d="M18 6L6 18M6 6l12 12" />
-                  </svg>
-                </span>
-              </button>
+              </div>
             ))}
           </div>
         </div>

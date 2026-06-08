@@ -242,9 +242,12 @@ class EvaluateRequest(BaseModel):
 
 
 class DimensionScore(BaseModel):
-    """单维度前后对比分数"""
+    """单维度前后对比分数（严格对齐 Excel 七维评分表）"""
     attempt1: float
     attempt2: float
+    change: float
+    weight: float
+    comment: str = ""
 
 
 class EvaluateResponse(BaseModel):

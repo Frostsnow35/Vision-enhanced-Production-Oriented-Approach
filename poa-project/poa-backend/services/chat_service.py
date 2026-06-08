@@ -25,8 +25,12 @@ Generate the FIRST opening line to start the conversation.
 Your opening must:
 - Fit the scene, your role, and the communicative goal.
 - Be a natural opener that invites the student to speak (ask a question or offer service).
+- Use scene-specific vocabulary: mention actual products/services/locations relevant to the scene (e.g. latte/espresso for cafe, boarding gate/luggage for airport, appointment/prescription for hospital).
+- Reflect your role's tone: friendly and warm for service roles, professional and calm for medical/library roles.
+- If the variant context implies a problem (mistake/delay/complaint), start by acknowledging it before asking.
 - Keep it under 30 words.
-- DO NOT output anything other than the opening sentence."""
+- DO NOT output anything other than the opening sentence.
+- NEVER use generic openers like "Hi there! What can I get for you today?" or "Hello! How can I help you today?" — be specific to THIS scene."""
 
 # ---- 回复 Prompt ----
 _REPLY_PROMPT = """\
@@ -64,6 +68,92 @@ Example: "You're all set! Enjoy your coffee. [CONVERSATION_COMPLETE]"
 
 7. STYLE
 Reply in English. Keep responses concise but use natural, conversational full sentences. Do NOT use markdown. Do NOT explain your teaching strategy. Use appropriate politeness for your role."""
+
+
+# ---- 实时短反馈 Prompt ----
+_TURN_FEEDBACK_PROMPT = """\
+You are an English oral practice evaluator. Given the student's most recent message in the conversation, give a SHORT, specific feedback for this turn.
+
+【Rules】
+1. Identify up to 3 dimensions this turn touches (use these EXACT Chinese names from the seven-dimension evaluation system):
+   - 发音标准度
+   - 语法规范性
+   - 词汇适配性
+   - 语言功能达成度
+   - 语用策略得体性
+   - 话语回适合配性
+   - 副语言匹配度
+   Note: For text-only input, prefer 语法规范性 / 词汇适配性 / 语用策略得体性 / 话语回适合配性.
+2. short_comment (15-30 Chinese chars): must quote the student's exact wording or specific words from this turn. Be specific and actionable.
+3. If the student input is [inaudible] / empty / garbled, return empty dimensions and a short comment asking them to repeat.
+
+【Output】STRICT JSON, nothing else:
+{
+  "dimensions": ["语法规范性", "语用策略得体性"],
+  "short_comment": "建议用 'I would like' 替代 'I want'，表达更礼貌。"
+}
+"""
+
+
+def _generate_turn_feedback(user_text: str, ai_text: str, task_context: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    为本轮对话生成实时短反馈。失败时返回空 dict，前端不渲染卡片。
+    使用 LLM（doubao），失败返回 {}。
+    """
+    # 兜底过滤：inaudible / 过短 / 包含方括号噪点
+    if not user_text or user_text.strip() in ("[inaudible]", "[silence]", "", "[audio message]"):
+        return {
+            "dimensions": ["话语回适合配性"],
+            "short_comment": "没有听清，请再试一次。",
+        }
+    if len(user_text.strip()) < 3:
+        return {}
+
+    try:
+        scene = task_context.get("scene_label", "")
+        prompt = (
+            f"Scene: {scene}\n"
+            f"Student's most recent message: \"{user_text[:300]}\"\n"
+            f"AI's reply (for context): \"{(ai_text or '')[:200]}\"\n"
+            "Generate the feedback JSON now."
+        )
+        body = {
+            "model": DOUBAO_MODEL_ID,
+            "messages": [
+                {"role": "system", "content": _TURN_FEEDBACK_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
+        }
+        with httpx.Client(timeout=12.0) as client:
+            resp = client.post(
+                DOUBAO_CHAT_URL,
+                headers={
+                    "Authorization": f"Bearer {DOUBAO_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json=body,
+            )
+            resp.raise_for_status()
+        text = resp.json()["choices"][0]["message"]["content"].strip()
+        import json as _json
+        # 容忍 markdown code fence
+        cleaned = text
+        if cleaned.startswith("```"):
+            cleaned = cleaned.split("```", 2)[1]
+            if cleaned.startswith("json"):
+                cleaned = cleaned[4:]
+            cleaned = cleaned.strip()
+        data = _json.loads(cleaned)
+        dims = data.get("dimensions", []) or []
+        comment = (data.get("short_comment") or "").strip()
+        # 字段裁剪：dimensions ≤ 3，short_comment ≤ 80 字
+        dims = [d for d in dims if isinstance(d, str)][:3]
+        if len(comment) > 80:
+            comment = comment[:78] + "..."
+        return {"dimensions": dims, "short_comment": comment}
+    except Exception as e:
+        logger.warning(f"[chat] turn_feedback 生成失败: {e}")
+        return {}
 
 
 # ============================================================
@@ -116,27 +206,84 @@ def generate_opening(task_context: Dict[str, Any]) -> str:
 
 def _mock_opening(scene: str, roles: str, variant: str) -> str:
     label = (scene + roles + variant).lower()
-    if not variant:
-        if "咖啡" in label or "cafe" in label:
-            return "Hi there! What can I get for you today?"
-        if "图书馆" in label or "library" in label:
-            return "Welcome to the library! How can I help you find what you need?"
-        if "餐厅" in label or "restaurant" in label:
-            return "Good evening! Do you have a reservation?"
-        if "医院" in label or "hospital" in label:
-            return "Hello, how can I help you today?"
-        if "机场" in label or "airport" in label:
-            return "Good morning! Where are you flying to today?"
-        if "商场" in label or "mall" in label:
-            return "Hello! Welcome! How can I assist you?"
-        return "Hello! How can I help you today?"
 
-    # 变体开场白
+    # 变体开场白（先检查，因为变体优先匹配）
     if "做错" in variant or "mistake" in label or "wrong" in label:
-        return "I'm sorry about that. Let me check what went wrong with your order."
-    if "优惠" in variant or "discount" in label or "sale" in label:
-        return "Welcome! Just so you know, we have a special promotion today. How can I help?"
-    return "Let's continue. How can I assist you this time?"
+        return random.choice([
+            "I'm so sorry about that! Let me check what went wrong and fix it for you.",
+            "Oh, I see there's been a mistake. Let me sort this out right away.",
+            "I apologize for the mix-up. Could you tell me exactly what happened?",
+        ])
+    if "优惠" in variant or "discount" in label or "sale" in label or "promo" in label:
+        return random.choice([
+            "Welcome! Just so you know, we're running a special promotion today — 20% off on all items. How can I help?",
+            "Hello! Great timing — we have a flash sale right now. What are you looking for?",
+            "Hi there! Happy hour just started, so you're in luck. What would you like?",
+        ])
+    if "迟到" in variant or "delay" in label or "late" in label:
+        return random.choice([
+            "I'm afraid there's been a delay. Let me help you figure out an alternative.",
+            "Sorry about the wait. Let me take care of you right now.",
+            "Thanks for your patience. Let's get this sorted out as quickly as possible.",
+        ])
+    if "超重" in variant or "overweight" in label or "luggage" in label or "bag" in label:
+        return random.choice([
+            "I'm sorry, but your luggage seems to be over the weight limit. Let's discuss your options.",
+            "Excuse me — your bag is a bit over the allowance. Let me explain the options we have.",
+        ])
+
+    # ---- 按场景分类的丰富模板 ----
+    if "咖啡" in label or "cafe" in label or "coffee" in label:
+        return random.choice([
+            "Good morning! Our single-origin Ethiopian pour-over is fantastic today. What catches your eye?",
+            "Hi! Welcome to Brew & Co. Are you in the mood for something hot or iced today?",
+            "Hey there! Our seasonal special — a lavender honey latte — just launched. Want to try it?",
+            "Welcome in! First time here? Our espresso and cold brew are both very popular.",
+            "Hi! Can I start you off with a drink? We've got fresh pastries too if you're interested.",
+        ])
+    if "图书馆" in label or "library" in label:
+        return random.choice([
+            "Welcome to the library! Are you looking for anything specific today, or just browsing?",
+            "Good afternoon! Just to let you know, we have a new arrivals section near the front desk.",
+            "Hello! How can I help you find what you need? I can check our catalog for you.",
+            "Welcome! If you need help navigating the sections, I'm happy to point you in the right direction.",
+        ])
+    if "餐厅" in label or "restaurant" in label or "dining" in label:
+        return random.choice([
+            "Good evening! Do you have a reservation with us tonight?",
+            "Welcome to The Garden Table! Table for how many this evening?",
+            "Hi, welcome! Would you prefer to sit indoors or on the patio today?",
+            "Good evening! Our chef's special tonight is the pan-seared salmon — would you like to hear the full specials?",
+        ])
+    if "医院" in label or "hospital" in label or "clinic" in label or "medical" in label:
+        return random.choice([
+            "Hello, how can I help you today? Do you have an appointment?",
+            "Good morning. Are you here for a scheduled appointment, or do you need to see a doctor urgently?",
+            "Hi there. I'm Dr. Chen's nurse. Could you describe what brought you in today?",
+            "Hello. Before we start, could you tell me about any symptoms you've been experiencing?",
+        ])
+    if "机场" in label or "airport" in label or "flight" in label:
+        return random.choice([
+            "Good morning! May I see your passport and booking reference, please?",
+            "Hello! Are you checking in any bags today, or just carry-on?",
+            "Good morning! Where are you flying to today? I'll get you checked in.",
+            "Hi there! Window or aisle seat? And do you have any luggage to check in?",
+        ])
+    if "商场" in label or "mall" in label or "shop" in label or "store" in label:
+        return random.choice([
+            "Hello! Welcome! Are you looking for anything in particular today?",
+            "Hi there! Just to let you know, we have a buy-one-get-one sale on winter items. Can I help you find something?",
+            "Welcome! Feel free to look around, and let me know if you need any sizes or colors.",
+            "Good afternoon! Is there a specific style or brand you're interested in?",
+        ])
+
+    # 默认备用
+    defaults = [
+        "Hello! How can I assist you today?",
+        "Good day! What brings you here?",
+        "Hi! Let me know how I can help.",
+    ]
+    return random.choice(defaults)
 
 
 # ============================================================

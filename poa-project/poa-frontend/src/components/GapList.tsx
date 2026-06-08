@@ -10,7 +10,7 @@ export function GapList({
   attempt: number;
 }) {
   return (
-    <div className="rounded-lg border border-border bg-card p-8 shadow-sm space-y-4">
+    <div className="card space-y-4 p-6">
       <h2 className="text-xl font-semibold text-card-foreground">
         第 {attempt} 次作答诊断 — 发现 {gaps.length} 项不足
       </h2>

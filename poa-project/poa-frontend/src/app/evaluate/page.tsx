@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import * as echarts from "echarts";
 import { BASE_URL } from "@/lib/api";
-import { getScenarioHistory, isTaskSelectedInSession, markTaskSelectedInSession, type ScenarioHistoryItem } from "@/lib/store";
+import { getScenarioHistory, isTaskSelectedInSession, markTaskSelectedInSession, type ScenarioHistoryItem, addJourneyEntry, type JourneyDimensionScore } from "@/lib/store";
 import HistoryTaskSelector from "@/components/HistoryTaskSelector";
+import SkeletonCard from "@/components/ui/skeleton-card";
 
 /* ============================================================
    类型 & 常量
@@ -15,6 +16,7 @@ interface DimScore {
   attempt1: number;
   attempt2: number;
   change: number;
+  weight?: number;  // 维度权重（取自 Excel 评分表）
   explanation: string;
 }
 
@@ -28,6 +30,7 @@ interface ComparisonItem {
   attempt1_score: number;
   attempt2_score: number;
   change: string;
+  weight?: number;
   comment: string;
 }
 
@@ -39,13 +42,6 @@ interface TargetEvalItem {
 }
 
 const DIM_LABELS: Record<string, string> = {
-  "fluency": "流利度",
-  "accuracy": "语法准确性",
-  "pragmatics": "语用得体性",
-  "complexity": "语言复杂度",
-  "task_completion": "任务完成度",
-  "vocabulary": "词汇适配性",
-  "pronunciation_intonation": "发音与语调",
   "发音标准度": "发音标准度",
   "语法规范性": "语法规范性",
   "词汇适配性": "词汇适配性",
@@ -57,15 +53,15 @@ const DIM_LABELS: Record<string, string> = {
 
 const MOCK_EVALUATE: EvaluateData = {
   dimension_scores: {
-    fluency:     { attempt1: 2.5, attempt2: 3.5, change: 1.0, explanation: "语速更平稳，停顿减少了约 40%。" },
-    accuracy:    { attempt1: 2.0, attempt2: 3.8, change: 1.8, explanation: "时态错误从 5 处降至 1 处，主谓一致基本正确。" },
-    pragmatics:  { attempt1: 1.5, attempt2: 4.0, change: 2.5, explanation: "从祈使句转变为 'I'd like'/'Could I have'，礼貌意识显著提升。" },
-    complexity:  { attempt1: 2.0, attempt2: 3.0, change: 1.0, explanation: "开始使用 because/if/when 从句，但仍有卡顿。" },
-    task_completion: { attempt1: 3.0, attempt2: 4.0, change: 1.0, explanation: "第二次完成了全部交际要点。" },
-    vocabulary:  { attempt1: 2.0, attempt2: 3.5, change: 1.5, explanation: "从 'big cup' 转变为 'large'/'oat milk' 等场景词汇。" },
-    pronunciation_intonation: { attempt1: 3.0, attempt2: 3.5, change: 0.5, explanation: "疑问句升调改善，连读和弱读仍需练习。" },
+    "发音标准度":     { attempt1: 2.5, attempt2: 3.5, change: 1.0, weight: 0.20, explanation: "'th' 音错误率较高（如 'think' 念成 'tink'）；二次产出 'th' 音基本正确。" },
+    "语法规范性":     { attempt1: 2.0, attempt2: 3.8, change: 1.8, weight: 0.15, explanation: "时态错误从 5 处降至 1 处，主谓一致基本正确。" },
+    "词汇适配性":     { attempt1: 2.0, attempt2: 3.5, change: 1.5, weight: 0.10, explanation: "从 'big cup' 转变为 'large'/'oat milk' 等场景词汇。" },
+    "语言功能达成度": { attempt1: 3.0, attempt2: 4.0, change: 1.0, weight: 0.10, explanation: "第二次完成了全部交际要点，无关键信息缺失。" },
+    "语用策略得体性": { attempt1: 1.5, attempt2: 4.0, change: 2.5, weight: 0.10, explanation: "从祈使句转变为 'I'd like'/'Could I have'，礼貌意识显著提升。" },
+    "话语回合适配性": { attempt1: 2.5, attempt2: 3.5, change: 1.0, weight: 0.15, explanation: "话轮长度从单方面长发言转换为 30-70% 合理占比，能使用 'What about you?' 转换话轮。" },
+    "副语言匹配度":   { attempt1: 3.0, attempt2: 3.5, change: 0.5, weight: 0.20, explanation: "由音频分析自动评分（基于流利度指标）。" },
   },
-  overall_improvement: "七个维度均有提升，语用得体性进步最大（+2.5）。",
+  overall_improvement: "七个维度均有提升，语用策略得体性进步最大（+2.5）。",
 };
 
 /* ============================================================
@@ -85,7 +81,7 @@ function convertApiToEvaluateData(raw: any): EvaluateData | null {
     }
   }
 
-  // 后端 /api/evaluate-compare 格式：{ comparison: [...] }
+  // 后端 /api/evaluate-compare 格式：{ comparison: [...] } 或 { dimension_scores: {...} }
   if (Array.isArray(raw.comparison) && raw.comparison.length > 0) {
     const dims: Record<string, DimScore> = {};
     for (const item of raw.comparison as ComparisonItem[]) {
@@ -94,10 +90,28 @@ function convertApiToEvaluateData(raw: any): EvaluateData | null {
         attempt1: item.attempt1_score ?? 0,
         attempt2: item.attempt2_score ?? 0,
         change: parseFloat(item.change ?? "0") || 0,
+        weight: item.weight,
         explanation: item.comment ?? "",
       };
     }
     return { dimension_scores: dims, overall_improvement: "" };
+  }
+
+  // 兼容：后端返回的 dimension_scores 字典格式
+  if (raw.dimension_scores && typeof raw.dimension_scores === "object") {
+    const dims: Record<string, DimScore> = {};
+    for (const [key, val] of Object.entries(raw.dimension_scores as Record<string, any>)) {
+      dims[key] = {
+        attempt1: val.attempt1 ?? 0,
+        attempt2: val.attempt2 ?? 0,
+        change: val.change ?? 0,
+        weight: val.weight,
+        explanation: val.comment ?? val.explanation ?? "",
+      };
+    }
+    if (Object.keys(dims).length > 0) {
+      return { dimension_scores: dims, overall_improvement: "" };
+    }
   }
 
   return null;
@@ -165,6 +179,8 @@ export default function EvaluatePage() {
         body: JSON.stringify({
           attempt1_text: text1 || "no text",
           attempt2_text: text2 || "no text",
+          audio1_paths: JSON.parse(localStorage.getItem("attempt1_audio_urls") || "[]"),
+          audio2_paths: JSON.parse(localStorage.getItem("attempt2_audio_urls") || "[]"),
           gaps,
         }),
       });
@@ -174,6 +190,55 @@ export default function EvaluatePage() {
         const converted = convertApiToEvaluateData(raw);
         if (converted && Object.keys(converted.dimension_scores).length > 0) {
           setData(converted);
+          // 写入学习旅程
+          try {
+            const scores: Record<string, JourneyDimensionScore> = {};
+            let total = 0, count = 0;
+            for (const [k, v] of Object.entries(converted.dimension_scores)) {
+              scores[k] = { attempt1: v.attempt1, attempt2: v.attempt2, change: v.change };
+              total += v.attempt2; count++;
+            }
+            const avg = count > 0 ? total / count : 0;
+            const scene = (() => {
+              try {
+                const t = localStorage.getItem("currentTask");
+                if (t) {
+                  const parsed = JSON.parse(t);
+                  return parsed?.scene_label || "实景对话";
+                }
+              } catch { /* ignore */ }
+              return "实景对话";
+            })();
+            const taskTitle = (() => {
+              try {
+                const t = localStorage.getItem("currentTask");
+                if (t) {
+                  const parsed = JSON.parse(t);
+                  const goal = parsed?.goal || "";
+                  return goal.length > 30 ? goal.slice(0, 30) + "..." : goal;
+                }
+              } catch { /* ignore */ }
+              return "实景对话任务";
+            })();
+            const imageUrl = (() => {
+              try {
+                const t = localStorage.getItem("currentTask");
+                if (t) {
+                  const parsed = JSON.parse(t);
+                  return parsed?.image_url || undefined;
+                }
+              } catch { /* ignore */ }
+              return undefined;
+            })();
+            addJourneyEntry({
+              sceneLabel: scene,
+              taskTitle,
+              imageUrl,
+              completedAt: Date.now(),
+              avgScore: Number(avg.toFixed(2)),
+              dimensionScores: scores,
+            });
+          } catch (e) { console.warn("[evaluate] 写入 journey 失败:", e); }
         } else {
           setData(MOCK_EVALUATE);
         }
@@ -234,8 +299,9 @@ export default function EvaluatePage() {
   // ---- 加载中 ----
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-24 text-sm text-muted-foreground">
-        正在加载双轨评价...
+      <div className="space-y-4 py-12">
+        <SkeletonCard card lines={4} width="max-w-2xl mx-auto" />
+        <SkeletonCard circle width="mx-auto" height="200px" className="size-48" />
       </div>
     );
   }
@@ -244,7 +310,7 @@ export default function EvaluatePage() {
   if (!data || dims.length === 0) {
     return (
       <div className="mx-auto max-w-2xl py-8">
-        <div className="rounded-xl border border-border bg-card p-8 text-center">
+        <div className="card p-8 text-center">
           <h2 className="text-lg font-semibold text-card-foreground">暂无评价数据</h2>
           <p className="mt-2 text-sm text-muted-foreground">请先完成初次产出和二次产出练习</p>
           <Button className="mt-4" variant="outline" onClick={() => router.push("/scenario")}>
@@ -270,7 +336,7 @@ export default function EvaluatePage() {
       </header>
 
       {data.overall_improvement ? (
-        <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
+        <div className="card p-5">
           <p className="text-sm font-semibold text-card-foreground">总体评价</p>
           <p className="mt-1.5 text-sm text-muted-foreground">{data.overall_improvement}</p>
         </div>
@@ -282,14 +348,14 @@ export default function EvaluatePage() {
       <div className="space-y-3">
         <h2 className="text-lg font-semibold text-card-foreground">靶向问题改善评估</h2>
         {targetEval.length === 0 ? (
-          <div className="rounded-xl border border-border bg-card p-6 text-center text-sm text-muted-foreground">
+          <div className="card p-6 text-center text-sm text-muted-foreground">
             暂无靶向评估数据
           </div>
         ) : (
           targetEval.map((item, i) => (
             <div
               key={i}
-              className={`rounded-xl border-2 bg-card p-5 shadow-sm space-y-3 ${
+              className={`card p-5 space-y-3 ${
                 item.improved
                   ? "border-green-500/40"
                   : "border-destructive/40"
@@ -341,7 +407,7 @@ export default function EvaluatePage() {
           const flat = s.change === 0;
 
           return (
-            <div key={dim} className="rounded-xl border border-border bg-card p-5 shadow-sm space-y-2">
+            <div key={dim} className="card p-5 space-y-2">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-card-foreground">{label}</h3>
                 <span
@@ -388,7 +454,7 @@ export default function EvaluatePage() {
         })}
       </div>
 
-      <div className="flex items-center justify-between rounded-xl border border-border bg-card px-6 py-4 shadow-sm">
+      <div className="card flex items-center justify-between px-6 py-4">
         <p className="text-sm text-muted-foreground">查看从场景到评价的完整学习证据链</p>
         <Button size="lg" onClick={() => router.push("/report/1")}>
           查看完整学习证据链 →
@@ -467,6 +533,12 @@ function RadarChart({ data, dims }: { data: EvaluateData | null; dims: string[] 
             areaStyle: { color: "rgba(59, 130, 246, 0.08)" },
             symbol: "circle",
             symbolSize: 5,
+            label: {
+              show: true,
+              fontSize: 10,
+              color: "#3b82f6",
+              formatter: (p: any) => p.value?.toFixed(1) ?? "",
+            },
           },
           {
             name: "二次产出",
@@ -477,6 +549,12 @@ function RadarChart({ data, dims }: { data: EvaluateData | null; dims: string[] 
             areaStyle: { color: "rgba(249, 115, 22, 0.08)" },
             symbol: "diamond",
             symbolSize: 6,
+            label: {
+              show: true,
+              fontSize: 10,
+              color: "#f97316",
+              formatter: (p: any) => p.value?.toFixed(1) ?? "",
+            },
           },
         ],
       },
@@ -490,7 +568,7 @@ function RadarChart({ data, dims }: { data: EvaluateData | null; dims: string[] 
   }, [data, dims]);
 
   return (
-    <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+    <div className="card p-4">
       <div ref={chartRef} style={{ width: "100%", height: 400 }} />
     </div>
   );

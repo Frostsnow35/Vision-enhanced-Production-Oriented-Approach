@@ -8,7 +8,7 @@ from typing import Optional
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from services.chat_service import generate_opening, generate_reply, text_to_speech
+from services.chat_service import generate_opening, generate_reply, text_to_speech, _generate_turn_feedback
 from services.asr_service import transcribe_audio
 
 logging.basicConfig(level=logging.INFO)
@@ -57,6 +57,7 @@ class ChatTurnResponse(BaseModel):
     ai_text: str
     ai_audio_url: str
     is_final: bool = False
+    turn_feedback: dict = {}  # 实时短反馈 {dimensions: [...], short_comment: "..."}
 
 
 # ---- POST /api/chat/start ----
@@ -133,7 +134,15 @@ async def chat_turn(req: ChatTurnRequest):
         task_context=task_context,
     )
 
-    # 3. TTS
+    # 3. 实时短反馈（针对用户本轮输入）
+    turn_feedback = _generate_turn_feedback(user_text, ai_text, task_context)
+
+    # 4. TTS
     ai_audio_url = text_to_speech(ai_text) if ai_text else ""
 
-    return ChatTurnResponse(ai_text=ai_text, ai_audio_url=ai_audio_url, is_final=is_final)
+    return ChatTurnResponse(
+        ai_text=ai_text,
+        ai_audio_url=ai_audio_url,
+        is_final=is_final,
+        turn_feedback=turn_feedback,
+    )

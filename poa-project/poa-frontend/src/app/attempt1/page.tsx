@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { BASE_URL, chatStart, chatTurn } from "@/lib/api";
+import { BASE_URL, chatStart, chatTurn, type TurnFeedback } from "@/lib/api";
 import RecordingWaveform from "@/components/RecordingWaveform";
 import { getScenarioHistory, isTaskSelectedInSession, markTaskSelectedInSession, type ScenarioHistoryItem } from "@/lib/store";
 import HistoryTaskSelector from "@/components/HistoryTaskSelector";
@@ -22,6 +22,8 @@ interface ConversationTurn {
   role: "user" | "ai";
   text?: string;
   audio_url?: string;
+  turn_feedback?: TurnFeedback;
+  feedback_collapsed?: boolean;
 }
 
 function parseRoles(raw: string): { user: string; ai: string } {
@@ -89,31 +91,72 @@ export default function Attempt1Page() {
 
   const task = localTask;
 
-  // ---- 摄像头 ----
+  // ---- Refs ----
   const videoRef = useRef<HTMLVideoElement>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const audioStreamRef = useRef<MediaStream | null>(null);
-  const [cameraReady, setCameraReady] = useState(false);
+
+  // ---- 设备状态 ----
+  const [micLevel, setMicLevel] = useState(0);
+  const [cameraStatus, setCameraStatus] = useState<"pending" | "ready" | "error">("pending");
+  const [micStatus, setMicStatus] = useState<"pending" | "ready" | "error">("pending");
+  const [showDevicePanel, setShowDevicePanel] = useState(false);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
 
   useEffect(() => {
     if (!initDone) return;
     (async () => {
+      // 尝试获取摄像头
       try {
-        const camStream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }, audio: true });
+        const camStream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
         cameraStreamRef.current = camStream;
         if (videoRef.current) videoRef.current.srcObject = camStream;
-        setCameraReady(true);
-        try {
-          const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-          audioStreamRef.current = audioStream;
-        } catch {
-          audioStreamRef.current = camStream;
+        setCameraStatus("ready");
+      } catch (err) {
+        console.error("摄像头获取失败:", err);
+        setCameraStatus("error");
+      }
+
+      // 尝试获取麦克风
+      try {
+        const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        audioStreamRef.current = audioStream;
+        setMicStatus("ready");
+        
+        // 设置麦克风监听
+        const ctx = new AudioContext();
+        audioContextRef.current = ctx;
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 256;
+        const source = ctx.createMediaStreamSource(audioStream);
+        source.connect(analyser);
+        analyserRef.current = analyser;
+
+        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+        const updateLevel = () => {
+          if (analyserRef.current) {
+            analyserRef.current.getByteFrequencyData(dataArray);
+            const avg = dataArray.reduce((a, b) => a + b) / dataArray.length;
+            setMicLevel(Math.min(avg / 255, 1));
+          }
+          requestAnimationFrame(updateLevel);
+        };
+        updateLevel();
+      } catch (err) {
+        console.error("麦克风获取失败:", err);
+        setMicStatus("error");
+        // 如果单独获取麦克风失败，尝试从摄像头流获取音频
+        if (cameraStreamRef.current) {
+          audioStreamRef.current = cameraStreamRef.current;
+          setMicStatus("ready");
         }
-      } catch { setCameraReady(false); }
+      }
     })();
     return () => {
       cameraStreamRef.current?.getTracks().forEach((t) => t.stop());
       audioStreamRef.current?.getTracks().forEach((t) => { if (t.kind === "audio") t.stop(); });
+      audioContextRef.current?.close().catch(() => {});
     };
   }, [initDone]);
 
@@ -125,6 +168,15 @@ export default function Attempt1Page() {
   const [subtitle, setSubtitle] = useState("");
   const startedRef = useRef(false);
   const [isFinal, setIsFinal] = useState(false);
+
+  // ---- 键盘提示自动消失 ----
+  const [showHint, setShowHint] = useState(true);
+  useEffect(() => {
+    if (cameraStatus === "ready" && showHint) {
+      const timer = setTimeout(() => setShowHint(false), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [cameraStatus, showHint]);
 
   // ---- 语音识别 ----
   const speechRecognitionRef = useRef<SpeechRecognition | null>(null);
@@ -174,13 +226,56 @@ export default function Attempt1Page() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // ---- 通话轮次 ----
+  const callChatTurn = async (audio_url: string, user_text: string, currentHistory: ConversationTurn[]) => {
+    const currentTask = taskRef.current;
+    if (isFinal) return;
+    setAiSpeaking(true);
+    setSubtitle("AI 正在思考...");
+    try {
+      const data = await chatTurn(
+        user_text,
+        audio_url,
+        currentHistory,
+        currentTask?.scene_label || "",
+        currentTask?.roles || "",
+        currentTask?.goal,
+        currentTask?.evaluation_criteria
+      );
+      const aiTurn: ConversationTurn = {
+        role: "ai",
+        text: data.ai_text,
+        audio_url: data.ai_audio_url,
+        turn_feedback: data.turn_feedback && data.turn_feedback.short_comment ? data.turn_feedback : undefined,
+        feedback_collapsed: false,
+      };
+      setHistory((prev) => [...prev, aiTurn]);
+      setSubtitle(data.ai_text);
+      if (data.is_final) {
+        setIsFinal(true);
+      }
+      if (data.ai_audio_url) {
+        const fullUrl = data.ai_audio_url.startsWith("/") ? `${BASE_URL}${data.ai_audio_url}` : data.ai_audio_url;
+        const audio = new Audio(fullUrl);
+        audio.play().catch((e) => console.error("AI 语音播放失败:", e));
+        audio.onended = () => setAiSpeaking(false);
+      } else { setTimeout(() => setAiSpeaking(false), 2000); }
+    } catch {
+      const mockText = getAiReply(task);
+      const aiTurn: ConversationTurn = { role: "ai", text: mockText };
+      setHistory((prev) => [...prev, aiTurn]);
+      setSubtitle(mockText);
+      setTimeout(() => setAiSpeaking(false), 2000);
+    }
+  };
+
   const beginRecord = useCallback(() => {
     if (!audioStreamRef.current || recording || uploading) return;
     const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "audio/mp4";
     let recorder: MediaRecorder;
     try {
       recorder = mimeType ? new MediaRecorder(audioStreamRef.current, { mimeType }) : new MediaRecorder(audioStreamRef.current);
-    } catch (err: any) { alert("无法启动录音: " + (err.message ?? "")); return; }
+    } catch (err: unknown) { alert("无法启动录音: " + ((err as Error)?.message ?? "")); return; }
     recorderRef.current = recorder;
     chunksRef.current = [];
     recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
@@ -214,7 +309,7 @@ export default function Attempt1Page() {
     setInterimTranscript("");
     setSubtitle("正在听你说话...");
     if (speechSupported) {
-      const SpeechRecognition = window.SpeechRecognition || (window as any).webkitSpeechRecognition;
+      const SpeechRecognition = window.SpeechRecognition || (window as unknown as { webkitSpeechRecognition: unknown }).webkitSpeechRecognition;
       const recognition = new SpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = true;
@@ -230,7 +325,7 @@ export default function Attempt1Page() {
         const display = finalTranscriptRef.current + (interim ? (finalTranscriptRef.current ? " " : "") + interim : "");
         setSubtitle(display || "正在听你说话...");
       };
-      recognition.onerror = (e: Event) => console.warn("语音识别错误:", (e as any).error);
+      recognition.onerror = (e: Event) => console.warn("语音识别错误:", (e as unknown as { error: string }).error);
       recognition.start();
       speechRecognitionRef.current = recognition;
     }
@@ -245,42 +340,6 @@ export default function Attempt1Page() {
     setRecording(false);
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
   }, [recording]);
-
-  const callChatTurn = async (audio_url: string, user_text: string, currentHistory: ConversationTurn[]) => {
-    const currentTask = taskRef.current;
-    if (isFinal) return;
-    setAiSpeaking(true);
-    setSubtitle("AI 正在思考...");
-    try {
-      const data = await chatTurn(
-        user_text,
-        audio_url,
-        currentHistory,
-        currentTask?.scene_label || "",
-        currentTask?.roles || "",
-        currentTask?.goal,
-        currentTask?.evaluation_criteria
-      );
-      const aiTurn: ConversationTurn = { role: "ai", text: data.ai_text, audio_url: data.ai_audio_url };
-      setHistory((prev) => [...prev, aiTurn]);
-      setSubtitle(data.ai_text);
-      if (data.is_final) {
-        setIsFinal(true);
-      }
-      if (data.ai_audio_url) {
-        const fullUrl = data.ai_audio_url.startsWith("/") ? `${BASE_URL}${data.ai_audio_url}` : data.ai_audio_url;
-        const audio = new Audio(fullUrl);
-        audio.play().catch((e) => console.error("AI 语音播放失败:", e));
-        audio.onended = () => setAiSpeaking(false);
-      } else { setTimeout(() => setAiSpeaking(false), 2000); }
-    } catch {
-      const mockText = getAiReply(task);
-      const aiTurn: ConversationTurn = { role: "ai", text: mockText };
-      setHistory((prev) => [...prev, aiTurn]);
-      setSubtitle(mockText);
-      setTimeout(() => setAiSpeaking(false), 2000);
-    }
-  };
 
   // ---- 空格键 ----
   useEffect(() => {
@@ -300,6 +359,11 @@ export default function Attempt1Page() {
     setSubmitting(true);
     try {
       const conversationText = history.map((h) => h.text || "").filter(Boolean).join("\n");
+      // 收集用户录音的 audio_url，供后续评价页进行发音分析
+      const audioUrls = history.filter(h => h.role === "user" && h.audio_url).map(h => h.audio_url);
+      if (audioUrls.length > 0) {
+        localStorage.setItem("attempt1_audio_urls", JSON.stringify(audioUrls));
+      }
       const res = await fetch(`${BASE_URL}/api/attempt1/submit`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ attempt_text: conversationText || "[no speech]", attempt_number: 1 }) });
       if (!res.ok) throw new Error(`${res.status}`);
       const data = await res.json();
@@ -329,6 +393,10 @@ export default function Attempt1Page() {
   /* ============================================================
      Render
      ============================================================ */
+  const cameraReady = cameraStatus === "ready";
+  const micReady = micStatus === "ready";
+  const canRecord = micReady && !uploading && !isFinal;
+
   return (
     <div className="flex h-[calc(100vh-100px)] flex-col">
       {/* 顶部任务摘要 */}
@@ -338,14 +406,55 @@ export default function Attempt1Page() {
             <span className="rounded-md bg-primary/10 px-2 py-0.5 font-semibold text-primary">{task.scene_label}</span>
             <span className="text-muted-foreground">{user.split("——")[0]} × {ai.split("——")[0]}</span>
           </div>
-          <span className="hidden sm:inline text-muted-foreground">{task.goal?.slice(0, 50)}...</span>
+          <div className="flex items-center gap-2">
+            {/* 设备状态指示器 */}
+            <button onClick={() => setShowDevicePanel(!showDevicePanel)} className="flex items-center gap-1.5 rounded-md bg-muted/50 px-2 py-1 hover:bg-muted transition-colors">
+              <span className={`size-2 rounded-full ${cameraReady ? "bg-green-500" : "bg-red-500"}`} title="摄像头" />
+              <span className={`size-2 rounded-full ${micReady ? "bg-green-500" : "bg-red-500"}`} title="麦克风" />
+              <span className="text-muted-foreground">设备</span>
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* 设备调试面板 */}
+      {showDevicePanel && (
+        <div className="shrink-0 border-b border-border bg-muted/30 px-4 py-3 space-y-2">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <span className={`size-2 rounded-full ${cameraStatus === "ready" ? "bg-green-500" : cameraStatus === "error" ? "bg-red-500" : "bg-yellow-500"}`} />
+              <span className="text-xs">摄像头: {cameraStatus === "ready" ? "正常" : cameraStatus === "error" ? "失败" : "初始化中"}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className={`size-2 rounded-full ${micStatus === "ready" ? "bg-green-500" : micStatus === "error" ? "bg-red-500" : "bg-yellow-500"}`} />
+              <span className="text-xs">麦克风: {micStatus === "ready" ? "正常" : micStatus === "error" ? "失败" : "初始化中"}</span>
+            </div>
+          </div>
+          {micReady && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">麦克风音量:</span>
+              <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+                <div 
+                  className="h-full bg-green-500 transition-all duration-100"
+                  style={{ width: `${micLevel * 100}%` }}
+                />
+              </div>
+              <span className="text-xs text-muted-foreground">{Math.round(micLevel * 100)}%</span>
+            </div>
+          )}
+          <p className="text-xs text-muted-foreground/60">点击空白处或再次点击&quot;设备&quot;关闭此面板</p>
+        </div>
+      )}
 
       {/* 主区域 */}
       <div className="flex flex-1 min-h-0">
         <div className="relative flex-1 border-r border-border bg-black">
-          {cameraReady ? <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center text-sm text-muted-foreground">摄像头未就绪</div>}
+          {cameraReady ? <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 h-full w-full object-cover" /> : (
+            <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
+              <span>摄像头未就绪</span>
+              {cameraStatus === "error" && <span className="text-xs text-amber-500">请允许浏览器访问摄像头</span>}
+            </div>
+          )}
           <div className="absolute left-3 bottom-3 flex items-center gap-2 rounded-lg bg-black/50 px-3 py-1 text-xs text-white backdrop-blur">
             {user.split("——")[0]}
             {recording && <span className="flex items-center gap-1"><span className="size-1.5 animate-pulse rounded-full bg-red-500" />{formatTime(elapsed)}</span>}
@@ -370,6 +479,40 @@ export default function Attempt1Page() {
               {recording && interimTranscript ? <p className="text-xs"><span className="text-card-foreground">{subtitle.replace(interimTranscript, "").trim()}</span> <span className="italic text-muted-foreground/70">{interimTranscript}</span></p> : <p className={`text-xs ${aiSpeaking ? "text-card-foreground" : "text-muted-foreground"}`}>{subtitle || "按住下方按钮或空格键开始对话"}</p>}
             </div>
             <p className="text-xs text-muted-foreground/60">已对话 {history.length} 轮</p>
+            {(() => {
+              const lastFb = [...history].reverse().find((h) => h.role === "ai" && h.turn_feedback);
+              if (!lastFb || !lastFb.turn_feedback) return null;
+              const fb = lastFb.turn_feedback;
+              const collapsed = !!lastFb.feedback_collapsed;
+              const colorMap: Record<string, string> = {
+                "发音标准度": "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
+                "语法规范性": "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300",
+                "词汇适配性": "bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300",
+                "语言功能达成度": "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
+                "语用策略得体性": "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
+                "话语回适合配性": "bg-cyan-100 text-cyan-700 dark:bg-cyan-950 dark:text-cyan-300",
+                "副语言匹配度": "bg-pink-100 text-pink-700 dark:bg-pink-950 dark:text-pink-300",
+              };
+              return (
+                <div className="max-w-[90%] w-full rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 mt-1 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex flex-wrap gap-1">
+                      {fb.dimensions.length > 0 ? fb.dimensions.map((d) => (
+                        <span key={d} className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${colorMap[d] || "bg-muted text-muted-foreground"}`}>{d}</span>
+                      )) : <span className="text-[10px] text-muted-foreground">本轮反馈</span>}
+                    </div>
+                    <button
+                      onClick={() => setHistory((prev) => prev.map((h, i) => i === prev.findLastIndex((x) => x === lastFb) ? { ...h, feedback_collapsed: !collapsed } : h))}
+                      className="text-muted-foreground/60 hover:text-muted-foreground transition-colors text-xs"
+                      title={collapsed ? "展开" : "折叠"}
+                    >
+                      {collapsed ? "▼" : "▲"}
+                    </button>
+                  </div>
+                  {!collapsed && <p className="text-xs text-card-foreground/80 leading-relaxed">{fb.short_comment}</p>}
+                </div>
+              );
+            })()}
           </div>
         </div>
       </div>
@@ -383,9 +526,30 @@ export default function Attempt1Page() {
           </div>
         )}
         <div className="flex items-center gap-3">
-          <button onMouseDown={() => { pressTimerRef.current = setTimeout(() => beginRecord(), 150); }} onMouseUp={endRecord} onMouseLeave={endRecord} onTouchStart={(e) => { e.preventDefault(); pressTimerRef.current = setTimeout(() => beginRecord(), 150); }} onTouchEnd={(e) => { e.preventDefault(); endRecord(); }} disabled={uploading || !cameraReady || isFinal} className={`shrink-0 select-none rounded-full px-8 py-3 text-sm font-semibold transition-all duration-150 active:scale-95 touch-none ${recording ? "bg-destructive text-destructive-foreground shadow-lg scale-105" : uploading || isFinal ? "bg-muted text-muted-foreground cursor-not-allowed" : "bg-primary text-primary-foreground shadow-md hover:shadow-lg hover:bg-primary/90"}`}>{recording ? `松开停止 (${formatTime(elapsed)})` : uploading ? "处理中..." : isFinal ? "对话已结束" : "按住说话"}</button>
-          <span className="hidden sm:inline text-xs text-muted-foreground">或按空格键</span>
-          {!speechSupported && <span className="text-xs text-amber-600 dark:text-amber-400">当前浏览器不支持实时转写</span>}
+          <button 
+            onMouseDown={() => { if (canRecord) pressTimerRef.current = setTimeout(() => beginRecord(), 150); }} 
+            onMouseUp={endRecord} 
+            onMouseLeave={endRecord} 
+            onTouchStart={(e) => { e.preventDefault(); if (canRecord) pressTimerRef.current = setTimeout(() => beginRecord(), 150); }} 
+            onTouchEnd={(e) => { e.preventDefault(); endRecord(); }} 
+            disabled={!canRecord}
+            className={`shrink-0 select-none rounded-full px-8 py-3 text-sm font-semibold transition-all duration-150 active:scale-95 touch-none ${
+              recording
+                ? elapsed >= 28
+                  ? "bg-destructive text-destructive-foreground shadow-lg scale-105 animate-pulse"
+                  : elapsed >= 25
+                    ? "bg-amber-500 text-white shadow-lg scale-105"
+                    : "bg-destructive text-destructive-foreground shadow-lg scale-105"
+                : !micReady
+                  ? "bg-muted text-muted-foreground cursor-not-allowed"
+                  : uploading || isFinal
+                    ? "bg-muted text-muted-foreground cursor-not-allowed"
+                    : "bg-primary text-primary-foreground shadow-md hover:shadow-lg hover:bg-primary/90"
+            }`}>
+            {!micReady ? "麦克风未就绪" : recording ? `松开停止 (${formatTime(elapsed)})` : uploading ? "处理中..." : isFinal ? "对话已结束" : "按住说话"}
+          </button>
+          {showHint && micReady && <span className="hidden sm:inline text-xs text-muted-foreground/60 animate-in fade-in duration-300">或长按空格键录音</span>}
+          {!speechSupported && micReady && <span className="text-xs text-amber-600 dark:text-amber-400">当前浏览器不支持实时转写</span>}
           <div className="flex-1" />
           <Button size="sm" variant="outline" onClick={handleSubmit} disabled={submitting || history.length < 2}>{submitting ? "提交中..." : "提交诊断"}</Button>
         </div>

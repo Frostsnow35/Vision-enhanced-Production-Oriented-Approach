@@ -22,6 +22,16 @@ Thumbs.db
 uploads/
 sample_images/
 
+# Local data (数据库/上传文件/部署日志)
+poa-project/poa-backend/data/
+poa-project/poa-backend/uploads/
+poa-project/poa-backend/poa.db
+部署日志/
+
+# Temp dump files
+temp_attempt1.txt
+temp_attempt2.txt
+
 # Temp files
 *.pyc
 *.py[cod]
