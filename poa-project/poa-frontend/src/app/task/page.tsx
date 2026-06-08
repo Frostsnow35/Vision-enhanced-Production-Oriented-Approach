@@ -166,7 +166,7 @@ export default function TaskPage() {
               </h3>
               <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">
                 <div className="space-y-3">
-                  {task.goal.split(/(\d+\.\s*)/).filter(Boolean).map((part, index) => {
+                  {task.goal.split(/(\d+\.\s*)/).filter(Boolean).map((part: string, index: number) => {
                     const match = part.match(/^(\d+)\.\s*/);
                     if (match) {
                       return <span key={index} className="font-medium text-primary">{match[1]}.</span>;

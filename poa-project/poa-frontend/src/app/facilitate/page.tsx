@@ -30,6 +30,7 @@ interface Exercise {
   options: { key: string; text: string }[];
   answer: string;
   explanation: string;
+  gap_target?: string;
 }
 
 interface DialogueData {
@@ -254,6 +255,21 @@ const loadProgress = (): LearningProgress => {
 
 const saveProgress = (progress: LearningProgress) => {
   localStorage.setItem("facilitate_progress", JSON.stringify(progress));
+};
+
+/** 把指定 tab 标记为 completed，并持久化 */
+const markTabComplete = (
+  setProgress: React.Dispatch<React.SetStateAction<LearningProgress>>,
+  key: TabKey
+) => {
+  setProgress((prev) => {
+    const newProgress: LearningProgress = {
+      ...prev,
+      tabs: { ...prev.tabs, [key]: "completed" },
+    };
+    saveProgress(newProgress);
+    return newProgress;
+  });
 };
 
 const copyToClipboard = async (text: string) => {
@@ -726,16 +742,7 @@ export default function FacilitatePage() {
               weakDims={weakDims}
               expandedDim={expandedDim}
               setExpandedDim={setExpandedDim}
-              onComplete={() => {
-                setProgress((prev) => {
-                  const newProgress = {
-                    ...prev,
-                    tabs: { ...prev.tabs, assessment: "completed" },
-                  };
-                  saveProgress(newProgress);
-                  return newProgress;
-                });
-              }}
+              onComplete={() => markTabComplete(setProgress, "assessment")}
             />
           )}
           {tab === "phrases" && (
@@ -748,16 +755,7 @@ export default function FacilitatePage() {
                 phrases={phrases.length > 0 ? phrases : DEFAULT_PHRASES}
                 learnedPhrases={progress.phrasesLearned}
                 onLearn={learnPhrase}
-                onComplete={() => {
-                  setProgress((prev) => {
-                    const newProgress = {
-                      ...prev,
-                      tabs: { ...prev.tabs, phrases: "completed" },
-                    };
-                    saveProgress(newProgress);
-                    return newProgress;
-                  });
-                }}
+                onComplete={() => markTabComplete(setProgress, "phrases")}
               />
             )
           )}
@@ -769,16 +767,7 @@ export default function FacilitatePage() {
             ) : (
               <DialogueTab
                 dialogue={dialogue ?? DEFAULT_DIALOGUE}
-                onComplete={() => {
-                  setProgress((prev) => {
-                    const newProgress = {
-                      ...prev,
-                      tabs: { ...prev.tabs, dialogue: "completed" },
-                    };
-                    saveProgress(newProgress);
-                    return newProgress;
-                  });
-                }}
+                onComplete={() => markTabComplete(setProgress, "dialogue")}
               />
             )
           )}
@@ -792,16 +781,7 @@ export default function FacilitatePage() {
                 exercises={exercises.length > 0 ? exercises : DEFAULT_EXERCISES}
                 state={exerciseState}
                 onSelect={selectOption}
-                onComplete={() => {
-                  setProgress((prev) => {
-                    const newProgress = {
-                      ...prev,
-                      tabs: { ...prev.tabs, exercises: "completed" },
-                    };
-                    saveProgress(newProgress);
-                    return newProgress;
-                  });
-                }}
+                onComplete={() => markTabComplete(setProgress, "exercises")}
               />
             )
           )}

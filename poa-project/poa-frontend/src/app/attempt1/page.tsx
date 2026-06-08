@@ -216,7 +216,7 @@ export default function Attempt1Page() {
 
   // ---- 语音识别 ----
   const speechRecognitionRef = useRef<SpeechRecognition | null>(null);
-  const [speechSupported] = useState(() => typeof window !== "undefined" && !!(window.SpeechRecognition || (window as any).webkitSpeechRecognition));
+  const [speechSupported] = useState(() => typeof window !== "undefined" && !!(window.SpeechRecognition || window.webkitSpeechRecognition));
   const [interimTranscript, setInterimTranscript] = useState("");
   const finalTranscriptRef = useRef("");
 
@@ -345,7 +345,8 @@ export default function Attempt1Page() {
     setInterimTranscript("");
     setSubtitle("正在听你说话...");
     if (speechSupported) {
-      const SpeechRecognition = window.SpeechRecognition || (window as unknown as { webkitSpeechRecognition: unknown }).webkitSpeechRecognition;
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) return;
       const recognition = new SpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = true;
