@@ -140,10 +140,11 @@ app.include_router(report_router)
 app.include_router(translate_router)
 
 # ---- 静态文件 ----
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 # 样例图片目录
-import os
 SAMPLE_DIR = os.path.join(os.path.dirname(__file__), "sample_images")
+os.makedirs(SAMPLE_DIR, exist_ok=True)
 app.mount("/samples", StaticFiles(directory=SAMPLE_DIR), name="samples")
 
 

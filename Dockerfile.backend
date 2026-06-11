@@ -11,8 +11,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY poa-backend/ .
 
-# uploads volume
-RUN mkdir -p uploads/images uploads/audio uploads/tts
+# uploads + sample dirs (StaticFiles mount 需要目录存在)
+RUN mkdir -p /app/uploads/images /app/uploads/audio /app/uploads/tts /app/sample_images
 
 ENV PYTHONUNBUFFERED=1
 EXPOSE 8000
