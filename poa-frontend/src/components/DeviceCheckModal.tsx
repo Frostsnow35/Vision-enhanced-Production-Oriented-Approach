@@ -16,33 +16,33 @@ interface DeviceCheckModalProps {
   onPassed?: () => void;
 }
 
-const StopIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-4">
+const StopIcon = ({ className }: { className?: string } = {}) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className ?? "size-4"}>
     <rect x="6" y="6" width="12" height="12" rx="2" />
   </svg>
 );
 
-const PlayIcon = () => (
-  <svg viewBox="0 0 24 24" fill="currentColor" className="size-5">
+const PlayIcon = ({ className }: { className?: string } = {}) => (
+  <svg viewBox="0 0 24 24" fill="currentColor" className={className ?? "size-5"}>
     <path d="M8 5v14l11-7z" />
   </svg>
 );
 
-const XIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-4">
+const XIcon = ({ className }: { className?: string } = {}) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className ?? "size-4"}>
     <path d="M18 6L6 18M6 6l12 12" />
   </svg>
 );
 
-const CameraIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="size-7">
+const CameraIcon = ({ className }: { className?: string } = {}) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className ?? "size-7"}>
     <path d="M23 7l-7 5 7 5V7z" />
     <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
   </svg>
 );
 
-const MicIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="size-7">
+const MicIcon = ({ className }: { className?: string } = {}) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className ?? "size-7"}>
     <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
     <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
     <line x1="12" y1="19" x2="12" y2="23" />
