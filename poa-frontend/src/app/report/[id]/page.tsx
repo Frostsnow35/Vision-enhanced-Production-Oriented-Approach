@@ -574,8 +574,8 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
     );
   }
 
-  // ---- 错误状态卡片 ----
-  if (reportError) {
+  // ---- 错误状态卡片（仅无本地缓存时才显示）----
+  if (reportError && !historyItem) {
     const tone =
       reportError.kind === "not_found"
         ? {
@@ -653,6 +653,11 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
       </div>
 
       <div className="relative mx-auto max-w-3xl px-4 py-12">
+        {reportError && historyItem && (
+          <div className="mb-6 rounded-lg bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 px-4 py-2.5 text-center">
+            <p className="text-sm text-amber-700 dark:text-amber-300">服务器未找到完整报告，正在展示本地缓存的摘要</p>
+          </div>
+        )}
         {/* 标题区域 */}
         <header className="mb-10">
           <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-4 py-2 mb-4">

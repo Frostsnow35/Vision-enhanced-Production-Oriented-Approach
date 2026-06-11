@@ -22,6 +22,52 @@ function parseRoles(raw: string): { user: string; ai: string } {
   };
 }
 
+function splitTaskText(raw?: string): string[] {
+  if (!raw) return [];
+
+  const normalized = raw
+    .replace(/\r\n/g, "\n")
+    .replace(/\s+/g, " ")
+    .replace(/\s*([;；])\s*/g, "\n")
+    .replace(/\s*(\d+)\.\s*/g, "\n$1. ")
+    .replace(/\s*(\d+)\)\s*/g, "\n$1) ")
+    .trim();
+
+  const parts = normalized
+    .split("\n")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  return parts.length > 0 ? parts : [raw];
+}
+
+function TaskTextBlock({
+  text,
+  tone = "default",
+}: {
+  text?: string;
+  tone?: "default" | "muted";
+}) {
+  const items = splitTaskText(text);
+  const textClass =
+    tone === "muted" ? "text-muted-foreground" : "text-card-foreground";
+
+  if (items.length <= 1) {
+    return <p className={`text-sm leading-7 whitespace-pre-line ${textClass}`}>{text}</p>;
+  }
+
+  return (
+    <ul className="space-y-2">
+      {items.map((item, index) => (
+        <li key={`${index}-${item.slice(0, 20)}`} className="flex gap-2 text-sm leading-7">
+          <span className={`mt-2 size-1.5 shrink-0 rounded-full ${tone === "muted" ? "bg-muted-foreground/50" : "bg-primary/60"}`} />
+          <span className={textClass}>{item}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export default function TaskPage() {
   const router = useRouter();
   const { scenarioResult, setScenarioResult } = usePOA();
@@ -164,7 +210,7 @@ export default function TaskPage() {
                 交际目标
               </h3>
               <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">
-                <p className="text-sm leading-relaxed text-card-foreground">{task.goal}</p>
+                <TaskTextBlock text={task.goal} />
               </div>
             </div>
 
@@ -175,7 +221,7 @@ export default function TaskPage() {
                   语境提示
                 </h3>
                 <div className="rounded-lg bg-muted/50 p-4">
-                  <p className="text-sm leading-relaxed text-muted-foreground">{task.context}</p>
+                  <TaskTextBlock text={task.context} tone="muted" />
                 </div>
               </div>
             )}
@@ -186,7 +232,7 @@ export default function TaskPage() {
                 成功标准
               </h3>
               <div className="rounded-lg border border-border bg-card p-4">
-                <p className="text-sm leading-relaxed text-card-foreground">{task.evaluation_criteria}</p>
+                <TaskTextBlock text={task.evaluation_criteria} />
               </div>
             </div>
           </div>

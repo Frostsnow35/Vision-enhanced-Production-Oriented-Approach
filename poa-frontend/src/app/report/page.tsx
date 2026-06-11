@@ -62,7 +62,6 @@ export default function ReportListPage() {
           </Button>
         </div>
       </div>
-    </div>
   );
 }
   return (

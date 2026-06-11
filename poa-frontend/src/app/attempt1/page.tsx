@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { BASE_URL, chatStart, chatTurn, type TurnFeedback } from "@/lib/api";
+import { playAiAudio, speakWithBrowserTTS } from "@/lib/audio";
 import RecordingWaveform from "@/components/RecordingWaveform";
 import { getScenarioHistory, isTaskSelectedInSession, markTaskSelectedInSession, type ScenarioHistoryItem } from "@/lib/store";
 import { isDeviceCheckPassed } from "@/lib/device-check";
@@ -40,8 +41,44 @@ interface ConversationTurn {
   role: "user" | "ai";
   text?: string;
   audio_url?: string;
+  final_transcript?: string;
+  interim_transcript?: string;
+  sent_user_text?: string;
+  resolved_user_text?: string;
   turn_feedback?: TurnFeedback;
   feedback_collapsed?: boolean;
+  error?: boolean;  // 标记该轮为错误轮次，前端渲染红色警示
+}
+
+type SpeechProcessingStage =
+  | "idle"
+  | "recording"
+  | "uploading"
+  | "upload_complete"
+  | "asr_processing"
+  | "waiting_model_reply"
+  | "ai_speaking"
+  | "wrapping_up";
+
+function getProcessingStageLabel(stage: SpeechProcessingStage): string {
+  switch (stage) {
+    case "recording":
+      return "正在录音";
+    case "uploading":
+      return "上传中...";
+    case "upload_complete":
+      return "上传完成";
+    case "asr_processing":
+      return "ASR 处理中...";
+    case "waiting_model_reply":
+      return "等待模型回复...";
+    case "ai_speaking":
+      return "AI 正在说话...";
+    case "wrapping_up":
+      return "AI 正在收尾...";
+    default:
+      return "";
+  }
 }
 
 function parseRoles(raw: string): { user: string; ai: string } {
@@ -120,6 +157,7 @@ export default function Attempt1Page() {
   const [cameraStatus, setCameraStatus] = useState<"pending" | "ready" | "error">("pending");
   const [micStatus, setMicStatus] = useState<"pending" | "ready" | "error">("pending");
   const [showDevicePanel, setShowDevicePanel] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const [devicePassed, setDevicePassed] = useState(false);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -282,14 +320,18 @@ export default function Attempt1Page() {
 
   // ---- AI 状态 ----
   const [aiSpeaking, setAiSpeaking] = useState(false);
+  const [waitingForAiReply, setWaitingForAiReply] = useState(false);
+  const [speechStage, setSpeechStage] = useState<SpeechProcessingStage>("idle");
   const startedRef = useRef(false);
   const [isFinal, setIsFinal] = useState(false);
   // ---- Plan A 自动收尾进行中：用于在 onstop 内串行化、防止重复触发 ----
   const [wrappingUp, setWrappingUp] = useState(false);
   const [replayAvailable, setReplayAvailable] = useState(false);
   const lastAiAudioUrlRef = useRef<string>("");
+  const lastAiTextRef = useRef<string>("");
   const [replaying, setReplaying] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const speechStageTimerRefs = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   // ---- 气泡列表自动滚动 ----
   useEffect(() => {
@@ -347,19 +389,16 @@ export default function Attempt1Page() {
       );
       setPendingAiSubtitle(data.ai_text);
       setHistory([{ role: "ai", text: data.ai_text, audio_url: data.ai_audio_url }]);
-      if (data.ai_audio_url) {
-        const fullUrl = data.ai_audio_url.startsWith("/") ? `${BASE_URL}${data.ai_audio_url}` : data.ai_audio_url;
-        lastAiAudioUrlRef.current = fullUrl;
-        const audio = new Audio(fullUrl);
-        let ended = false;
-        const finish = () => { if (ended) return; ended = true; setAiSpeaking(false); setReplayAvailable(true); };
-        audio.onended = finish;
-        audio.onerror = finish; // 音频加载/播放出错时也结束
-        audio.play().catch(() => { finish(); setTimeout(finish, 2500); });
-        // 安全网：6 秒后强制结束（防止音频无法结束时挂死）
-        setTimeout(finish, 6000);
-      } else {
-        setTimeout(() => setAiSpeaking(false), 2500);
+      {
+        const fullUrl = data.ai_audio_url
+          ? (data.ai_audio_url.startsWith("/") ? `${BASE_URL}${data.ai_audio_url}` : data.ai_audio_url)
+          : "";
+        if (fullUrl) lastAiAudioUrlRef.current = fullUrl;
+        lastAiTextRef.current = data.ai_text;
+        playAiAudio(data.ai_audio_url ? fullUrl : null, data.ai_text).finally(() => {
+          setAiSpeaking(false);
+          setReplayAvailable(true);
+        });
       }
     } catch (err) {
       console.error("[startAiOpening] LLM 失败:", err);
@@ -379,18 +418,16 @@ export default function Attempt1Page() {
       } catch { /* ignore */ }
       setCurrentSubtitle(mockText);  // 直接显示，不需要点击按钮
       setHistory([{ role: "ai", text: mockText, audio_url: mockAudioUrl }]);
-      if (mockAudioUrl) {
-        const fullUrl = mockAudioUrl.startsWith("/") ? `${BASE_URL}${mockAudioUrl}` : mockAudioUrl;
-        lastAiAudioUrlRef.current = fullUrl;
-        const audio = new Audio(fullUrl);
-        let ended = false;
-        const finish = () => { if (ended) return; ended = true; setAiSpeaking(false); setReplayAvailable(true); };
-        audio.onended = finish;
-        audio.onerror = finish;
-        audio.play().catch(() => { finish(); setTimeout(finish, 2500); });
-        setTimeout(finish, 4000);
-      } else {
-        setTimeout(() => setAiSpeaking(false), 2500);
+      {
+        const fullUrl = mockAudioUrl
+          ? (mockAudioUrl.startsWith("/") ? `${BASE_URL}${mockAudioUrl}` : mockAudioUrl)
+          : "";
+        if (fullUrl) lastAiAudioUrlRef.current = fullUrl;
+        lastAiTextRef.current = mockText;
+        playAiAudio(mockAudioUrl ? fullUrl : null, mockText).finally(() => {
+          setAiSpeaking(false);
+          setReplayAvailable(true);
+        });
       }
     }
   };
@@ -406,7 +443,28 @@ export default function Attempt1Page() {
 
   // ---- 录音可达性派生（前置以避免 TDZ 报错）----
   const micReady = micStatus === "ready";
-  const canRecord = micReady && !uploading && !isFinal && !turnLimitReached && !wrappingUp;
+  const canRecord = micReady && !uploading && !waitingForAiReply && !aiSpeaking && !isFinal && !turnLimitReached && !wrappingUp;
+
+  const clearSpeechStageTimers = useCallback(() => {
+    speechStageTimerRefs.current.forEach((timer) => clearTimeout(timer));
+    speechStageTimerRefs.current = [];
+  }, []);
+
+  const scheduleSpeechProcessingStages = useCallback(() => {
+    clearSpeechStageTimers();
+    setSpeechStage("upload_complete");
+    setCurrentSubtitle("上传完成");
+    speechStageTimerRefs.current = [
+      setTimeout(() => {
+        setSpeechStage("asr_processing");
+        setCurrentSubtitle("ASR 处理中...");
+      }, 450),
+      setTimeout(() => {
+        setSpeechStage("waiting_model_reply");
+        setCurrentSubtitle("等待模型回复...");
+      }, 1650),
+    ];
+  }, [clearSpeechStageTimers]);
 
   // ---- 通话轮次 ----
   const callChatTurn = async (audio_url: string, user_text: string, currentHistory: ConversationTurn[]) => {
@@ -416,8 +474,7 @@ export default function Attempt1Page() {
       : currentHistory;
     const currentTask = taskRef.current;
     if (isFinal) return;
-    setAiSpeaking(true);
-    setCurrentSubtitle("AI 正在思考...");
+    setWaitingForAiReply(true);
     setPendingAiSubtitle(null); // 清空上一句的待显字幕
     try {
       const data = await chatTurn(
@@ -429,6 +486,28 @@ export default function Attempt1Page() {
         currentTask?.goal,
         currentTask?.evaluation_criteria
       );
+
+      // 模型调用失败：前端直接展示真实错误
+      if (data.llm_error) {
+        setSpeechStage("idle");
+        setUploading(false);
+        setAiSpeaking(false);
+        const errorMsg = `[模型调用失败] ${data.llm_error}`;
+        setCurrentSubtitle(errorMsg);
+        setPendingAiSubtitle(errorMsg);
+        const errorTurn: ConversationTurn = {
+          role: "ai",
+          text: errorMsg,
+          audio_url: "",
+          error: true,
+        };
+        setHistory(prev => [...prev, errorTurn]);
+        return;
+      }
+      clearSpeechStageTimers();
+      setWaitingForAiReply(false);
+      setAiSpeaking(true);
+      setSpeechStage("ai_speaking");
       const aiTurn: ConversationTurn = {
         role: "ai",
         text: data.ai_text,
@@ -437,12 +516,22 @@ export default function Attempt1Page() {
         feedback_collapsed: false,
       };
       setHistory((prev) => {
-        if (data.user_text) {
-          console.log("[backfill] Whisper text:", data.user_text);
-          const lastUserIdx = [...prev].reverse().findIndex(h => h.role === "user");
+        const resolvedUserText = data.user_text || user_text;
+        if (resolvedUserText) {
+          console.log("[backfill] model user_text:", resolvedUserText);
+          const lastUserIdx = [...prev].reverse().findIndex((h) => h.role === "user");
           if (lastUserIdx >= 0) {
             const idx = prev.length - 1 - lastUserIdx;
-            return [...prev.slice(0, idx), { ...prev[idx], text: data.user_text }, ...prev.slice(idx + 1), aiTurn];
+            return [
+              ...prev.slice(0, idx),
+              {
+                ...prev[idx],
+                text: resolvedUserText,
+                resolved_user_text: resolvedUserText,
+              },
+              ...prev.slice(idx + 1),
+              aiTurn,
+            ];
           }
         } else {
           console.log("[backfill] no user_text from server");
@@ -457,15 +546,24 @@ export default function Attempt1Page() {
       if (data.ai_audio_url) {
         const fullUrl = data.ai_audio_url.startsWith("/") ? `${BASE_URL}${data.ai_audio_url}` : data.ai_audio_url;
         lastAiAudioUrlRef.current = fullUrl;
-        const audio = new Audio(fullUrl);
-        let ended = false;
-        const finish = () => { if (ended) return; ended = true; setAiSpeaking(false); setReplayAvailable(true); };
-        audio.onended = finish;
-        audio.onerror = finish;
-        audio.play().catch(() => { finish(); setTimeout(finish, 2000); });
-        setTimeout(finish, 6000);
-      } else { setTimeout(() => setAiSpeaking(false), 2000); }
+        lastAiTextRef.current = data.ai_text;
+        playAiAudio(fullUrl, data.ai_text).finally(() => {
+          setAiSpeaking(false);
+          setReplayAvailable(true);
+          setSpeechStage("idle");
+        });
+      } else {
+        lastAiTextRef.current = data.ai_text;
+        playAiAudio(null, data.ai_text).finally(() => {
+          setAiSpeaking(false);
+          setReplayAvailable(true);
+          setSpeechStage("idle");
+        });
+      }
     } catch {
+      clearSpeechStageTimers();
+      setWaitingForAiReply(false);
+      setSpeechStage("idle");
       const mockText = getAiReply(task);
       const aiTurn: ConversationTurn = { role: "ai", text: mockText };
       setHistory((prev) => [...prev, aiTurn]);
@@ -487,10 +585,14 @@ export default function Attempt1Page() {
     recorderRef.current = recorder;
     chunksRef.current = [];
     recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
-    recorder.onerror = () => { alert("录音出错"); setRecording(false); };
+    recorder.onerror = () => { alert("录音出错"); setRecording(false); setSpeechStage("idle"); };
     recorder.onstop = async () => {
-      if (chunksRef.current.length === 0) return;
+      if (chunksRef.current.length === 0) {
+        setSpeechStage("idle");
+        return;
+      }
       setUploading(true);
+      setSpeechStage("uploading");
       let audioUrl = "";
       try {
         const blobType = recorder.mimeType || mimeType || "audio/webm";
@@ -501,17 +603,30 @@ export default function Attempt1Page() {
         const uploadRes = await fetch(`${BASE_URL}/api/upload/audio`, { method: "POST", body: form });
         if (uploadRes.ok) { const data = await uploadRes.json() as { audio_url: string }; audioUrl = data.audio_url; }
       } catch { /* ignore */ }
-      const userText = finalTranscriptRef.current.trim() || interimTranscriptRef.current.trim();
-      const userTurn: ConversationTurn = { role: "user", text: userText || undefined, audio_url: audioUrl || undefined };
+      const finalTranscript = finalTranscriptRef.current.trim();
+      const interimTranscriptText = interimTranscriptRef.current.trim();
+      const userText = finalTranscript || interimTranscriptText;
+      const userTurn: ConversationTurn = {
+        role: "user",
+        text: userText || undefined,
+        audio_url: audioUrl || undefined,
+        final_transcript: finalTranscript || undefined,
+        interim_transcript: interimTranscriptText || undefined,
+        sent_user_text: userText || undefined,
+      };
       const newHistory = [...history, userTurn];
       setHistory(newHistory);
       if (userText) setCurrentSubtitle(`你说：${userText}`);
+      setUploading(false); // 上传完成，之后是 AI 处理
+      scheduleSpeechProcessingStages();
       // Plan A 自动收尾：用户达轮次上限时不再立即 setIsFinal，而是串行触发一次 chatTurn
       // 注入 WRAP_UP_HINT 让 AI 自然告别；失败时降级为通用告别模板
       if (turnLimitReached && !isFinal && !wrappingUp) {
         const currentTask2 = taskRef.current;
         setWrappingUp(true);
-        setAiSpeaking(true);
+        setWaitingForAiReply(true);
+        clearSpeechStageTimers();
+        setSpeechStage("wrapping_up");
         setCurrentSubtitle("AI 正在收尾...");
         setPendingAiSubtitle(null);
         // 剔除末尾用户轮次，避免 LLM 收到重复消息
@@ -531,6 +646,9 @@ export default function Attempt1Page() {
             currentTask2?.evaluation_criteria,
             (currentTask2 as any)?.closing_line ?? ""
           );
+          setWaitingForAiReply(false);
+          setAiSpeaking(true);
+          setSpeechStage("ai_speaking");
           const aiTurn: ConversationTurn = {
             role: "ai",
             text: data.ai_text,
@@ -538,7 +656,24 @@ export default function Attempt1Page() {
             turn_feedback: data.turn_feedback && data.turn_feedback.short_comment ? data.turn_feedback : undefined,
             feedback_collapsed: false,
           };
-          setHistory((prev) => [...prev, aiTurn]);
+          setHistory((prev) => {
+            const resolvedUserText = data.user_text || wrapUpUserText;
+            const lastUserIdx = [...prev].reverse().findIndex((h) => h.role === "user");
+            if (lastUserIdx >= 0) {
+              const idx = prev.length - 1 - lastUserIdx;
+              return [
+                ...prev.slice(0, idx),
+                {
+                  ...prev[idx],
+                  text: data.user_text || prev[idx].text,
+                  resolved_user_text: resolvedUserText,
+                },
+                ...prev.slice(idx + 1),
+                aiTurn,
+              ];
+            }
+            return [...prev, aiTurn];
+          });
           setPendingAiSubtitle(data.ai_text);
           setIsFinal(true);
           if (data.ai_audio_url) {
@@ -546,13 +681,22 @@ export default function Attempt1Page() {
             lastAiAudioUrlRef.current = fullUrl;
             const audio = new Audio(fullUrl);
             let ended = false;
-            const finish = () => { if (ended) return; ended = true; setAiSpeaking(false); setReplayAvailable(true); };
+            const finish = () => {
+              if (ended) return;
+              ended = true;
+              setAiSpeaking(false);
+              setReplayAvailable(true);
+              setSpeechStage("idle");
+            };
             audio.onended = finish;
             audio.onerror = finish;
             audio.play().catch(() => { finish(); setTimeout(finish, 2000); });
             setTimeout(finish, 6000);
           } else {
-            setTimeout(() => setAiSpeaking(false), 2000);
+            setTimeout(() => {
+              setAiSpeaking(false);
+              setSpeechStage("idle");
+            }, 2000);
           }
         } catch (err) {
           console.warn("[attempt1] Plan A 调用失败，降级:", err);
@@ -563,21 +707,23 @@ export default function Attempt1Page() {
           setHistory((prev) => [...prev, aiTurn]);
           setPendingAiSubtitle(fallbackText);
           setIsFinal(true);
+          setWaitingForAiReply(false);
           setAiSpeaking(false);
+          setSpeechStage("idle");
         } finally {
           setWrappingUp(false);
         }
-        setUploading(false);
         return;
       }
       await callChatTurn(audioUrl, userText, newHistory);
-      setUploading(false);
     };
     recorder.start();
     setRecording(true);
+    setSpeechStage("recording");
     setElapsed(0);
     timerRef.current = setInterval(() => setElapsed((n) => n + 1), 1000);
     finalTranscriptRef.current = "";
+    interimTranscriptRef.current = "";
     setInterimTranscript("");
     setCurrentSubtitle("正在听你说话...");
     if (speechSupported) {
@@ -599,20 +745,34 @@ export default function Attempt1Page() {
         const display = finalTranscriptRef.current + (interim ? (finalTranscriptRef.current ? " " : "") + interim : "");
         setCurrentSubtitle(display || "正在听你说话...");
       };
-      recognition.onerror = (e: Event) => console.warn("语音识别错误:", (e as unknown as { error: string }).error);
+      recognition.onerror = (e: Event) => { const err = (e as unknown as { error: string }).error; if (err !== "aborted" && err !== "no-speech") console.warn("语音识别错误:", err); };
+      recognition.onend = () => {
+        // Web Speech 交付完所有结果后，停止录音器，保证文本已被 capture
+        if (recorderRef.current && recorderRef.current.state === "recording") {
+          recorderRef.current.stop();
+        }
+        speechRecognitionRef.current = null;
+      };
       recognition.start();
       speechRecognitionRef.current = recognition;
     }
-  }, [recording, uploading, history, speechSupported, canRecord]);
+  }, [recording, uploading, history, speechSupported, canRecord, clearSpeechStageTimers, scheduleSpeechProcessingStages, isFinal, turnLimitReached, wrappingUp, task]);
 
   const endRecord = useCallback(() => {
     if (pressTimerRef.current) { clearTimeout(pressTimerRef.current); pressTimerRef.current = null; }
     if (!recording) return;
+    // 停止 Web Speech，onend 里会调 recorder.stop()，保证文本已 capture
     speechRecognitionRef.current?.stop();
-    speechRecognitionRef.current = null;
-    recorderRef.current?.stop();
     setRecording(false);
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    // 安全超时：如果 onend 3 秒内没触发，强制停录音器
+    const timeoutId = setTimeout(() => {
+      if (recorderRef.current && recorderRef.current.state === "recording") {
+        recorderRef.current.stop();
+      }
+    }, 3000);
+    // 用闭包清理（onend 触发后不需要超时了，但不清理也不影响）
+    setTimeout(() => clearTimeout(timeoutId), 5000);
   }, [recording]);
 
   // ---- 空格键 ----
@@ -628,13 +788,21 @@ export default function Attempt1Page() {
     return () => { window.removeEventListener("keydown", onKeyDown); window.removeEventListener("keyup", onKeyUp); };
   }, [beginRecord, endRecord, canRecord]);
 
-  useEffect(() => { return () => { if (pressTimerRef.current) clearTimeout(pressTimerRef.current); if (timerRef.current) clearInterval(timerRef.current); }; }, []);
+  useEffect(() => {
+    return () => {
+      if (pressTimerRef.current) clearTimeout(pressTimerRef.current);
+      if (timerRef.current) clearInterval(timerRef.current);
+      clearSpeechStageTimers();
+    };
+  }, [clearSpeechStageTimers]);
 
   // ---- 提交诊断 ----
   const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const handleSubmit = async () => {
-    if (history.length < 2) { alert("请至少进行一轮对话"); return; }
+    if (history.length < 2) { setSubmitError("请至少进行一轮对话"); return; }
     setSubmitting(true);
+    setSubmitError(null);
     try {
       const conversationText = history
         .map((h) => {
@@ -644,6 +812,21 @@ export default function Attempt1Page() {
         .filter((s) => s.trim().length > 0)
         .join("\n");
       localStorage.setItem("conversationText", conversationText);
+      localStorage.setItem(
+        "attempt1_turn_traces",
+        JSON.stringify(
+          history
+            .filter((h) => h.role === "user")
+            .map((h, index) => ({
+              turn_index: index + 1,
+              final_transcript: h.final_transcript || "",
+              interim_transcript: h.interim_transcript || "",
+              sent_user_text: h.sent_user_text || "",
+              resolved_user_text: h.resolved_user_text || h.text || "",
+              audio_url: h.audio_url || "",
+            }))
+        )
+      );
       // 收集用户录音的 audio_url，供后续评价页进行发音分析
       const audioUrls = history.filter(h => h.role === "user" && h.audio_url).map(h => h.audio_url);
       if (audioUrls.length > 0) {
@@ -651,11 +834,23 @@ export default function Attempt1Page() {
       }
       const taskId = (taskRef.current as any)?.task_id;
       const res = await fetch(`${BASE_URL}/api/attempt1/submit`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ task_id: taskId ?? 0, attempt_text: conversationText || "[no speech]", attempt_number: 1, audio_urls: audioUrls }) });
-      if (!res.ok) throw new Error(`${res.status}`);
+      if (!res.ok) {
+        const detail = await res.text().catch(() => "未知错误");
+        throw new Error(`服务器返回错误 (${res.status}): ${detail}`);
+      }
       const data = await res.json();
       localStorage.setItem("diagnosis", JSON.stringify(data));
       router.push("/diagnosis");
-    } catch (err: any) { alert("提交失败: " + (err.message ?? "")); } finally { setSubmitting(false); }
+    } catch (err: any) {
+      const msg = err?.message || String(err);
+      if (msg.includes("Failed to fetch") || msg.includes("NetworkError") || msg.includes("fetch")) {
+        setSubmitError("无法连接到服务器，请确认后端服务已启动（端口 8000），然后重试");
+      } else if (msg.includes("服务器返回错误")) {
+        setSubmitError(msg);
+      } else {
+        setSubmitError("提交失败：" + msg);
+      }
+    } finally { setSubmitting(false); }
   };
 
   const formatTime = (s: number) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
@@ -686,6 +881,10 @@ export default function Attempt1Page() {
     ? "麦克风未就绪"
     : uploading
     ? "正在上传"
+    : waitingForAiReply
+    ? getProcessingStageLabel(speechStage)
+    : aiSpeaking
+    ? "AI 正在说话..."
     : isFinal
     ? "对话已结束"
     : turnLimitReached
@@ -694,7 +893,7 @@ export default function Attempt1Page() {
 
   return (
     <TaskGate>
-    <div className="flex h-[calc(100vh-100px)] flex-col">
+      <div className="flex h-[calc(100vh-100px)] flex-col">
       {/* 顶部任务摘要 */}
       <div className="shrink-0 border-b border-border bg-card px-4 py-2">
         <div className="flex items-center justify-between text-xs">
@@ -776,7 +975,7 @@ export default function Attempt1Page() {
           <div className="absolute left-3 bottom-3 flex items-center gap-2 rounded-lg bg-black/50 px-3 py-1 text-xs text-white backdrop-blur">
             {user.split("——")[0]}
             {recording && <span className="flex items-center gap-1"><span className="size-1.5 animate-pulse rounded-full bg-red-500" />{formatTime(elapsed)}</span>}
-            {uploading && <span className="text-white/60">处理中...</span>}
+            {(uploading || waitingForAiReply) && <span className="text-white/60">{getProcessingStageLabel(speechStage)}</span>}
           </div>
         </div>
 
@@ -792,7 +991,12 @@ export default function Attempt1Page() {
             </div>
             <div className="text-center">
               <p className="text-sm font-semibold text-card-foreground">{ai.split("——")[0]}</p>
-              <p className={`text-xs ${aiSpeaking ? "text-primary animate-pulse" : "text-muted-foreground"}`}>{aiSpeaking ? "正在说话..." : recording ? "正在听..." : "等待中"}</p>
+              <p className={`text-xs ${aiSpeaking || waitingForAiReply ? "text-primary animate-pulse" : "text-muted-foreground"}`}>
+                {aiSpeaking ? "正在说话..." : recording ? "正在听..." : waitingForAiReply ? getProcessingStageLabel(speechStage) : "等待中"}
+              </p>
+              {waitingForAiReply && history.filter(h => h.role === "ai").length <= 1 && (
+                <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 animate-in fade-in duration-300">首句回复可能需等待 10-30 秒，请耐心等待</p>
+              )}
             </div>
             <div className="max-w-[90%] rounded-xl bg-muted/50 px-4 py-2.5 text-center min-h-[3rem] flex items-center justify-center">
               {recording && interimTranscript ? <p className="text-xs"><span className="text-card-foreground">{currentSubtitle.replace(interimTranscript, "").trim()}</span> <span className="italic text-muted-foreground/70">{interimTranscript}</span></p> : (
@@ -803,18 +1007,38 @@ export default function Attempt1Page() {
             </div>
             {/* 重播按钮 + 显示字幕按钮 同行 */}
             <div className="flex items-center gap-2">
+              {/* 显示/隐藏对话记录 */}
+              {history.length > 0 && (
+                <button
+                  onClick={() => setShowHistory(!showHistory)}
+                  className="inline-flex items-center justify-center size-9 rounded-full bg-muted/50 text-muted-foreground hover:bg-muted transition-colors"
+                  title={showHistory ? "隐藏对话记录" : "显示对话记录"}
+                >
+                  <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                    {!showHistory && <line x1="1" y1="1" x2="23" y2="23" stroke="currentColor" strokeWidth="2" />}
+                  </svg>
+                </button>
+              )}
               {/* AI 语音重播按钮 */}
-              {replayAvailable && lastAiAudioUrlRef.current && !aiSpeaking && !recording && (
+              {replayAvailable && !aiSpeaking && !recording && (
                 <button
                   onClick={async () => {
                     setReplaying(true);
                     try {
-                      const audio = new Audio(lastAiAudioUrlRef.current);
-                      await new Promise<void>((resolve) => {
-                        audio.onended = () => resolve();
-                        audio.onerror = () => resolve();
-                        audio.play().catch(() => resolve());
-                      });
+                      const url = lastAiAudioUrlRef.current;
+                      if (url) {
+                        const audio = new Audio(url);
+                        await new Promise<void>((resolve) => {
+                          audio.onended = () => resolve();
+                          audio.onerror = () => resolve();
+                          audio.play().catch(() => resolve());
+                        });
+                      }
+                      // 降级：浏览器 TTS
+                      if (lastAiTextRef.current) {
+                        await speakWithBrowserTTS(lastAiTextRef.current);
+                      }
                     } catch { /* ignore */ }
                     setReplaying(false);
                   }}
@@ -892,6 +1116,7 @@ export default function Attempt1Page() {
           </div>
 
           {/* 下半段：可滚动历史对话气泡列表 */}
+          {showHistory && (
           <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto px-4 pb-2 space-y-2">
             {history.length === 0 ? (
               <div className="flex h-full items-center justify-center text-xs text-muted-foreground/60">
@@ -900,6 +1125,7 @@ export default function Attempt1Page() {
             ) : (
               history.map((h, i) => {
                 const isUser = h.role === "user";
+                const isError = h.error === true;
                 const nextAi = i + 1 < history.length ? history[i + 1] : null;
                 const fb = nextAi && nextAi.role === "ai" && nextAi.turn_feedback ? nextAi.turn_feedback : null;
                 const colorMap: Record<string, string> = {
@@ -917,11 +1143,21 @@ export default function Attempt1Page() {
                       className={`max-w-[75%] rounded-2xl px-3 py-2 text-xs ${
                         isUser
                           ? "bg-blue-500 text-white rounded-br-sm"
-                          : "bg-gray-100 dark:bg-gray-800 rounded-bl-sm"
+                          : isError
+                            ? "bg-red-100 dark:bg-red-950 border border-red-300 dark:border-red-700 text-red-800 dark:text-red-200 rounded-bl-sm"
+                            : "bg-gray-100 dark:bg-gray-800 rounded-bl-sm"
                       }`}
                     >
                       <ClickableEnglish text={h.text || ""} />
                     </div>
+                    {isUser && (h.final_transcript || h.interim_transcript || h.sent_user_text || h.resolved_user_text) && (
+                      <div className="mt-1 max-w-[75%] rounded-xl border border-border/60 bg-muted/40 px-2.5 py-1.5 text-[10px] text-muted-foreground">
+                        {h.final_transcript && <div>finalTranscript: {h.final_transcript}</div>}
+                        {h.interim_transcript && <div>interimTranscript: {h.interim_transcript}</div>}
+                        {h.sent_user_text && <div>实际发送 user_text: {h.sent_user_text}</div>}
+                        {h.resolved_user_text && h.resolved_user_text !== h.sent_user_text && <div>后端采用文本: {h.resolved_user_text}</div>}
+                      </div>
+                    )}
                     <div className="flex items-center gap-1.5 mt-0.5 mb-0.5">
                       <span className={`text-[10px] ${isUser ? "text-blue-500" : "text-muted-foreground"}`}>
                         {isUser ? "你" : "AI"}
@@ -942,6 +1178,7 @@ export default function Attempt1Page() {
               })
             )}
           </div>
+          )}
         </div>
       </div>
 
@@ -985,7 +1222,7 @@ export default function Attempt1Page() {
                     ? "bg-muted text-muted-foreground cursor-not-allowed"
                     : "bg-primary text-primary-foreground shadow-md hover:shadow-lg hover:bg-primary/90"
             }`}>
-            {!micReady ? "麦克风未就绪" : wrappingUp ? "AI 正在收尾..." : recording ? `松开停止 (${formatTime(elapsed)})` : uploading ? "处理中..." : isFinal ? "对话已结束" : turnLimitReached ? "已达到建议轮次" : "按住说话"}
+            {!micReady ? "麦克风未就绪" : wrappingUp ? "AI 正在收尾..." : recording ? `松开停止 (${formatTime(elapsed)})` : uploading || waitingForAiReply ? getProcessingStageLabel(speechStage) : isFinal ? "对话已结束" : turnLimitReached ? "已达到建议轮次" : "按住说话"}
           </button>
           {showHint && micReady && <span className="hidden sm:inline text-xs text-muted-foreground/60 animate-in fade-in duration-300">或长按空格键录音</span>}
           {!speechSupported && micReady && <span className="text-xs text-amber-600 dark:text-amber-400">当前浏览器不支持实时转写</span>}
@@ -995,6 +1232,29 @@ export default function Attempt1Page() {
             <span className="ml-2 text-xs text-muted-foreground">已达到建议轮次</span>
           )}
         </div>
+        {submitError && (
+          <div className="rounded-lg bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 px-4 py-2.5">
+            <div className="flex items-start gap-2">
+              <svg className="size-4 text-red-500 mt-0.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+              <div className="flex-1">
+                <p className="text-sm text-red-700 dark:text-red-300">{submitError}</p>
+                <button
+                  onClick={() => { setSubmitError(null); handleSubmit(); }}
+                  className="mt-2 text-xs text-red-600 dark:text-red-400 underline hover:text-red-800"
+                >
+                  点击重试
+                </button>
+              </div>
+              <button onClick={() => setSubmitError(null)} className="text-red-400 hover:text-red-600">
+                <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 设备检测模态框：自动唤起 */}
@@ -1008,7 +1268,7 @@ export default function Attempt1Page() {
       {countdownKey !== null && (
         <CountdownEffect key={countdownKey} seconds={3} onDone={() => {}} />
       )}
-    </div>
+      </div>
     </TaskGate>
   );
 }

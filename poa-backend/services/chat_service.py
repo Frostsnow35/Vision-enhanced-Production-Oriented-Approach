@@ -29,6 +29,29 @@ from config import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("chat_service")
 
+
+def _clip_text(text: Any, limit: int = 160) -> str:
+    """裁剪日志文本，避免单条日志过长。"""
+    value = "" if text is None else str(text)
+    value = value.replace("\n", "\\n")
+    if len(value) <= limit:
+        return value
+    return value[:limit] + "..."
+
+
+def _serialize_messages_for_log(messages: List[Dict[str, Any]]) -> str:
+    """将消息列表压缩为适合日志输出的预览。"""
+    preview = []
+    for message in messages:
+        preview.append(
+            {
+                "role": message.get("role", ""),
+                "content": _clip_text(message.get("content", ""), 120),
+            }
+        )
+    return json.dumps(preview, ensure_ascii=False)
+
+
 def _clean_think(text: str) -> str:
     """移除 LLM 泄露的 </think...> 标签"""
     return re.sub(r'</?think[^>]*>', '', text).strip()
@@ -389,6 +412,10 @@ def generate_reply(
     # 追加当前用户输入
     messages.append({"role": "user", "content": user_text})
 
+    logger.info(
+        f"[chat] conversation_history 组装完成: history_turns={len(recent)}, "
+        f"assembled_messages={_serialize_messages_for_log(messages)}"
+    )
     logger.info(f"[chat] 调用 LLM 生成回复 — history={len(recent)} turns")
 
     try:
@@ -403,9 +430,14 @@ def generate_reply(
                 json=body,
             )
             resp.raise_for_status()
-        text = _clean_think(resp.json()["choices"][0]["message"]["content"])
-        logger.info(f"[chat] LLM 回复: {text[:80]}")
+        raw_text = resp.json()["choices"][0]["message"]["content"]
+        logger.info(f"[chat] 模型返回文本(raw): {_clip_text(raw_text, 200)}")
+        text = _clean_think(raw_text)
+        logger.info(f"[chat] 模型返回文本(clean): {_clip_text(text, 200)}")
         ai_text, is_final = _extract_completion_flag(text)
+        logger.info(
+            f"[chat] 模型返回解析结果: ai_text={_clip_text(ai_text, 200)}, is_final={is_final}"
+        )
 
         # 收尾语提前识别：若 AI 未打标记但语义与 closing_line 相近，视为结束
         closing_line = task_context.get("closing_line", "")
@@ -414,10 +446,17 @@ def generate_reply(
             is_final = True
 
         return ai_text, is_final
+    except httpx.HTTPStatusError as e:
+        detail = ""
+        try:
+            detail = e.response.json().get("error", {}).get("message", e.response.text[:200])
+        except Exception:
+            detail = e.response.text[:200] if e.response.text else str(e)
+        logger.error(f"[chat] LLM HTTP {e.response.status_code}: {detail}")
+        raise RuntimeError(f"模型调用失败 (HTTP {e.response.status_code}): {detail}")
     except Exception as e:
-        logger.warning(f"[chat] LLM 回复失败: {e}，降级 Mock")
-        ai_text, is_final = _mock_reply(user_text, task_context)
-        return ai_text, is_final
+        logger.error(f"[chat] LLM 回复失败: {e}")
+        raise RuntimeError(f"模型调用失败: {str(e)[:200]}")
 
 
 def _extract_completion_flag(text: str):
@@ -561,71 +600,114 @@ def request_closing_line(task_context: Dict[str, Any]):
 def text_to_speech(text: str) -> str:
     """
     将文本转为音频文件，保存到 TTS_DIR。
-    策略：豆包 TTS（在线，英文纯正）优先，失败则用 gTTS（降级）。
+    策略：豆包 TTS V3 API（X-Api-Key 新模式优先 → Legacy 旧模式 → gTTS 降级）。
     返回音频 URL（如 /uploads/tts/abc.mp3），失败返回空字符串。
     """
     os.makedirs(TTS_DIR, exist_ok=True)
     text_hash = hashlib.md5(text.encode()).hexdigest()[:12]
+    req_id = str(uuid.uuid4())
 
-    # ---- 策略 1: 豆包 TTS ----
-    try:
-        filename = f"{text_hash}.mp3"
-        filepath = os.path.join(TTS_DIR, filename)
-        if os.path.isfile(filepath):
-            logger.info(f"[TTS] 豆包缓存命中: {filepath}")
-            return f"/uploads/tts/{filename}"
+    # 检查缓存（任一种方案命中均可复用）
+    filename = f"{text_hash}.mp3"
+    filepath = os.path.join(TTS_DIR, filename)
+    if os.path.isfile(filepath):
+        logger.info(f"[TTS] 缓存命中: {filepath}")
+        return f"/uploads/tts/{filename}"
 
-        # 调用火山引擎 TTS V3 API（流式单向合成）
-        headers = {
-            "X-Api-App-Id": DOUBAO_TTS_APP_ID,
-            "X-Api-Access-Key": DOUBAO_TTS_TOKEN,
-            "X-Api-Resource-Id": DOUBAO_TTS_RESOURCE_ID,
-            "X-Api-Request-Id": str(uuid.uuid4()),
-            "Content-Type": "application/json",
-        }
-        body = {
-            "user": {"uid": "poa_user"},
-            "namespace": "BidirectionalTTS",
-            "req_params": {
-                "text": text,
-                "speaker": DOUBAO_TTS_VOICE,
-                "audio_params": {"format": "mp3", "sample_rate": 24000},
-            },
-        }
-        with httpx.Client(timeout=20.0) as client:
-            resp = client.post(DOUBAO_TTS_URL, headers=headers, json=body)
-            resp.raise_for_status()
-            # V3 流式响应：多行 JSON，每行含 code/data/is_final
-            audio_b64_parts = []
-            for line in resp.text.strip().split("\n"):
-                if not line.strip():
-                    continue
-                chunk = json.loads(line)
-                code = chunk.get("code", 0)
-                if code not in (0, 20000000):
-                    raise Exception(f"TTS API error code={code}: {chunk.get('message', 'unknown')}")
-                data_val = chunk.get("data")
-                if data_val:
-                    audio_b64_parts.append(data_val)
-            if not audio_b64_parts:
-                raise Exception("TTS returned empty audio data")
-            audio_b64 = "".join(audio_b64_parts)
-            import base64 as _b64
-            audio_data = _b64.b64decode(audio_b64)
-            with open(filepath, "wb") as f:
-                f.write(audio_data)
+    audio_data: bytes | None = None
+
+    # ---- 策略 1a: 豆包 TTS V3（X-Api-Key 新模式，复用 ARK API Key）----
+    if DOUBAO_API_KEY and not audio_data:
+        try:
+            headers = {
+                "X-Api-Key": DOUBAO_API_KEY,
+                "X-Api-Resource-Id": DOUBAO_TTS_RESOURCE_ID,
+                "X-Api-Request-Id": req_id,
+                "Content-Type": "application/json",
+            }
+            body = {
+                "user": {"uid": "poa_user"},
+                "namespace": "BidirectionalTTS",
+                "req_params": {
+                    "text": text,
+                    "speaker": DOUBAO_TTS_VOICE,
+                    "audio_params": {"format": "mp3", "sample_rate": 24000},
+                },
+            }
+            with httpx.Client(timeout=20.0) as client:
+                resp = client.post(DOUBAO_TTS_URL, headers=headers, json=body)
+                resp.raise_for_status()
+                audio_b64_parts = []
+                for line in resp.text.strip().split("\n"):
+                    if not line.strip():
+                        continue
+                    chunk = json.loads(line)
+                    code = chunk.get("code", 0)
+                    if code not in (0, 20000000):
+                        raise Exception(f"TTS API error code={code}: {chunk.get('message', 'unknown')}")
+                    data_val = chunk.get("data")
+                    if data_val:
+                        audio_b64_parts.append(data_val)
+                if not audio_b64_parts:
+                    raise Exception("TTS returned empty audio data")
+                audio_b64 = "".join(audio_b64_parts)
+                import base64 as _b64
+                audio_data = _b64.b64decode(audio_b64)
+            logger.info(f"[TTS] 豆包 X-Api-Key 模式成功")
+        except Exception as e:
+            logger.warning(f"[TTS] 豆包 X-Api-Key 模式失败: {e}")
+
+    # ---- 策略 1b: 豆包 TTS V3（Legacy APP_ID + Token 旧模式）----
+    if DOUBAO_TTS_APP_ID and DOUBAO_TTS_TOKEN and not audio_data:
+        try:
+            headers = {
+                "X-Api-App-Id": DOUBAO_TTS_APP_ID,
+                "X-Api-Access-Key": DOUBAO_TTS_TOKEN,
+                "X-Api-Resource-Id": DOUBAO_TTS_RESOURCE_ID,
+                "X-Api-Request-Id": req_id,
+                "Content-Type": "application/json",
+            }
+            body = {
+                "user": {"uid": "poa_user"},
+                "namespace": "BidirectionalTTS",
+                "req_params": {
+                    "text": text,
+                    "speaker": DOUBAO_TTS_VOICE,
+                    "audio_params": {"format": "mp3", "sample_rate": 24000},
+                },
+            }
+            with httpx.Client(timeout=20.0) as client:
+                resp = client.post(DOUBAO_TTS_URL, headers=headers, json=body)
+                resp.raise_for_status()
+                audio_b64_parts = []
+                for line in resp.text.strip().split("\n"):
+                    if not line.strip():
+                        continue
+                    chunk = json.loads(line)
+                    code = chunk.get("code", 0)
+                    if code not in (0, 20000000):
+                        raise Exception(f"TTS API error code={code}: {chunk.get('message', 'unknown')}")
+                    data_val = chunk.get("data")
+                    if data_val:
+                        audio_b64_parts.append(data_val)
+                if not audio_b64_parts:
+                    raise Exception("TTS returned empty audio data")
+                audio_b64 = "".join(audio_b64_parts)
+                import base64 as _b64
+                audio_data = _b64.b64decode(audio_b64)
+            logger.info(f"[TTS] 豆包 Legacy 模式成功")
+        except Exception as e:
+            logger.warning(f"[TTS] 豆包 Legacy 模式失败: {e}，降级 gTTS")
+
+    # 保存豆包 TTS 生成的音频
+    if audio_data:
+        with open(filepath, "wb") as f:
+            f.write(audio_data)
         logger.info(f"[TTS] 豆包生成成功: /uploads/tts/{filename}")
         return f"/uploads/tts/{filename}"
-    except Exception as e:
-        logger.warning(f"[TTS] 豆包 TTS 失败: {e}，降级 gTTS")
 
     # ---- 策略 2: gTTS 降级 ----
     try:
-        filename = f"{text_hash}.mp3"
-        filepath = os.path.join(TTS_DIR, filename)
-        if os.path.isfile(filepath):
-            logger.info(f"[TTS] gTTS 缓存命中: {filepath}")
-            return f"/uploads/tts/{filename}"
         tts = gTTS(text=text, lang="en", slow=False)
         tts.save(filepath)
         logger.info(f"[TTS] gTTS 生成成功: /uploads/tts/{filename}")
@@ -633,5 +715,5 @@ def text_to_speech(text: str) -> str:
     except Exception as e:
         logger.warning(f"[TTS] gTTS 失败: {e}")
 
-    logger.error(f"[TTS] 所有 TTS 方案均失败，返回空")
+    logger.error(f"[TTS] 所有 TTS 方案均失败，返回空；前端将降级浏览器 SpeechSynthesis")
     return ""

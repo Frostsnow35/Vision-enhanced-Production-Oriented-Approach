@@ -1,4 +1,5 @@
 import os
+import re
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -32,7 +33,22 @@ def get_db():
 
 # 豆包 API 配置 — 从环境变量读取
 DOUBAO_API_KEY = os.getenv("DOUBAO_API_KEY", "")
-DOUBAO_MODEL_ID = os.getenv("DOUBAO_MODEL_ID", "doubao-seed-2-0-mini-260428")
+
+
+def _normalize_ark_model_id(model_id: str) -> str:
+    """
+    兼容历史误配的模型 ID 写法。
+    例如：doubao-seed-2.0-mini-260428 -> doubao-seed-2-0-mini-260428
+    Ark chat/completions 端点使用的是连字符版本。
+    """
+    value = (model_id or "").strip()
+    if not value:
+        return "doubao-seed-2-0-mini-260428"
+    # 将数字.数字规范化为数字-数字，避免 404 InvalidEndpointOrModel.NotFound
+    return re.sub(r"(?<=\d)\.(?=\d)", "-", value)
+
+
+DOUBAO_MODEL_ID = _normalize_ark_model_id(os.getenv("DOUBAO_MODEL_ID", "doubao-seed-2-0-mini-260428"))
 DOUBAO_BASE_URL = os.getenv("DOUBAO_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3")
 
 # Ark SDK 配置
@@ -61,3 +77,9 @@ DOUBAO_TTS_VOICE = os.getenv("DOUBAO_TTS_VOICE", "en_female_dacey_uranus_bigtts"
 DOUBAO_TTS_RESOURCE_ID = os.getenv("DOUBAO_TTS_RESOURCE_ID", "seed-tts-2.0")
 # TTS API endpoint (V3)
 DOUBAO_TTS_URL = "https://openspeech.bytedance.com/api/v3/tts/unidirectional"
+
+# 豆包 ASR 配置（火山引擎大模型语音识别 Flash —— 毫秒级响应）
+DOUBAO_ASR_APP_ID = os.getenv("DOUBAO_ASR_APP_ID", "")
+DOUBAO_ASR_TOKEN = os.getenv("DOUBAO_ASR_TOKEN", "")
+DOUBAO_ASR_RESOURCE_ID = os.getenv("DOUBAO_ASR_RESOURCE_ID", "volc.bigasr.flash")
+DOUBAO_ASR_URL = "https://openspeech.bytedance.com/api/v3/auc/bigmodel/recognize/flash"

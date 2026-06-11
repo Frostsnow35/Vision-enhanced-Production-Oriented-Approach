@@ -72,6 +72,15 @@ async def lifespan(app: FastAPI):
     except Exception:
         pass
 
+    try:
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE poa_tasks ADD COLUMN opening_line TEXT"))
+            conn.execute(text("ALTER TABLE poa_tasks ADD COLUMN closing_line TEXT"))
+            conn.commit()
+    except Exception:
+        pass
+
     yield
 
 

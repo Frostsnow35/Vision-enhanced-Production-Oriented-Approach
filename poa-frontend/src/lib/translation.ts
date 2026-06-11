@@ -3,8 +3,10 @@
 // 严格 system prompt 限定为"英汉词典"角色（与对话/评估/促成学习等职责严格区分）
 // 模型：豆包 doubao-seed-2.0-mini-260428（与项目其它 LLM 调用共享 key/model，但通过 prompt 隔离职责）
 // 缓存：localStorage poa_word_cache，TTL 30 天
+// 降级：本地词典 LOCAL_DICT（~500 高频词，离线可用）
 
 import { BASE_URL } from "@/lib/api";
+import LOCAL_DICT from "@/lib/local-dict";
 
 const CACHE_KEY = "poa_word_cache";
 const TTL_DAYS = 30;
@@ -62,6 +64,15 @@ export interface DictResult {
 
 const inFlight: Map<string, Promise<DictResult>> = new Map();
 
+function normalizeResult(input: Partial<DictResult> | null | undefined): DictResult {
+  const translation = String(input?.translation ?? "").trim().slice(0, 30);
+  const phonetic = String(input?.phonetic ?? "").trim().slice(0, 50);
+  return {
+    translation: translation || "（翻译失败）",
+    phonetic,
+  };
+}
+
 /**
  * 翻译英文单词为中文 + 音标
  * - 自动使用 localStorage 缓存（30 天）
@@ -72,6 +83,12 @@ export async function translateWord(word: string): Promise<DictResult> {
   const key = normalizeWord(word);
   if (!key) return { translation: "", phonetic: "" };
   if (key.length < 2) return { translation: key, phonetic: "" }; // 太短的（如 a, I）跳过 LLM
+
+  // ---- 命中本地词典（离线优先）----
+  const localEntry = LOCAL_DICT[key];
+  if (localEntry) {
+    return { translation: localEntry.t, phonetic: localEntry.p };
+  }
 
   // ---- 命中缓存 ----
   const cache = readCache();
@@ -97,35 +114,41 @@ export async function translateWord(word: string): Promise<DictResult> {
         return { translation: "（翻译失败）", phonetic: "" };
       }
       const data = await resp.json();
-      const content: string = data?.choices?.[0]?.message?.content ?? "";
-      // 尝试解析 JSON；如返回含 markdown 代码块，做一次清洗
-      const jsonStr = content.replace(/```json\s*/g, "").replace(/```/g, "").trim();
-      try {
-        const parsed = JSON.parse(jsonStr);
-        const result: DictResult = {
-          translation: String(parsed.translation ?? "").slice(0, 30),
-          phonetic: String(parsed.phonetic ?? "").slice(0, 50),
-        };
-        // 写缓存
-        const cur = readCache();
-        cur[key] = {
-          v: CACHE_VERSION,
-          translation: result.translation,
-          phonetic: result.phonetic,
-          at: Date.now(),
-        };
-        writeCache(cur);
-        return result;
-      } catch {
-        // 解析失败：用正则从原文抽出 translation
-        const m = content.match(/translation["':\s]+["']?([^"'\n,}]+)/i);
-        return {
-          translation: m ? m[1].trim() : content.slice(0, 20),
-          phonetic: "",
-        };
+
+      let result: DictResult | null = null;
+
+      // 后端当前返回：{ translation, phonetic }
+      if (typeof data?.translation === "string" || typeof data?.phonetic === "string") {
+        result = normalizeResult(data as Partial<DictResult>);
+      } else {
+        // 兼容旧格式/OpenAI 样式：choices[0].message.content
+        const content: string = data?.choices?.[0]?.message?.content ?? "";
+        const jsonStr = content.replace(/```json\s*/g, "").replace(/```/g, "").trim();
+        try {
+          const parsed = JSON.parse(jsonStr);
+          result = normalizeResult(parsed as Partial<DictResult>);
+        } catch {
+          const m = content.match(/translation["':\s]+["']?([^"'\n,}]+)/i);
+          result = normalizeResult({
+            translation: m ? m[1].trim() : content.slice(0, 20),
+            phonetic: "",
+          });
+        }
       }
-    } catch (e) {
-      return { translation: "（网络异常）", phonetic: "" };
+
+      // 写缓存
+      const cur = readCache();
+      cur[key] = {
+        v: CACHE_VERSION,
+        translation: result.translation,
+        phonetic: result.phonetic,
+        at: Date.now(),
+      };
+      writeCache(cur);
+      return result;
+    } catch {
+      // 网络不可用，本地词典已查过无此词
+      return { translation: "（需联网）", phonetic: "" };
     } finally {
       inFlight.delete(key);
     }

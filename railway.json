@@ -1,0 +1,18 @@
+{
+  "services": {
+    "poa-backend": {
+      "build": {
+        "builder": "DOCKERFILE",
+        "dockerfilePath": "Dockerfile.backend"
+      },
+      "port": 8000
+    },
+    "poa-frontend": {
+      "build": {
+        "builder": "DOCKERFILE",
+        "dockerfilePath": "Dockerfile.frontend"
+      },
+      "port": 3000
+    }
+  }
+}

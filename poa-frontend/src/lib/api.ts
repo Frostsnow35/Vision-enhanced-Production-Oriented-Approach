@@ -164,6 +164,7 @@ export interface ChatTurnResponse {
   is_final: boolean;
   turn_feedback?: TurnFeedback;
   user_text?: string;  // Whisper 转写的用户文本
+  llm_error?: string;  // 模型调用失败时的真实错误原因
 }
 
 export async function chatStart(

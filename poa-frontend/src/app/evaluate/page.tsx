@@ -55,13 +55,13 @@ const DIM_LABELS: Record<string, string> = {
 
 const MOCK_EVALUATE: EvaluateData = {
   dimension_scores: {
-    "发音标准度":     { attempt1: 2.5, attempt2: 3.5, change: 1.0, weight: 0.20, explanation: "'th' 音错误率较高（如 'think' 念成 'tink'）；二次产出 'th' 音基本正确。" },
+    "发音标准度":     { attempt1: 2.5, attempt2: 3.5, change: 1.0, weight: 0.20, explanation: "初次产出句式较短，元音区分不明显；二次产出句式完整、词汇丰富，推断发音清晰度和语调均有提升。" },
     "语法规范性":     { attempt1: 2.0, attempt2: 3.8, change: 1.8, weight: 0.15, explanation: "时态错误从 5 处降至 1 处，主谓一致基本正确。" },
     "词汇适配性":     { attempt1: 2.0, attempt2: 3.5, change: 1.5, weight: 0.10, explanation: "从 'big cup' 转变为 'large'/'oat milk' 等场景词汇。" },
     "语言功能达成度": { attempt1: 3.0, attempt2: 4.0, change: 1.0, weight: 0.10, explanation: "第二次完成了全部交际要点，无关键信息缺失。" },
     "语用策略得体性": { attempt1: 1.5, attempt2: 4.0, change: 2.5, weight: 0.10, explanation: "从祈使句转变为 'I'd like'/'Could I have'，礼貌意识显著提升。" },
     "话语回合适配性": { attempt1: 2.5, attempt2: 3.5, change: 1.0, weight: 0.15, explanation: "话轮长度从单方面长发言转换为 30-70% 合理占比，能使用 'What about you?' 转换话轮。" },
-    "副语言匹配度":   { attempt1: 3.0, attempt2: 3.5, change: 0.5, weight: 0.20, explanation: "由音频分析自动评分（基于流利度指标）。" },
+    "副语言匹配度":   { attempt1: 3.0, attempt2: 3.5, change: 0.5, weight: 0.20, explanation: "二次产出衔接词使用增加，话轮闭合自然，由此推断节奏感和流利度有所提升。" },
   },
   overall_improvement: "七个维度均有提升，语用策略得体性进步最大（+2.5）。",
 };
@@ -339,6 +339,7 @@ export default function EvaluatePage() {
      Render
      ============================================================ */
   return (
+    <TaskGate>
     <div className="mx-auto max-w-2xl space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
       <header>
         <h1 className="text-2xl font-bold tracking-tight text-card-foreground sm:text-3xl">

@@ -40,6 +40,7 @@ interface DialogueData {
 }
 
 type DimScores = Record<string, number>;
+type DimComments = Record<string, string>;
 
 type TabKey = "assessment" | "phrases" | "dialogue" | "exercises" | "oral";
 
@@ -319,6 +320,7 @@ export default function FacilitatePage() {
 
   // ---- 能力评估数据 ----
   const [scores, setScores] = useState<DimScores | null>(null);
+  const [comments, setComments] = useState<DimComments | null>(null);
   const [scoresLoading, setScoresLoading] = useState(true);
 
   // ---- 学习进度 ----
@@ -497,12 +499,16 @@ export default function FacilitatePage() {
         if (res.ok) {
           const data = await res.json();
           const rawScores = data?.dimension_scores ?? data;
+          const rawComments = data?.comments ?? {};
           if (rawScores && typeof rawScores === "object" && Object.keys(rawScores).length > 0) {
             const filtered: DimScores = {};
+            const filteredComments: DimComments = {};
             for (const dim of DIM_ORDER) {
               if (dim in rawScores) filtered[dim] = Number(rawScores[dim]) || 0;
+              if (typeof rawComments[dim] === "string" && rawComments[dim].trim()) filteredComments[dim] = rawComments[dim];
             }
             setScores(Object.keys(filtered).length > 0 ? filtered : getMockScores());
+            setComments(Object.keys(filteredComments).length > 0 ? filteredComments : null);
           } else {
             throw new Error("empty scores");
           }
@@ -756,6 +762,7 @@ export default function FacilitatePage() {
           {tab === "assessment" && (
             <AssessmentTab
               scores={scores}
+              comments={comments}
               loading={scoresLoading}
               weakDims={weakDims}
               expandedDim={expandedDim}
@@ -822,6 +829,7 @@ export default function FacilitatePage() {
         </div>
       </div>
     </div>
+    </TaskGate>
   );
 }
 
@@ -830,6 +838,7 @@ export default function FacilitatePage() {
    ============================================================ */
 function AssessmentTab({
   scores,
+  comments,
   loading,
   weakDims,
   expandedDim,
@@ -837,6 +846,7 @@ function AssessmentTab({
   onComplete,
 }: {
   scores: DimScores | null;
+  comments: DimComments | null;
   loading: boolean;
   weakDims: string[];
   expandedDim: string | null;
@@ -1019,7 +1029,7 @@ function AssessmentTab({
                           {(scoreMap[dim] ?? 0).toFixed(1)} / 5.0
                         </span>
                       </div>
-                      <p className="text-xs text-amber-700 mt-1">{DIM_ADVICE[dim]}</p>
+                      <p className="text-xs text-amber-700 mt-1">{comments?.[dim] ?? DIM_ADVICE[dim]}</p>
                     </div>
                   </div>
                   <button
