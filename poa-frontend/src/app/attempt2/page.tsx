@@ -329,6 +329,7 @@ export default function Attempt2Page() {
   const lastAiAudioUrlRef = useRef<string>("");
   const lastAiTextRef = useRef<string>("");
   const [replaying, setReplaying] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const speechStageTimerRefs = useRef<ReturnType<typeof setTimeout>[]>([]);
 
@@ -484,7 +485,6 @@ export default function Attempt2Page() {
   const [pressing, setPressing] = useState(false);
   const [recording, setRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
-  const [uploading, setUploading] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
