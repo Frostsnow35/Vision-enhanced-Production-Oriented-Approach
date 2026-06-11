@@ -613,12 +613,6 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
           <h2 className="mt-5 text-lg font-semibold text-card-foreground">{tone.title}</h2>
           <p className="mt-2 text-sm text-muted-foreground">{reportError.message}</p>
 
-          {historyItem?.sceneLabel && (
-            <p className="mt-2 text-xs text-muted-foreground/80">
-              记录：{historyItem.sceneLabel}
-            </p>
-          )}
-
           <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
             {reportError.kind !== "not_found" && (
               <Button onClick={handleRetry} size="sm" className="w-full sm:w-auto">
@@ -629,20 +623,14 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
               返回首页
             </Button>
           </div>
-
-          {historyItem && reportError.kind === "not_found" && (
-            <p className="mt-4 text-xs text-muted-foreground/70">
-              你仍然可以查看本机缓存的记录：{historyItem.sceneLabel}
-            </p>
-          )}
         </div>
       </div>
     );
   }
 
   // 使用历史记录或后端报告数据
-  const sceneLabel = historyItem?.sceneLabel || report?.scenario?.scene_label || "未知场景";
-  const createdAt = report?.scenario?.created_at?.slice(0, 10) || historyItem?.createdAt?.slice(0, 10) || "";
+  const sceneLabel = (historyItem as any)?.sceneLabel || report?.scenario?.scene_label || "未知场景";
+  const createdAt = report?.scenario?.created_at?.slice(0, 10) || (historyItem as any)?.createdAt?.slice(0, 10) || "";
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20">
