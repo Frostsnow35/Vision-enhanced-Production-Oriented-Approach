@@ -902,6 +902,7 @@ export default function Attempt1Page() {
             <span className="text-muted-foreground">{user.split("——")[0]} × {ai.split("——")[0]}</span>
           </div>
           <div className="flex items-center gap-2">
+            <span className="hidden sm:inline text-[11px] text-amber-600 dark:text-amber-400">语句加载可能稍慢，请耐心等待</span>
             {/* 设备检测独立页入口 */}
             <button
               onClick={() => router.push("/device-check")}
