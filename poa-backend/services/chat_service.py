@@ -625,7 +625,7 @@ def request_closing_line(task_context: Dict[str, Any]):
 def text_to_speech(text: str) -> str:
     """
     将文本转为音频文件，保存到 TTS_DIR。
-    策略：豆包 TTS V3 API（X-Api-Key 新模式优先 → Legacy 旧模式 → gTTS 降级）。
+    策略：豆包 TTS V3 API（APP_ID + Token 优先 → 纯 API Key 备用 → gTTS 降级）。
     返回音频 URL（如 /uploads/tts/abc.mp3），失败返回空字符串。
     """
     os.makedirs(TTS_DIR, exist_ok=True)
@@ -641,48 +641,7 @@ def text_to_speech(text: str) -> str:
 
     audio_data: bytes | None = None
 
-    # ---- 策略 1a: 豆包 TTS V3（X-Api-Key 新模式，复用 ARK API Key）----
-    if DOUBAO_API_KEY and not audio_data:
-        try:
-            headers = {
-                "X-Api-Key": DOUBAO_API_KEY,
-                "X-Api-Resource-Id": DOUBAO_TTS_RESOURCE_ID,
-                "X-Api-Request-Id": req_id,
-                "Content-Type": "application/json",
-            }
-            body = {
-                "user": {"uid": "poa_user"},
-                "namespace": "BidirectionalTTS",
-                "req_params": {
-                    "text": text,
-                    "speaker": DOUBAO_TTS_VOICE,
-                    "audio_params": {"format": "mp3", "sample_rate": 24000},
-                },
-            }
-            with httpx.Client(timeout=20.0) as client:
-                resp = client.post(DOUBAO_TTS_URL, headers=headers, json=body)
-                resp.raise_for_status()
-                audio_b64_parts = []
-                for line in resp.text.strip().split("\n"):
-                    if not line.strip():
-                        continue
-                    chunk = json.loads(line)
-                    code = chunk.get("code", 0)
-                    if code not in (0, 20000000):
-                        raise Exception(f"TTS API error code={code}: {chunk.get('message', 'unknown')}")
-                    data_val = chunk.get("data")
-                    if data_val:
-                        audio_b64_parts.append(data_val)
-                if not audio_b64_parts:
-                    raise Exception("TTS returned empty audio data")
-                audio_b64 = "".join(audio_b64_parts)
-                import base64 as _b64
-                audio_data = _b64.b64decode(audio_b64)
-            logger.info(f"[TTS] 豆包 X-Api-Key 模式成功")
-        except Exception as e:
-            logger.warning(f"[TTS] 豆包 X-Api-Key 模式失败: {e}")
-
-    # ---- 策略 1b: 豆包 TTS V3（Legacy APP_ID + Token 旧模式）----
+    # ---- 策略 1: 豆包 TTS V3（APP_ID + Token）----
     if DOUBAO_TTS_APP_ID and DOUBAO_TTS_TOKEN and not audio_data:
         try:
             headers = {
@@ -720,7 +679,7 @@ def text_to_speech(text: str) -> str:
                 audio_b64 = "".join(audio_b64_parts)
                 import base64 as _b64
                 audio_data = _b64.b64decode(audio_b64)
-            logger.info(f"[TTS] 豆包 Legacy 模式成功")
+            logger.info(f"[TTS] 豆包 TTS 成功")
         except Exception as e:
             logger.warning(f"[TTS] 豆包 Legacy 模式失败: {e}，降级 gTTS")
 
