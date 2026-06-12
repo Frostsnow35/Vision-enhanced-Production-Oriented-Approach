@@ -662,7 +662,9 @@ def text_to_speech(text: str) -> str:
             }
             with httpx.Client(timeout=20.0) as client:
                 resp = client.post(DOUBAO_TTS_URL, headers=headers, json=body)
-                resp.raise_for_status()
+                if resp.status_code != 200:
+                    logger.warning(f"[TTS] HTTP {resp.status_code}: {resp.text[:300]}")
+                    raise Exception(f"TTS API HTTP {resp.status_code}: {resp.text[:200]}")
                 audio_b64_parts = []
                 for line in resp.text.strip().split("\n"):
                     if not line.strip():
