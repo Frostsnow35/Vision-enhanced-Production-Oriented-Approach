@@ -86,6 +86,266 @@ function parseRoles(raw: string): { user: string; ai: string } {
   };
 }
 
+interface LowQualityResult {
+  isLowQuality: boolean;
+  reason: string;
+}
+
+/**
+ * 检测 AI 回复是否属于低质量回复（死胡同、连续反问、主题偏离）
+ */
+function detectLowQualityReply(
+  aiText: string,
+  prevAiText: string | undefined,
+  variantPlot: string | undefined,
+): LowQualityResult {
+  // 规则1：死胡同检测
+  const deadEndRe =
+    /let me (go |)ask|i'?ll check with|i need to confirm|let me find out|i'?ll have to ask|i'?ll look into|let me see if|i have to check/i;
+  if (deadEndRe.test(aiText)) {
+    return {
+      isLowQuality: true,
+      reason: "AI 回复看起来像是要离开去查询，可能导致对话中断",
+    };
+  }
+
+  // 规则2：连续反问不推进检测
+  if (prevAiText) {
+    const confirmationWords = [
+      "sure",
+      "great",
+      "okay",
+      "alright",
+      "yes",
+      "no",
+      "got it",
+      "i see",
+      "of course",
+      "absolutely",
+      "sorry",
+      "my apologies",
+    ];
+    const questionLeaders = [
+      "what",
+      "which",
+      "would you",
+      "could you",
+      "can you",
+      "do you",
+      "did you",
+      "have you",
+      "are you",
+      "is there",
+      "how about",
+      "shall we",
+    ];
+
+    const isPureQuestion = (text: string): boolean => {
+      const cleaned = text
+        .replace(/\?+$/, "")
+        .trim()
+        .toLowerCase();
+      const hasConfirmation = confirmationWords.some((w) =>
+        cleaned.includes(w),
+      );
+      if (hasConfirmation) return false;
+      const endsWithQuestion = /\?\s*$/.test(text.trim());
+      const hasQuestionLeader = questionLeaders.some((l) =>
+        cleaned.startsWith(l),
+      );
+      return endsWithQuestion || hasQuestionLeader;
+    };
+
+    if (isPureQuestion(aiText) && isPureQuestion(prevAiText)) {
+      return {
+        isLowQuality: true,
+        reason: "AI 连续两轮都在反问，没有推进对话",
+      };
+    }
+  }
+
+  // 规则3：主题偏离检测
+  if (variantPlot && variantPlot.trim().length > 0) {
+    const stopWords = new Set([
+      "the",
+      "a",
+      "an",
+      "is",
+      "are",
+      "was",
+      "were",
+      "be",
+      "been",
+      "being",
+      "have",
+      "has",
+      "had",
+      "do",
+      "does",
+      "did",
+      "will",
+      "would",
+      "could",
+      "should",
+      "may",
+      "might",
+      "can",
+      "shall",
+      "to",
+      "of",
+      "in",
+      "for",
+      "on",
+      "with",
+      "at",
+      "by",
+      "from",
+      "it",
+      "its",
+      "this",
+      "that",
+      "these",
+      "those",
+      "and",
+      "or",
+      "but",
+      "not",
+      "no",
+      "if",
+      "so",
+      "as",
+      "than",
+      "then",
+      "just",
+      "also",
+      "very",
+      "too",
+      "all",
+      "some",
+      "any",
+      "each",
+      "every",
+      "both",
+      "few",
+      "more",
+      "most",
+      "other",
+      "only",
+      "own",
+      "same",
+      "into",
+      "up",
+      "out",
+      "about",
+      "over",
+      "after",
+      "before",
+      "between",
+      "under",
+      "again",
+      "further",
+      "once",
+      "here",
+      "there",
+      "when",
+      "where",
+      "why",
+      "how",
+      "which",
+      "who",
+      "whom",
+      "whose",
+      "what",
+      "的",
+      "了",
+      "在",
+      "是",
+      "我",
+      "有",
+      "和",
+      "就",
+      "不",
+      "人",
+      "都",
+      "一",
+      "一个",
+      "上",
+      "也",
+      "很",
+      "到",
+      "说",
+      "要",
+      "去",
+      "你",
+      "会",
+      "着",
+      "没有",
+      "看",
+      "好",
+      "自己",
+      "这",
+      "他",
+      "她",
+      "它",
+      "们",
+      "那",
+      "些",
+      "什么",
+      "怎么",
+      "哪",
+      "吗",
+      "啊",
+      "吧",
+      "呢",
+      "哦",
+      "嗯",
+      "哈",
+      "呀",
+      "还",
+      "被",
+      "把",
+      "让",
+      "向",
+      "从",
+      "对",
+      "与",
+      "或",
+      "而",
+      "但",
+      "且",
+      "因",
+      "为",
+      "所",
+      "以",
+      "能",
+      "可",
+      "将",
+      "已",
+      "并",
+      "其",
+    ]);
+
+    const tokens = variantPlot
+      .replace(/[.,!?;:，。！？；：\s]+/g, " ")
+      .split(" ")
+      .map((t) => t.trim().toLowerCase())
+      .filter((t) => t.length >= 3 && !stopWords.has(t));
+
+    if (tokens.length > 0) {
+      const aiLower = aiText.toLowerCase();
+      const hasOverlap = tokens.some((token) => aiLower.includes(token));
+      if (!hasOverlap) {
+        return {
+          isLowQuality: true,
+          reason: "AI 回复可能偏离了变体任务主题",
+        };
+      }
+    }
+  }
+
+  return { isLowQuality: false, reason: "" };
+}
+
 function getAiReply(task: TaskData | null): string {
   const generic = [
     "Sure, what would you like?",
@@ -326,6 +586,8 @@ export default function Attempt2Page() {
   const [isFinal, setIsFinal] = useState(false);
   const [wrappingUp, setWrappingUp] = useState(false);
   const [replayAvailable, setReplayAvailable] = useState(false);
+  const [retryingAiReply, setRetryingAiReply] = useState(false);
+  const [lowQualityFlag, setLowQualityFlag] = useState<{ isLowQuality: boolean; reason: string } | null>(null);
   const lastAiAudioUrlRef = useRef<string>("");
   const lastAiTextRef = useRef<string>("");
   const [replaying, setReplaying] = useState(false);
@@ -857,6 +1119,17 @@ export default function Attempt2Page() {
         // AI 说完：先存到 pending，等用户点击"显示字幕"才显示
         setPendingAiSubtitle(data.ai_text);
 
+        // 质量检测
+        setTimeout(() => {
+          const prevAiTextForCheck = currentHistory.filter(h => h.role === "ai").pop()?.text || undefined;
+          const checkResult = detectLowQualityReply(
+            data.ai_text,
+            prevAiTextForCheck,
+            (taskRef.current as any)?.variant_plot || undefined,
+          );
+          setLowQualityFlag(checkResult);
+        }, 0);
+
         if (data.is_final) {
           setIsFinal(true);
         }
@@ -892,6 +1165,111 @@ export default function Attempt2Page() {
       setHistory((prev) => [...prev, aiTurn]);
       setPendingAiSubtitle(mockText);
       setTimeout(() => setAiSpeaking(false), 2000);
+    }
+  };
+
+  // ---- 重新生成 AI 回复 ----
+  const handleRetryAiReply = async () => {
+    if (!history.length || retryingAiReply) return;
+    
+    // 找到最后一轮 AI 回复的索引
+    const lastAiIndex = history.map(h => h.role).lastIndexOf("ai");
+    if (lastAiIndex === -1) return;
+    
+    // 找到对应的用户轮次（在 AI 轮次之前）
+    const userTurns = history.filter(h => h.role === "user");
+    const lastUserTurn = userTurns[userTurns.length - 1];
+    if (!lastUserTurn) return;
+    
+    const userText = lastUserTurn.resolved_user_text || lastUserTurn.sent_user_text || lastUserTurn.text || "";
+    
+    // 移除最后一轮 AI 回复
+    const historyWithoutLastAi = history.slice(0, lastAiIndex);
+    
+    setRetryingAiReply(true);
+    setLowQualityFlag(null);
+    
+    try {
+      const currentTask = taskRef.current;
+      const historyForBackend = historyWithoutLastAi.length > 0 && historyWithoutLastAi[historyWithoutLastAi.length - 1].role === "user"
+        ? historyWithoutLastAi.slice(0, -1)
+        : historyWithoutLastAi;
+      
+      const body: Record<string, unknown> = {
+        task_id: (currentTask as any)?.task_id ?? 0,
+        conversation_history: historyForBackend,
+        scene_label: currentTask?.scene_label || "",
+        roles: currentTask?.roles || "",
+        goal: currentTask?.goal || "",
+        evaluation_criteria: currentTask?.evaluation_criteria || "",
+        variant_context: currentTask?.variant_plot ?? "",
+      };
+      body.user_text = userText;
+      
+      const res = await fetch(`${BASE_URL}/api/chat/turn`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      
+      if (res.ok) {
+        const data = await res.json() as { ai_text: string; ai_audio_url?: string; is_final?: boolean; turn_feedback?: TurnFeedback; llm_error?: string; user_text?: string };
+        
+        if (data.llm_error) {
+          alert("重试失败: " + data.llm_error);
+          setRetryingAiReply(false);
+          return;
+        }
+        
+        const newAiTurn: ConversationTurn = {
+          role: "ai",
+          text: data.ai_text,
+          audio_url: data.ai_audio_url,
+          turn_feedback: data.turn_feedback && data.turn_feedback.short_comment ? data.turn_feedback : undefined,
+          feedback_collapsed: false,
+        };
+        
+        const newHistory = [...historyWithoutLastAi, newAiTurn];
+        setHistory(newHistory);
+        setPendingAiSubtitle(data.ai_text);
+        
+        if (data.is_final) {
+          setIsFinal(true);
+        }
+        
+        // 播放新生成的 AI 音频
+        if (data.ai_audio_url) {
+          const fullUrl = data.ai_audio_url.startsWith("/")
+            ? `${BASE_URL}${data.ai_audio_url}`
+            : data.ai_audio_url;
+          lastAiAudioUrlRef.current = fullUrl;
+          lastAiTextRef.current = data.ai_text;
+          setAiSpeaking(true);
+          setReplayAvailable(false);
+          setSpeechStage("ai_speaking");
+          playAiAudio(fullUrl, data.ai_text).finally(() => {
+            setAiSpeaking(false);
+            setReplayAvailable(true);
+            setSpeechStage("idle");
+          });
+        } else {
+          lastAiTextRef.current = data.ai_text;
+          setAiSpeaking(true);
+          setReplayAvailable(false);
+          setSpeechStage("ai_speaking");
+          playAiAudio(null, data.ai_text).finally(() => {
+            setAiSpeaking(false);
+            setReplayAvailable(true);
+            setSpeechStage("idle");
+          });
+        }
+      } else {
+        throw new Error(`${res.status}`);
+      }
+    } catch {
+      alert("重新生成失败，请稍后重试");
+    } finally {
+      setRetryingAiReply(false);
     }
   };
 
@@ -1276,7 +1654,30 @@ export default function Attempt2Page() {
                   <span className="relative">显示字幕</span>
                 </button>
               )}
+              {/* 低质量回复重试按钮 */}
+              {lowQualityFlag?.isLowQuality && !aiSpeaking && !retryingAiReply && (
+                <button
+                  onClick={handleRetryAiReply}
+                  className="group relative inline-flex items-center gap-1.5 rounded-full bg-amber-100 dark:bg-amber-950 border border-amber-300 dark:border-amber-700 px-4 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-900 transition-all hover:scale-105 active:scale-95"
+                  title={lowQualityFlag.reason}
+                >
+                  <svg className="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="23 4 23 10 17 10" />
+                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                  </svg>
+                  <span>重新生成回复</span>
+                </button>
+              )}
             </div>
+
+            {/* 低质量回复提示 */}
+            {lowQualityFlag?.isLowQuality && !aiSpeaking && !retryingAiReply && (
+              <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-0.5">{lowQualityFlag.reason}</p>
+            )}
+            {/* 重试中加载态 */}
+            {retryingAiReply && (
+              <p className="text-xs text-muted-foreground animate-pulse">正在重新生成回复...</p>
+            )}
 
             <p className="text-xs text-muted-foreground/60">
               已对话 {history.length} 轮
