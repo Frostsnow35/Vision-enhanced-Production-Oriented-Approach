@@ -78,8 +78,10 @@ DOUBAO_TTS_RESOURCE_ID = os.getenv("DOUBAO_TTS_RESOURCE_ID", "seed-tts-2.0")
 # TTS API endpoint (V3)
 DOUBAO_TTS_URL = "https://openspeech.bytedance.com/api/v3/tts/unidirectional"
 
-# 豆包 ASR 配置（火山引擎大模型语音识别 Flash —— 毫秒级响应）
+# 豆包 ASR 配置（火山引擎录音文件识别标准版 —— 提交任务 + 查询结果）
 DOUBAO_ASR_APP_ID = os.getenv("DOUBAO_ASR_APP_ID", "")
 DOUBAO_ASR_TOKEN = os.getenv("DOUBAO_ASR_TOKEN", "")
-DOUBAO_ASR_RESOURCE_ID = os.getenv("DOUBAO_ASR_RESOURCE_ID", "volc.bigasr.flash")
-DOUBAO_ASR_URL = "https://openspeech.bytedance.com/api/v3/auc/bigmodel/recognize/flash"
+# 标准版模型2.0: volc.seedasr.auc；模型1.0: volc.bigasr.auc
+DOUBAO_ASR_RESOURCE_ID = os.getenv("DOUBAO_ASR_RESOURCE_ID", "volc.seedasr.auc")
+DOUBAO_ASR_SUBMIT_URL = os.getenv("DOUBAO_ASR_SUBMIT_URL", "https://openspeech.bytedance.com/api/v3/auc/bigmodel/submit")
+DOUBAO_ASR_QUERY_URL = os.getenv("DOUBAO_ASR_QUERY_URL", "https://openspeech.bytedance.com/api/v3/auc/bigmodel/query")

@@ -1,14 +1,10 @@
 """
 ASR 服务
-策略：火山引擎大模型 Flash ASR（云端，毫秒级）→ openai-whisper（本地，需安装）→ 空文本降级
+策略：火山引擎录音文件识别标准版（提交任务 + 查询结果）→ openai-whisper（本地，需安装）→ 空文本降级
 """
-import base64
-import hashlib
-import json
 import logging
 import os
-import subprocess
-import tempfile
+import time
 import uuid
 from typing import Optional
 
@@ -19,7 +15,8 @@ from config import (
     DOUBAO_ASR_APP_ID,
     DOUBAO_ASR_RESOURCE_ID,
     DOUBAO_ASR_TOKEN,
-    DOUBAO_ASR_URL,
+    DOUBAO_ASR_SUBMIT_URL,
+    DOUBAO_ASR_QUERY_URL,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -60,56 +57,45 @@ def _load_model():
     return _whisper_model
 
 
-def _convert_to_wav_b64(audio_path: str) -> Optional[str]:
-    """将任意音频文件转为 WAV 格式并 base64 编码，用于 Flash ASR。需要 ffmpeg。"""
-    # 尝试用 ffmpeg 转码
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-        wav_path = tmp.name
-    try:
-        result = subprocess.run(
-            ["ffmpeg", "-y", "-i", audio_path, "-ar", "16000", "-ac", "1", "-f", "wav", wav_path],
-            capture_output=True, timeout=15,
-        )
-        if result.returncode != 0 or not os.path.isfile(wav_path):
-            logger.warning(f"[ASR] ffmpeg 转码失败: {result.stderr.decode()[:200]}")
-            return None
-        with open(wav_path, "rb") as f:
-            return base64.b64encode(f.read()).decode()
-    except FileNotFoundError:
-        logger.warning("[ASR] ffmpeg 未安装，无法转码音频")
-        return None
-    except Exception as e:
-        logger.warning(f"[ASR] 音频转码异常: {e}")
-        return None
-    finally:
-        if os.path.isfile(wav_path):
-            os.remove(wav_path)
-
-
-def transcribe_with_doubao_flash(audio_path: str) -> str:
+def _build_asr_headers(req_id: str, with_sequence: bool = True) -> dict:
+    """构造火山引擎录音文件识别标准版的鉴权 Header。
+    with_sequence: 提交任务时需要 X-Api-Sequence，查询结果时不需要。
     """
-    使用火山引擎大模型 Flash ASR 进行语音转写。
-    鉴权模式：X-Api-App-Id + X-Api-Access-Key（需配置 DOUBAO_ASR_APP_ID / DOUBAO_ASR_TOKEN）
-    需要 ffmpeg 将 webm/opus 转为 wav。
-    返回转写文本，失败返回空字符串。
+    headers = {
+        "X-Api-App-Key": DOUBAO_ASR_APP_ID,
+        "X-Api-Access-Key": DOUBAO_ASR_TOKEN,
+        "X-Api-Resource-Id": DOUBAO_ASR_RESOURCE_ID,
+        "X-Api-Request-Id": req_id,
+        "Content-Type": "application/json",
+    }
+    if with_sequence:
+        headers["X-Api-Sequence"] = "-1"
+    return headers
+
+
+def transcribe_with_doubao_standard(audio_url: str, audio_format: str = "mp3", max_wait_sec: int = 60) -> str:
+    """
+    使用火山引擎录音文件识别标准版进行语音转写（提交任务 + 轮询查询结果）。
+    @brief 提交音频公网 URL 到服务端，轮询查询直到转写完成
+    @param audio_url 音频的公网可访问 URL
+    @param audio_format 音频容器格式：wav / mp3 / ogg（标准版不支持 webm）
+    @param max_wait_sec 最大轮询等待秒数，默认 60
+    @return 转写文本，失败返回空字符串
     """
     app_id = DOUBAO_ASR_APP_ID
     token = DOUBAO_ASR_TOKEN
     if not app_id or not token:
-        logger.warning("[ASR] Flash ASR 未配置 DOUBAO_ASR_APP_ID/DOUBAO_ASR_TOKEN，跳过")
+        logger.warning("[ASR] 标准版 ASR 未配置 DOUBAO_ASR_APP_ID/DOUBAO_ASR_TOKEN，跳过")
         return ""
 
-    # 转码音频
-    audio_b64 = _convert_to_wav_b64(audio_path)
-    if not audio_b64:
-        return ""
+    req_id = str(uuid.uuid4())
 
-    # 构建请求
-    body = {
+    # ---- 1. 提交任务 ----
+    submit_body = {
         "user": {"uid": "poa_user"},
         "audio": {
-            "format": "wav",
-            "data": audio_b64,
+            "format": audio_format,
+            "url": audio_url,
         },
         "request": {
             "model_name": "bigmodel",
@@ -117,31 +103,55 @@ def transcribe_with_doubao_flash(audio_path: str) -> str:
             "enable_punc": True,
         },
     }
-    req_id = str(uuid.uuid4())
-
     try:
-        headers = {
-            "X-Api-App-Key": app_id,
-            "X-Api-Access-Key": token,
-            "X-Api-Resource-Id": DOUBAO_ASR_RESOURCE_ID,
-            "X-Api-Request-Id": req_id,
-            "Content-Type": "application/json",
-        }
         with httpx.Client(timeout=30.0) as client:
-            resp = client.post(DOUBAO_ASR_URL, headers=headers, json=body)
-            resp.raise_for_status()
-            data = resp.json()
-            code = data.get("code", -1)
-            if code not in (0, 20000000):
-                raise Exception(f"ASR error code={code}: {data.get('message', 'unknown')}")
-            text = data.get("result", {}).get("text", "").strip()
-            if text:
-                logger.info(f"[ASR] Flash 结果: {text[:100]}")
-                return text
-            raise Exception("Flash ASR returned empty text")
-    except Exception as e:
-        logger.warning(f"[ASR] Flash ASR 失败: {e}")
+            submit_resp = client.post(
+                DOUBAO_ASR_SUBMIT_URL,
+                headers=_build_asr_headers(req_id, with_sequence=True),
+                json=submit_body,
+            )
+            submit_status = submit_resp.headers.get("X-Api-Status-Code", "")
+            if submit_status != "20000000":
+                message = submit_resp.headers.get("X-Api-Message", submit_resp.text[:200])
+                logger.warning(f"[ASR] 标准版提交失败 status={submit_status}: {message}")
+                return ""
 
+            # ---- 2. 轮询查询结果 ----
+            query_body = {}
+            query_headers = _build_asr_headers(req_id, with_sequence=False)
+            deadline = time.time() + max_wait_sec
+            while time.time() < deadline:
+                time.sleep(1.5)
+                try:
+                    query_resp = client.post(
+                        DOUBAO_ASR_QUERY_URL,
+                        headers=query_headers,
+                        json=query_body,
+                    )
+                    query_status = query_resp.headers.get("X-Api-Status-Code", "")
+                    if query_status == "20000000":
+                        data = query_resp.json()
+                        text = data.get("result", {}).get("text", "").strip()
+                        if text:
+                            logger.info(f"[ASR] 标准版转写结果: {text[:100]}")
+                            return text
+                        # 成功但文本为空，可能仍在处理
+                        continue
+                    elif query_status in ("20000001", "20000002"):
+                        # 正在处理 / 任务在队列中
+                        continue
+                    else:
+                        message = query_resp.headers.get("X-Api-Message", query_resp.text[:200])
+                        logger.warning(f"[ASR] 标准版查询失败 status={query_status}: {message}")
+                        return ""
+                except Exception as e:
+                    logger.warning(f"[ASR] 标准版查询异常: {e}")
+                    time.sleep(2.0)
+    except Exception as e:
+        logger.warning(f"[ASR] 标准版 ASR 失败: {e}")
+        return ""
+
+    logger.warning(f"[ASR] 标准版 ASR 轮询超时（{max_wait_sec}s）")
     return ""
 
 

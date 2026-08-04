@@ -6,11 +6,11 @@ import os
 import logging
 from typing import Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
 from services.chat_service import generate_opening, generate_reply, text_to_speech, _generate_turn_feedback
-from services.asr_service import transcribe_audio, transcribe_with_doubao_flash
+from services.asr_service import transcribe_audio, transcribe_with_doubao_standard
 
 UPLOAD_DIR = os.path.normpath(os.getenv("UPLOAD_DIR", os.path.join(os.path.dirname(__file__), "uploads")))
 
@@ -27,6 +27,43 @@ def _clip_text(text: str, limit: int = 160) -> str:
     if len(value) <= limit:
         return value
     return value[:limit] + "..."
+
+
+def _build_public_audio_url(request: Request, audio_path: str) -> str:
+    """
+    构造音频的公网可访问 URL，供火山引擎标准版 ASR 下载。
+    标准版仅支持 wav/mp3/ogg，前端录制的是 webm/opus，需用 ffmpeg 转码为 mp3
+    并存放到 uploads 目录（静态挂载可访问），返回其公网 URL。
+    失败返回空字符串。
+    """
+    try:
+        import subprocess
+        import uuid
+
+        base_url = str(request.base_url).rstrip("/")
+        ext = os.path.splitext(audio_path)[-1].lower()
+
+        # webm/m4a/ogg → 转码为 mp3（标准版仅支持 wav/mp3/ogg）
+        if ext in (".webm", ".m4a", ".ogg"):
+            mp3_dir = os.path.join(UPLOAD_DIR, "audio")
+            os.makedirs(mp3_dir, exist_ok=True)
+            mp3_name = f"asr_{uuid.uuid4().hex}.mp3"
+            mp3_path = os.path.join(mp3_dir, mp3_name)
+            result = subprocess.run(
+                ["ffmpeg", "-y", "-i", audio_path, "-ar", "16000", "-ac", "1", "-b:a", "64k", mp3_path],
+                capture_output=True, timeout=30,
+            )
+            if result.returncode != 0 or not os.path.isfile(mp3_path):
+                logger.warning(f"[chat] ffmpeg 转码 ASR 音频失败: {result.stderr.decode()[:200]}")
+                return ""
+            return f"{base_url}/uploads/audio/{mp3_name}"
+        else:
+            # wav/mp3 直接使用原始文件
+            rel = os.path.relpath(audio_path, UPLOAD_DIR).replace("\\", "/")
+            return f"{base_url}/uploads/{rel}"
+    except Exception as e:
+        logger.warning(f"[chat] 构造 ASR 公网音频 URL 失败: {e}")
+        return ""
 
 
 def _serialize_history_for_log(conversation_history: list) -> str:
@@ -133,7 +170,7 @@ async def chat_tts(req: TTSRequest):
 # ---- POST /api/chat/turn ----
 @router.post("/turn", response_model=ChatTurnResponse)
 
-async def chat_turn(req: ChatTurnRequest):
+async def chat_turn(req: ChatTurnRequest, request: Request):
     """
     处理一个对话轮次。
     如果前端传了 user_text（Web Speech API 转写结果），直接跳过 ASR；
@@ -174,11 +211,13 @@ async def chat_turn(req: ChatTurnRequest):
             audio_path = os.path.normpath(os.path.join(UPLOAD_DIR, audio_path))
 
         if os.path.isfile(audio_path):
-            # 策略 1: 火山引擎 Flash ASR（最快，复用 DOUBAO_API_KEY）
-            user_text = transcribe_with_doubao_flash(audio_path)
-            if user_text:
-                user_text_source = "flash_asr"
-                logger.info(f"[chat] Flash ASR 结果: {user_text[:100]}")
+            # 策略 1: 火山引擎录音文件识别标准版（提交任务 + 查询结果）
+            public_url = _build_public_audio_url(request, audio_path)
+            if public_url:
+                user_text = transcribe_with_doubao_standard(public_url, audio_format="mp3")
+                if user_text:
+                    user_text_source = "standard_asr"
+                    logger.info(f"[chat] 标准版 ASR 结果: {user_text[:100]}")
             # 策略 2: Whisper 本地
             if not user_text:
                 user_text = transcribe_audio(audio_path)
