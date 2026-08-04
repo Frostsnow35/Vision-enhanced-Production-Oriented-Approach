@@ -105,6 +105,7 @@ def transcribe_with_doubao_standard(audio_url: str, audio_format: str = "mp3", m
     }
     try:
         with httpx.Client(timeout=30.0) as client:
+            logger.info(f"[ASR] 标准版提交: format={audio_format}, url={audio_url[:120]}...")
             submit_resp = client.post(
                 DOUBAO_ASR_SUBMIT_URL,
                 headers=_build_asr_headers(req_id, with_sequence=True),
@@ -113,7 +114,7 @@ def transcribe_with_doubao_standard(audio_url: str, audio_format: str = "mp3", m
             submit_status = submit_resp.headers.get("X-Api-Status-Code", "")
             if submit_status != "20000000":
                 message = submit_resp.headers.get("X-Api-Message", submit_resp.text[:200])
-                logger.warning(f"[ASR] 标准版提交失败 status={submit_status}: {message}")
+                logger.warning(f"[ASR] 标准版提交失败 status={submit_status} message={message} audio_url={audio_url[:150]}")
                 return ""
 
             # ---- 2. 轮询查询结果 ----

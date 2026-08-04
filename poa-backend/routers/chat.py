@@ -13,6 +13,8 @@ from services.chat_service import generate_opening, generate_reply, text_to_spee
 from services.asr_service import transcribe_audio, transcribe_with_doubao_standard
 
 UPLOAD_DIR = os.path.normpath(os.getenv("UPLOAD_DIR", os.path.join(os.path.dirname(__file__), "uploads")))
+# 公网可访问的后端地址，优先用环境变量（Railway 容器内 request.base_url 可能是内网地址）
+_BACKEND_PUBLIC_URL = os.getenv("BACKEND_PUBLIC_URL", "").rstrip("/")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("chat_router")
@@ -41,7 +43,10 @@ def _build_public_audio_url(request: Request, audio_path: str) -> tuple:
         import subprocess
         import uuid
 
-        base_url = str(request.base_url).rstrip("/")
+        # 优先使用环境变量 BACKEND_PUBLIC_URL（Railway 公网地址），
+        # 否则用 request.base_url（本地开发 localhost:8000 等）
+        base_url = _BACKEND_PUBLIC_URL if _BACKEND_PUBLIC_URL else str(request.base_url).rstrip("/")
+        logger.info(f"[chat] ASR 公网 base_url: {base_url}")
         ext = os.path.splitext(audio_path)[-1].lower()
 
         # webm/m4a/ogg/mp4/aac → 转码为 mp3（标准版仅支持 wav/mp3/ogg）

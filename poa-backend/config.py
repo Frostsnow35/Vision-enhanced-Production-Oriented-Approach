@@ -85,3 +85,8 @@ DOUBAO_ASR_TOKEN = os.getenv("DOUBAO_ASR_TOKEN", "")
 DOUBAO_ASR_RESOURCE_ID = os.getenv("DOUBAO_ASR_RESOURCE_ID", "volc.seedasr.auc")
 DOUBAO_ASR_SUBMIT_URL = os.getenv("DOUBAO_ASR_SUBMIT_URL", "https://openspeech.bytedance.com/api/v3/auc/bigmodel/submit")
 DOUBAO_ASR_QUERY_URL = os.getenv("DOUBAO_ASR_QUERY_URL", "https://openspeech.bytedance.com/api/v3/auc/bigmodel/query")
+
+# 后端公网访问地址，用于构造 ASR/TTS 等外部服务可下载的音频 URL
+# Railway 容器内 request.base_url 可能拿到内网地址（0.0.0.0:8000），导致火山引擎无法下载
+# 示例: https://poa-backend-production-c371.up.railway.app
+BACKEND_PUBLIC_URL = os.getenv("BACKEND_PUBLIC_URL", "").rstrip("/")
