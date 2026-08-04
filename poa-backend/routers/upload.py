@@ -54,7 +54,7 @@ async def upload_audio(file: UploadFile = File(...)):
     支持格式：webm / mp3 / wav / ogg
     """
     # 1. 校验文件类型
-    allowed_exts = {".webm", ".mp3", ".wav", ".ogg", ".m4a"}
+    allowed_exts = {".webm", ".mp3", ".wav", ".ogg", ".m4a", ".mp4", ".aac"}
     ext = os.path.splitext(file.filename or ".webm")[-1].lower()
     if ext not in allowed_exts:
         raise HTTPException(

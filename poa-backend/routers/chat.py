@@ -44,8 +44,8 @@ def _build_public_audio_url(request: Request, audio_path: str) -> tuple:
         base_url = str(request.base_url).rstrip("/")
         ext = os.path.splitext(audio_path)[-1].lower()
 
-        # webm/m4a/ogg → 转码为 mp3（标准版仅支持 wav/mp3/ogg）
-        if ext in (".webm", ".m4a", ".ogg"):
+        # webm/m4a/ogg/mp4/aac → 转码为 mp3（标准版仅支持 wav/mp3/ogg）
+        if ext in (".webm", ".m4a", ".ogg", ".mp4", ".aac"):
             mp3_dir = os.path.join(UPLOAD_DIR, "audio")
             os.makedirs(mp3_dir, exist_ok=True)
             mp3_name = f"asr_{uuid.uuid4().hex}.mp3"
