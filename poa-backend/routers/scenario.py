@@ -34,6 +34,14 @@ async def analyze_scene(req: ScenarioAnalyzeRequest, db: Session = Depends(get_d
 
     try:
         result = get_or_analyze_scenario(image_path=image_path, db=db)
+        # 预生成开场白 TTS（缓存预热），让 /api/chat/start 秒返回语音
+        opening = result.get("opening_line", "")
+        if opening:
+            try:
+                from services.chat_service import text_to_speech
+                text_to_speech(opening)
+            except Exception:
+                pass
         return result
     except Exception as e:
         import traceback

@@ -130,6 +130,7 @@ class ChatTurnResponse(BaseModel):
     turn_feedback: dict = {}  # 实时短反馈 {dimensions: [...], short_comment: "..."}
     user_text: str = ""  # Whisper 转写后的用户文本，供后续诊断复用
     llm_error: str = ""  # 模型调用失败时返回真实错误原因，非空表示本次未正常走模型推理
+    asr_error: str = ""  # ASR 转写失败时返回原因，用于前端诊断提示
 
 
 # ---- POST /api/chat/start ----
@@ -197,6 +198,7 @@ async def chat_turn(req: ChatTurnRequest, request: Request):
     frontend_text = req.user_text.strip()
     user_text = ""
     user_text_source = "unresolved"
+    asr_error = ""
 
     logger.info(
         f"[chat/turn] 收到请求: audio_url={req.audio_url or '<empty>'}, "
@@ -225,14 +227,23 @@ async def chat_turn(req: ChatTurnRequest, request: Request):
                 if user_text:
                     user_text_source = "standard_asr"
                     logger.info(f"[chat] 标准版 ASR 结果: {user_text[:100]}")
+                else:
+                    asr_error = "standard_asr_no_result"
+            else:
+                asr_error = "audio_conversion_failed"
             # 策略 2: Whisper 本地
             if not user_text:
                 user_text = transcribe_audio(audio_path)
                 if user_text:
                     user_text_source = "whisper_asr"
                     logger.info(f"[chat] Whisper ASR 结果: {user_text[:100]}")
+                elif not asr_error:
+                    asr_error = "whisper_unavailable"
         else:
+            asr_error = f"audio_file_missing"
             logger.warning(f"[chat/turn] 音频文件不存在，跳过服务端 ASR: {audio_path}")
+    elif not frontend_text:
+        asr_error = "no_audio_url"
 
     # 策略 3: 浏览器 Web Speech 文本
     if not user_text and frontend_text:
@@ -271,6 +282,7 @@ async def chat_turn(req: ChatTurnRequest, request: Request):
             turn_feedback={},
             user_text=user_text if user_text != "[inaudible]" else "",
             llm_error=llm_error,
+            asr_error=asr_error,
         )
 
     # 3. 实时短反馈（针对用户本轮输入）
@@ -292,4 +304,98 @@ async def chat_turn(req: ChatTurnRequest, request: Request):
         is_final=is_final,
         turn_feedback=turn_feedback,
         user_text=response_user_text,
+        asr_error=asr_error,
+    )
+
+
+# ---- GET /api/chat/debug/asr-diag ----
+class AsrDiagResponse(BaseModel):
+    upload_dir: str
+    upload_dir_exists: bool
+    backend_public_url: str
+    ffmpeg_available: bool
+    sample_mp3_url: str = ""
+    asr_submit_status: str = ""
+    asr_query_status: str = ""
+    asr_result: str = ""
+    errors: list = []
+
+
+@router.get("/debug/asr-diag", response_model=AsrDiagResponse)
+async def asr_diag(request: Request):
+    """
+    ASR 全链路诊断：检查目录、ffmpeg、音频可访问性、火山 ASR 连通性。
+    在 Railway 部署上访问此端点可快速定位哪一步断了。
+    """
+    import subprocess
+    import uuid
+
+    errors: list = []
+    backend_url = _BACKEND_PUBLIC_URL or str(request.base_url).rstrip("/")
+
+    # 1. 检查 upload_dir
+    upload_dir_exists = os.path.isdir(UPLOAD_DIR)
+
+    # 2. 检查 ffmpeg
+    ffmpeg_available = False
+    try:
+        r = subprocess.run(["ffmpeg", "-version"], capture_output=True, timeout=5)
+        ffmpeg_available = r.returncode == 0
+    except Exception:
+        pass
+
+    # 3. 生成测试 mp3（静音 1 秒，16kHz mono）
+    sample_url = ""
+    asr_submit_status = ""
+    asr_query_status = ""
+    asr_result = ""
+    if upload_dir_exists and ffmpeg_available:
+        mp3_dir = os.path.join(UPLOAD_DIR, "audio")
+        os.makedirs(mp3_dir, exist_ok=True)
+        sample_name = f"asr_diag_{uuid.uuid4().hex}.mp3"
+        sample_path = os.path.join(mp3_dir, sample_name)
+        try:
+            subprocess.run(
+                ["ffmpeg", "-y", "-f", "lavfi", "-i", "anullsrc=r=16000:cl=mono",
+                 "-t", "1", "-ar", "16000", "-ac", "1", "-b:a", "32k", sample_path],
+                capture_output=True, timeout=10,
+            )
+            if os.path.isfile(sample_path):
+                sample_url = f"{backend_url}/uploads/audio/{sample_name}"
+
+                # 4. 提交给火山 ASR 测试
+                audio_format = "mp3"
+                try:
+                    from services.asr_service import transcribe_with_doubao_standard
+                    result_text = transcribe_with_doubao_standard(sample_url, audio_format=audio_format, max_wait_sec=20)
+                    asr_submit_status = "submitted"
+                    if result_text:
+                        asr_query_status = "20000000"
+                        asr_result = result_text
+                    else:
+                        asr_query_status = "no_result_or_timeout"
+                        errors.append("ASR 提交成功但未收到转写结果（静音测试文件预期返回空或超时）")
+                except Exception as e:
+                    asr_submit_status = "exception"
+                    asr_query_status = str(e)[:100]
+                    errors.append(f"ASR 测试异常: {e}")
+
+                # 清理测试文件
+                try:
+                    os.remove(sample_path)
+                except Exception:
+                    pass
+        except Exception as e:
+            errors.append(f"生成测试 mp3 失败: {e}")
+
+    return AsrDiagResponse(
+        upload_dir=UPLOAD_DIR,
+        upload_dir_exists=upload_dir_exists,
+        backend_public_url=backend_url,
+        ffmpeg_available=ffmpeg_available,
+        sample_mp3_url=sample_url,
+        asr_submit_status=asr_submit_status,
+        asr_query_status=asr_query_status,
+        asr_result=asr_result,
+        errors=errors,
     )

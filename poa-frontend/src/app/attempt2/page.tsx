@@ -955,7 +955,7 @@ export default function Attempt2Page() {
           body: JSON.stringify(body),
         });
         if (res.ok) {
-          const data = await res.json() as { ai_text: string; ai_audio_url?: string; is_final?: boolean; turn_feedback?: TurnFeedback; llm_error?: string; user_text?: string };
+          const data = await res.json() as { ai_text: string; ai_audio_url?: string; is_final?: boolean; turn_feedback?: TurnFeedback; llm_error?: string; user_text?: string; asr_error?: string };
           // 模型调用失败：直接展示真实错误
           if (data.llm_error) {
             setSpeechStage("idle");
@@ -1068,7 +1068,7 @@ export default function Attempt2Page() {
       });
 
       if (res.ok) {
-        const data = await res.json() as { ai_text: string; ai_audio_url?: string; is_final?: boolean; turn_feedback?: TurnFeedback; llm_error?: string; user_text?: string };
+        const data = await res.json() as { ai_text: string; ai_audio_url?: string; is_final?: boolean; turn_feedback?: TurnFeedback; llm_error?: string; user_text?: string; asr_error?: string };
         // 模型调用失败：直接展示真实错误
         if (data.llm_error) {
           setSpeechStage("idle");
@@ -1098,7 +1098,9 @@ export default function Attempt2Page() {
         };
         setHistory((prev) => {
           const resolvedUserText = data.user_text || user_text;
-          if (resolvedUserText) {
+          const asrErrorText = data.asr_error && !resolvedUserText ? "[未能识别语音，请重试]" : "";
+          const finalUserText = resolvedUserText || asrErrorText;
+          if (finalUserText) {
             const lastUserIdx = [...prev].reverse().findIndex(h => h.role === "user");
             if (lastUserIdx >= 0) {
               const idx = prev.length - 1 - lastUserIdx;
@@ -1106,7 +1108,7 @@ export default function Attempt2Page() {
                 ...prev.slice(0, idx),
                 {
                   ...prev[idx],
-                  text: resolvedUserText,
+                  text: finalUserText,
                   resolved_user_text: resolvedUserText,
                 },
                 ...prev.slice(idx + 1),
@@ -1751,7 +1753,10 @@ export default function Attempt2Page() {
                             : "bg-gray-100 dark:bg-gray-800 rounded-bl-sm"
                       }`}
                     >
-                      <ClickableEnglish text={h.text || ""} />
+                      <ClickableEnglish text={h.text || (isUser ? "（语音识别中...）" : "")} />
+                      {isUser && !h.text && h.audio_url && (
+                        <div className="mt-1 text-[10px] opacity-60">录音已上传，等待后端识别...</div>
+                      )}
                     </div>
                     {isUser && (h.final_transcript || h.interim_transcript || h.sent_user_text || h.resolved_user_text) && (
                       <div className="mt-1 max-w-[75%] rounded-xl border border-border/60 bg-muted/40 px-2.5 py-1.5 text-[10px] text-muted-foreground">
