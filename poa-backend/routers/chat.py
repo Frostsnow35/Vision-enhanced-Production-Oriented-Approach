@@ -11,8 +11,8 @@ from pydantic import BaseModel
 
 from services.chat_service import generate_opening, generate_reply, text_to_speech, _generate_turn_feedback
 from services.asr_service import transcribe_audio, transcribe_with_doubao_standard
+from config import UPLOAD_DIR
 
-UPLOAD_DIR = os.path.normpath(os.getenv("UPLOAD_DIR", os.path.join(os.path.dirname(__file__), "uploads")))
 # 公网可访问的后端地址，优先用环境变量（Railway 容器内 request.base_url 可能是内网地址）
 _BACKEND_PUBLIC_URL = os.getenv("BACKEND_PUBLIC_URL", "").rstrip("/")
 
