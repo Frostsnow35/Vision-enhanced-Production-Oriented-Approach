@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from config import engine, UPLOAD_DIR, ASR_ENABLED, DOUBAO_API_KEY
+from config import engine, UPLOAD_DIR, ASR_ENABLED, DOUBAO_API_KEY, DOUBAO_ASR_APP_ID, DOUBAO_ASR_TOKEN, DOUBAO_ASR_RESOURCE_ID
 from models import Base
 
 from routers.upload import router as upload_router
@@ -162,4 +162,7 @@ def health_check():
         "asr_enabled": ASR_ENABLED,
         "api_key_configured": bool(DOUBAO_API_KEY),
         "upload_dir": UPLOAD_DIR,
+        "asr_configured": bool(DOUBAO_ASR_APP_ID and DOUBAO_ASR_TOKEN),
+        "asr_app_id_prefix": (DOUBAO_ASR_APP_ID[:4] + "***") if DOUBAO_ASR_APP_ID else "",
+        "asr_resource_id": DOUBAO_ASR_RESOURCE_ID,
     }
