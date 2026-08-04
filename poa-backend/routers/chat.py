@@ -29,12 +29,13 @@ def _clip_text(text: str, limit: int = 160) -> str:
     return value[:limit] + "..."
 
 
-def _build_public_audio_url(request: Request, audio_path: str) -> str:
+def _build_public_audio_url(request: Request, audio_path: str) -> tuple:
     """
     构造音频的公网可访问 URL，供火山引擎标准版 ASR 下载。
     标准版仅支持 wav/mp3/ogg，前端录制的是 webm/opus，需用 ffmpeg 转码为 mp3
-    并存放到 uploads 目录（静态挂载可访问），返回其公网 URL。
-    失败返回空字符串。
+    并存放到 uploads 目录（静态挂载可访问）。
+    @return (url, audio_format)：url 为公网 URL，audio_format 为实际容器格式（wav/mp3/ogg），
+            失败返回 ("", "")
     """
     try:
         import subprocess
@@ -55,15 +56,15 @@ def _build_public_audio_url(request: Request, audio_path: str) -> str:
             )
             if result.returncode != 0 or not os.path.isfile(mp3_path):
                 logger.warning(f"[chat] ffmpeg 转码 ASR 音频失败: {result.stderr.decode()[:200]}")
-                return ""
-            return f"{base_url}/uploads/audio/{mp3_name}"
-        else:
-            # wav/mp3 直接使用原始文件
-            rel = os.path.relpath(audio_path, UPLOAD_DIR).replace("\\", "/")
-            return f"{base_url}/uploads/{rel}"
+                return "", ""
+            return f"{base_url}/uploads/audio/{mp3_name}", "mp3"
+        # wav/mp3 直接使用原始文件，返回其真实格式
+        rel = os.path.relpath(audio_path, UPLOAD_DIR).replace("\\", "/")
+        real_format = ext.lstrip(".")  # wav → "wav", mp3 → "mp3", ogg → "ogg"
+        return f"{base_url}/uploads/{rel}", real_format
     except Exception as e:
         logger.warning(f"[chat] 构造 ASR 公网音频 URL 失败: {e}")
-        return ""
+        return "", ""
 
 
 def _serialize_history_for_log(conversation_history: list) -> str:
@@ -212,9 +213,10 @@ async def chat_turn(req: ChatTurnRequest, request: Request):
 
         if os.path.isfile(audio_path):
             # 策略 1: 火山引擎录音文件识别标准版（提交任务 + 查询结果）
-            public_url = _build_public_audio_url(request, audio_path)
-            if public_url:
-                user_text = transcribe_with_doubao_standard(public_url, audio_format="mp3")
+            # audio_format 必须与文件真实容器格式一致（wav 按 mp3 解析会失败）
+            public_url, audio_format = _build_public_audio_url(request, audio_path)
+            if public_url and audio_format:
+                user_text = transcribe_with_doubao_standard(public_url, audio_format=audio_format)
                 if user_text:
                     user_text_source = "standard_asr"
                     logger.info(f"[chat] 标准版 ASR 结果: {user_text[:100]}")
