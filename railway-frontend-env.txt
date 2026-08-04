@@ -1,0 +1,5 @@
+# ===== POA 前端环境变量 =====
+# 在 Railway → poa-frontend → Variables → Bulk Import 中粘贴
+# 将 <BACKEND_DOMAIN> 替换为实际后端域名（如 poa-backend-xxxx.up.railway.app）
+
+NEXT_PUBLIC_API_BASE=https://<BACKEND_DOMAIN>
