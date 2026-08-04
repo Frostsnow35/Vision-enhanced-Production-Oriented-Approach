@@ -16,7 +16,6 @@ import httpx
 
 from config import (
     ASR_ENABLED,
-    DOUBAO_API_KEY,
     DOUBAO_ASR_APP_ID,
     DOUBAO_ASR_RESOURCE_ID,
     DOUBAO_ASR_TOKEN,
@@ -90,16 +89,14 @@ def _convert_to_wav_b64(audio_path: str) -> Optional[str]:
 def transcribe_with_doubao_flash(audio_path: str) -> str:
     """
     使用火山引擎大模型 Flash ASR 进行语音转写。
-    鉴权策略：X-Api-Key 优先（复用 DOUBAO_API_KEY）→ X-Api-App-Id + X-Api-Access-Key 旧模式
+    鉴权模式：X-Api-App-Id + X-Api-Access-Key（需配置 DOUBAO_ASR_APP_ID / DOUBAO_ASR_TOKEN）
     需要 ffmpeg 将 webm/opus 转为 wav。
     返回转写文本，失败返回空字符串。
     """
-    # 检查鉴权凭据
-    api_key = DOUBAO_API_KEY
     app_id = DOUBAO_ASR_APP_ID
     token = DOUBAO_ASR_TOKEN
-    if not api_key and (not app_id or not token):
-        logger.warning("[ASR] Flash ASR 未配置凭据，跳过")
+    if not app_id or not token:
+        logger.warning("[ASR] Flash ASR 未配置 DOUBAO_ASR_APP_ID/DOUBAO_ASR_TOKEN，跳过")
         return ""
 
     # 转码音频
@@ -122,57 +119,29 @@ def transcribe_with_doubao_flash(audio_path: str) -> str:
     }
     req_id = str(uuid.uuid4())
 
-    # 策略 1: X-Api-Key 新模式
-    if api_key:
-        try:
-            headers = {
-                "X-Api-Key": api_key,
-                "X-Api-Resource-Id": DOUBAO_ASR_RESOURCE_ID,
-                "X-Api-Request-Id": req_id,
-                "X-Api-Sequence": "-1",
-                "Content-Type": "application/json",
-            }
-            with httpx.Client(timeout=30.0) as client:
-                resp = client.post(DOUBAO_ASR_URL, headers=headers, json=body)
-                resp.raise_for_status()
-                data = resp.json()
-                code = data.get("code", -1)
-                if code not in (0, 20000000):
-                    raise Exception(f"ASR error code={code}: {data.get('message', 'unknown')}")
-                text = data.get("result", {}).get("text", "").strip()
-                if text:
-                    logger.info(f"[ASR] Flash (X-Api-Key) 结果: {text[:100]}")
-                    return text
-                raise Exception("Flash ASR returned empty text")
-        except Exception as e:
-            logger.warning(f"[ASR] Flash X-Api-Key 模式失败: {e}")
+    try:
+        headers = {
+            "X-Api-App-Key": app_id,
+            "X-Api-Access-Key": token,
+            "X-Api-Resource-Id": DOUBAO_ASR_RESOURCE_ID,
+            "X-Api-Request-Id": req_id,
+            "Content-Type": "application/json",
+        }
+        with httpx.Client(timeout=30.0) as client:
+            resp = client.post(DOUBAO_ASR_URL, headers=headers, json=body)
+            resp.raise_for_status()
+            data = resp.json()
+            code = data.get("code", -1)
+            if code not in (0, 20000000):
+                raise Exception(f"ASR error code={code}: {data.get('message', 'unknown')}")
+            text = data.get("result", {}).get("text", "").strip()
+            if text:
+                logger.info(f"[ASR] Flash 结果: {text[:100]}")
+                return text
+            raise Exception("Flash ASR returned empty text")
+    except Exception as e:
+        logger.warning(f"[ASR] Flash ASR 失败: {e}")
 
-    # 策略 2: Legacy App-Id + Token 旧模式
-    if app_id and token:
-        try:
-            headers = {
-                "X-Api-App-Key": app_id,
-                "X-Api-Access-Key": token,
-                "X-Api-Resource-Id": DOUBAO_ASR_RESOURCE_ID,
-                "X-Api-Request-Id": req_id,
-                "Content-Type": "application/json",
-            }
-            with httpx.Client(timeout=30.0) as client:
-                resp = client.post(DOUBAO_ASR_URL, headers=headers, json=body)
-                resp.raise_for_status()
-                data = resp.json()
-                code = data.get("code", -1)
-                if code not in (0, 20000000):
-                    raise Exception(f"ASR error code={code}: {data.get('message', 'unknown')}")
-                text = data.get("result", {}).get("text", "").strip()
-                if text:
-                    logger.info(f"[ASR] Flash (Legacy) 结果: {text[:100]}")
-                    return text
-                raise Exception("Flash ASR returned empty text")
-        except Exception as e:
-            logger.warning(f"[ASR] Flash Legacy 模式失败: {e}")
-
-    logger.warning("[ASR] Flash ASR 所有鉴权模式均失败")
     return ""
 
 
