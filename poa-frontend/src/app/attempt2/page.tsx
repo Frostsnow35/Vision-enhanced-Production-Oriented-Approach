@@ -13,6 +13,7 @@ import ClickableEnglish from "@/components/ClickableEnglish";
 import DeviceCheckModal from "@/components/DeviceCheckModal";
 import CountdownEffect from "@/components/CountdownEffect";
 import TaskGate from "@/components/TaskGate";
+import { useBrowserASR } from "@/lib/useBrowserASR";
 
 /* ============================================================
    常量
@@ -199,6 +200,8 @@ export default function Attempt2Page() {
 
   // ---- 设备模态框（自动唤起）----
   const [showDeviceModal, setShowDeviceModal] = useState(false);
+  // ---- 浏览器原生语音识别（边说边出字幕）----
+  const browserASR = useBrowserASR("en-US");
   // ---- 3 秒倒计时 ----
   const [countdownKey, setCountdownKey] = useState<number | null>(null);
   // ---- 待显示的 AI 字幕（需手动点击才显示）----
@@ -362,6 +365,8 @@ export default function Attempt2Page() {
   const [replaying, setReplaying] = useState(false);
   const [uploading, setUploading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // 浏览器 ASR 实时转录文本，在 onstop 回调中使用
+  const browserTextRef = useRef("");
 
   // ---- 轮次限制（客户端兜底）----
   const userTurnCount = history.filter((h) => h.role === "user").length;
@@ -473,6 +478,9 @@ export default function Attempt2Page() {
       audioContextRef.current.resume().catch(() => {});
     }
 
+    // 启动浏览器原生语音识别（Chrome/Edge 内置，边说边出字幕）
+    browserASR.start("en-US");
+
     setReplayAvailable(false);
 
     const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -572,6 +580,8 @@ export default function Attempt2Page() {
       console.log(`[attempt2] onstop: audioUrl="${audioUrl}"`);
       const userTurn: ConversationTurn = {
         role: "user",
+        text: browserTextRef.current || undefined,
+        sent_user_text: browserTextRef.current || undefined,
         audio_url: audioUrl || undefined,
       };
       const newHistory = [...history, userTurn];
@@ -579,7 +589,10 @@ export default function Attempt2Page() {
 
       setUploading(false);
       setWaitingForAiReply(true);
-      await callChatTurn(audioUrl, "", newHistory);
+      const browserText = browserTextRef.current;
+      const userTextForBackend = browserText || "";
+      console.log("[attempt2] 浏览器 ASR 转录:", browserText || "(无)");
+      await callChatTurn(audioUrl, userTextForBackend, newHistory);
     };
 
     recorder.onstart = () => {
@@ -604,6 +617,10 @@ export default function Attempt2Page() {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
+
+    // 停止浏览器语音识别，拿最终转录文本（同步返回）
+    browserTextRef.current = browserASR.stop();
+
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
       try {
         mediaRecorderRef.current.stop();
@@ -615,7 +632,7 @@ export default function Attempt2Page() {
     } else {
       console.warn(`[attempt2] endRecord: recorder state=${mediaRecorderRef.current.state}，已跳过 stop`);
     }
-  }, []);
+  }, [browserASR]);
 
   const callChatTurn = async (audio_url: string, user_text: string, currentHistory: ConversationTurn[]) => {
     const historyForBackend = currentHistory.length > 0 && currentHistory[currentHistory.length - 1].role === "user"
@@ -1225,7 +1242,17 @@ export default function Attempt2Page() {
             </div>
 
             {/* 字幕区 */}
-            <div className="max-w-[90%] rounded-xl bg-muted/50 px-4 py-2.5 text-center min-h-[3rem] flex items-center justify-center">
+            <div className="max-w-[90%] rounded-xl bg-muted/50 px-4 py-2.5 text-center min-h-[3rem] flex flex-col items-center justify-center gap-1">
+              {/* 录音中：显示浏览器实时识别字幕 */}
+              {recording && browserASR.isListening && browserASR.interimTranscript && (
+                <p className="text-xs text-primary/80 animate-pulse">
+                  {browserASR.interimTranscript}
+                </p>
+              )}
+              {/* 浏览器 ASR 错误提示 */}
+              {recording && browserASR.error && (
+                <p className="text-xs text-destructive">{browserASR.error}</p>
+              )}
               <p className={`text-xs ${aiSpeaking ? "text-card-foreground" : "text-muted-foreground"}`}>
                 {currentSubtitle ? <ClickableEnglish text={currentSubtitle} /> : "点击下方按钮或按空格键开始对话"}
               </p>

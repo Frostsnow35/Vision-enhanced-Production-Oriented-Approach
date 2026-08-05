@@ -13,6 +13,7 @@ import ClickableEnglish from "@/components/ClickableEnglish";
 import DeviceCheckModal from "@/components/DeviceCheckModal";
 import CountdownEffect from "@/components/CountdownEffect";
 import TaskGate from "@/components/TaskGate";
+import { useBrowserASR } from "@/lib/useBrowserASR";
 
 /* ============================================================
    常量
@@ -137,9 +138,10 @@ export default function Attempt1Page() {
 
   // ---- 设备模态框（自动唤起）----
   const [showDeviceModal, setShowDeviceModal] = useState(false);
+  // ---- 浏览器原生语音识别（边说边出字幕）----
+  const browserASR = useBrowserASR("en-US");
   // ---- 3 秒倒计时 ----
   const [countdownKey, setCountdownKey] = useState<number | null>(null);
-  // ---- 待显示的 AI 字幕（需手动点击才显示）----
   const [pendingAiSubtitle, setPendingAiSubtitle] = useState<string | null>(null);
   // ---- 已锁定的字幕：用于在录音中保持显示 ----
   const [currentSubtitle, setCurrentSubtitle] = useState("");
@@ -304,6 +306,8 @@ export default function Attempt1Page() {
   const lastAiTextRef = useRef<string>("");
   const [replaying, setReplaying] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // 浏览器 ASR 实时转录文本，在 onstop 回调中使用
+  const browserTextRef = useRef("");
 
   // ---- 气泡列表自动滚动 ----
   useEffect(() => {
@@ -527,6 +531,9 @@ export default function Attempt1Page() {
       audioContextRef.current.resume().catch(() => {});
     }
 
+    // 启动浏览器原生语音识别（Chrome/Edge 内置，边说边出字幕）
+    browserASR.start("en-US");
+
     setReplayAvailable(false);
 
     // 移动端检测
@@ -620,7 +627,8 @@ export default function Attempt1Page() {
 
       const userTurn: ConversationTurn = {
         role: "user",
-        text: undefined,
+        text: browserTextRef.current || undefined,
+        sent_user_text: browserTextRef.current || undefined,
         audio_url: audioUrl || undefined,
       };
       const newHistory = [...history, userTurn];
@@ -718,7 +726,10 @@ export default function Attempt1Page() {
         }
         return;
       }
-      await callChatTurn(audioUrl, "user audio only (backend ASR)", newHistory);
+      const browserText = browserTextRef.current;
+      const userTextForBackend = browserText || "user audio only (backend ASR)";
+      console.log("[attempt1] 浏览器 ASR 转录:", browserText || "(无)");
+      await callChatTurn(audioUrl, userTextForBackend, newHistory);
     };
     recorder.onstart = () => {
       console.log(`[attempt1] MediaRecorder started, state=${recorder.state}, mime=${recorder.mimeType}, isMobile=${isMobile}`);
@@ -738,6 +749,10 @@ export default function Attempt1Page() {
     if (pressTimerRef.current) { clearTimeout(pressTimerRef.current); pressTimerRef.current = null; }
     setRecording(false);
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+
+    // 停止浏览器语音识别，拿最终转录文本（同步返回）
+    browserTextRef.current = browserASR.stop();
+
     // 强制停止录音器（不依赖 React 状态，防闭包过时）
     if (recorderRef.current && recorderRef.current.state !== "inactive") {
       try {
@@ -746,7 +761,7 @@ export default function Attempt1Page() {
         console.warn("[attempt1] recorder.stop() 异常:", e);
       }
     }
-  }, []);
+  }, [browserASR]);
 
   // ---- 空格键（点击切换）----
   useEffect(() => {
@@ -970,9 +985,19 @@ export default function Attempt1Page() {
                 <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 animate-in fade-in duration-300">首句回复可能需等待 10-30 秒，请耐心等待</p>
               )}
             </div>
-            <div className="max-w-[90%] rounded-xl bg-muted/50 px-4 py-2.5 text-center min-h-[3rem] flex items-center justify-center">
+            <div className="max-w-[90%] rounded-xl bg-muted/50 px-4 py-2.5 text-center min-h-[3rem] flex flex-col items-center justify-center gap-1">
+              {/* 录音中：显示浏览器实时识别字幕 */}
+              {recording && browserASR.isListening && browserASR.interimTranscript && (
+                <p className="text-xs text-primary/80 animate-pulse">
+                  {browserASR.interimTranscript}
+                </p>
+              )}
+              {/* 浏览器 ASR 错误提示 */}
+              {recording && browserASR.error && (
+                <p className="text-xs text-destructive">{browserASR.error}</p>
+              )}
               <p className={`text-xs ${aiSpeaking ? "text-card-foreground" : "text-muted-foreground"}`}>
-                {currentSubtitle ? <ClickableEnglish text={currentSubtitle} /> : "按住下方按钮或空格键开始对话"}
+                {currentSubtitle ? <ClickableEnglish text={currentSubtitle} /> : "点击下方按钮或按空格键开始对话"}
               </p>
             </div>
             {/* 重播按钮 + 显示字幕按钮 同行 */}
