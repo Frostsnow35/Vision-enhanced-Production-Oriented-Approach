@@ -263,9 +263,9 @@ class VolcanoStreamASR:
         await self._ws.send(frame)
         # 前 5 包每次打印字节数，之后每 20 包汇总
         if self._audio_count <= 5:
-            logger.info(f"[ASR-Stream→火山] 音频包 #{self._audio_count} seq={self._seq} pcm_bytes={len(pcm_bytes)} compressed={len(frame)}")
+            logger.info(f"[ASR-Stream→火山] 音频包 #{self._audio_count} seq={self._seq} pcm_raw={len(pcm_bytes)}B compressed={len(frame)}B")
         elif self._audio_count % 20 == 0:
-            logger.info(f"[ASR-Stream→火山] 已发送 {self._audio_count} 个音频包, 最近 pcm_bytes={len(pcm_bytes)}")
+            logger.info(f"[ASR-Stream→火山] 已发送 {self._audio_count} 个音频包, 最近 pcm_raw={len(pcm_bytes)}B")
 
     async def finish(self) -> None:
         """发送结束帧：负 sequence 的空音频包，触发服务端输出最终结果。"""
