@@ -732,8 +732,8 @@ export default function Attempt1Page() {
         return;
       }
       const browserText = browserTextRef.current;
-      const userTextForBackend = browserText || "user audio only (backend ASR)";
-      console.log("[attempt1] 浏览器 ASR 转录:", browserText || "(无)");
+      const userTextForBackend = browserText || ""; // 空字串让后端自行ASR或统一走 [inaudible] 流程
+      console.log("[attempt1] 浏览器 ASR 转录:", browserText || "(无，交由后端ASR)");
       await callChatTurn(audioUrl, userTextForBackend, newHistory);
     };
     recorder.onstart = () => {

@@ -596,7 +596,7 @@ export default function Attempt2Page() {
       setWaitingForAiReply(true);
       const browserText = browserTextRef.current;
       const userTextForBackend = browserText || "";
-      console.log("[attempt2] 浏览器 ASR 转录:", browserText || "(无)");
+      console.log("[attempt2] 浏览器 ASR 转录:", browserText || "(无，交由后端ASR)");
       await callChatTurn(audioUrl, userTextForBackend, newHistory);
     };
 
