@@ -62,12 +62,6 @@ PORT = int(os.getenv("PORT", "8000"))
 _backend_dir = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "/data/uploads" if os.path.isdir("/data") else os.path.join(_backend_dir, "uploads"))
 
-# ASR: 是否启用本地 Whisper（base 模型约 140MB，Railway /data 环境也可运行）
-ASR_ENABLED = os.getenv("ASR_ENABLED", "1") == "1"
-
-# 音频分析：是否启用 Whisper 词级分析（发音+流利度评分）
-ENABLE_AUDIO_ANALYSIS = os.getenv("ENABLE_AUDIO_ANALYSIS", "1" if ASR_ENABLED else "0") == "1"
-
 # 豆包 TTS 配置（火山引擎语音合成 V3）
 DOUBAO_TTS_APP_ID = os.getenv("DOUBAO_TTS_APP_ID", "")
 DOUBAO_TTS_TOKEN = os.getenv("DOUBAO_TTS_TOKEN", "")

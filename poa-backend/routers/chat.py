@@ -10,7 +10,7 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
 from services.chat_service import generate_opening, generate_reply, text_to_speech, _generate_turn_feedback
-from services.asr_service import transcribe_audio, transcribe_with_doubao_standard
+from services.asr_service import transcribe_with_doubao_standard
 from config import UPLOAD_DIR
 
 # 公网可访问的后端地址，优先用环境变量（Railway 容器内 request.base_url 可能是内网地址）
@@ -217,7 +217,7 @@ async def chat_turn(req: ChatTurnRequest, request: Request):
         "closing_line": req.closing_line,
     }
 
-    # 1. 获取用户文本：Flash ASR（云端毫秒级）→ Whisper（本地）→ Web Speech（浏览器）
+    # 1. 获取用户文本：仅豆包标准版 ASR（无降级）
     frontend_text = req.user_text.strip()
     user_text = ""
     user_text_source = "unresolved"
@@ -242,39 +242,24 @@ async def chat_turn(req: ChatTurnRequest, request: Request):
             audio_path = os.path.normpath(os.path.join(UPLOAD_DIR, audio_path))
 
         if os.path.isfile(audio_path):
-            # 策略 1: 火山引擎录音文件识别标准版（提交任务 + 查询结果）
-            # audio_format 必须与文件真实容器格式一致（wav 按 mp3 解析会失败）
+            # 火山引擎录音文件识别标准版（提交任务 + 查询结果）
             public_url, audio_format = _build_public_audio_url(request, audio_path)
             if public_url and audio_format:
                 user_text = transcribe_with_doubao_standard(public_url, audio_format=audio_format)
                 if user_text:
                     user_text_source = "standard_asr"
-                    logger.info(f"[chat] 标准版 ASR 结果: {user_text[:100]}")
+                    logger.info(f"[chat] ASR 结果: {user_text[:100]}")
                 else:
                     asr_error = "standard_asr_no_result"
             else:
                 asr_error = "audio_conversion_failed"
-            # 策略 2: Whisper 本地
-            if not user_text:
-                user_text = transcribe_audio(audio_path)
-                if user_text:
-                    user_text_source = "whisper_asr"
-                    logger.info(f"[chat] Whisper ASR 结果: {user_text[:100]}")
-                elif not asr_error:
-                    asr_error = "whisper_unavailable"
         else:
-            asr_error = f"audio_file_missing"
-            logger.warning(f"[chat/turn] 音频文件不存在，跳过服务端 ASR: {audio_path}")
-    elif not frontend_text:
+            asr_error = "audio_file_missing"
+            logger.warning(f"[chat/turn] 音频文件不存在: {audio_path}")
+    else:
         asr_error = "no_audio_url"
 
-    # 策略 3: 浏览器 Web Speech 文本
-    if not user_text and frontend_text:
-        user_text = frontend_text
-        user_text_source = "web_speech"
-        logger.info(f"[chat] ASR 无结果，回退 Web Speech: {user_text[:100]}")
-
-    # 全部失败 → [inaudible]，LLM 按 prompt 规则自然处理
+    # ASR 失败 → [inaudible]
     if not user_text:
         user_text = "[inaudible]"
         user_text_source = "fallback_inaudible"

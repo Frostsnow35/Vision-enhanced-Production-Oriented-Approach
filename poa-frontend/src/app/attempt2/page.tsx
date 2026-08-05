@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { BASE_URL, type TurnFeedback } from "@/lib/api";
-import { playAiAudio, speakWithBrowserTTS } from "@/lib/audio";
+import { playAiAudio } from "@/lib/audio";
 import RecordingWaveform from "@/components/RecordingWaveform";
 import { getScenarioHistory, isTaskSelectedInSession, markTaskSelectedInSession, type ScenarioHistoryItem } from "@/lib/store";
 import { isDeviceCheckPassed } from "@/lib/device-check";
@@ -43,38 +43,7 @@ interface ConversationTurn {
   resolved_user_text?: string;
   turn_feedback?: TurnFeedback;
   feedback_collapsed?: boolean;
-  error?: boolean;  // 标记该轮为错误轮次，前端渲染红色警示
-}
-
-type SpeechProcessingStage =
-  | "idle"
-  | "recording"
-  | "uploading"
-  | "upload_complete"
-  | "asr_processing"
-  | "waiting_model_reply"
-  | "ai_speaking"
-  | "wrapping_up";
-
-function getProcessingStageLabel(stage: SpeechProcessingStage): string {
-  switch (stage) {
-    case "recording":
-      return "正在录音";
-    case "uploading":
-      return "上传中...";
-    case "upload_complete":
-      return "上传完成";
-    case "asr_processing":
-      return "ASR 处理中...";
-    case "waiting_model_reply":
-      return "等待模型回复...";
-    case "ai_speaking":
-      return "AI 正在说话...";
-    case "wrapping_up":
-      return "AI 正在收尾...";
-    default:
-      return "";
-  }
+  error?: boolean;
 }
 
 function parseRoles(raw: string): { user: string; ai: string } {
@@ -112,47 +81,20 @@ function detectLowQualityReply(
   // 规则2：连续反问不推进检测
   if (prevAiText) {
     const confirmationWords = [
-      "sure",
-      "great",
-      "okay",
-      "alright",
-      "yes",
-      "no",
-      "got it",
-      "i see",
-      "of course",
-      "absolutely",
-      "sorry",
-      "my apologies",
+      "sure", "great", "okay", "alright", "yes", "no", "got it", "i see",
+      "of course", "absolutely", "sorry", "my apologies",
     ];
     const questionLeaders = [
-      "what",
-      "which",
-      "would you",
-      "could you",
-      "can you",
-      "do you",
-      "did you",
-      "have you",
-      "are you",
-      "is there",
-      "how about",
-      "shall we",
+      "what", "which", "would you", "could you", "can you", "do you",
+      "did you", "have you", "are you", "is there", "how about", "shall we",
     ];
 
     const isPureQuestion = (text: string): boolean => {
-      const cleaned = text
-        .replace(/\?+$/, "")
-        .trim()
-        .toLowerCase();
-      const hasConfirmation = confirmationWords.some((w) =>
-        cleaned.includes(w),
-      );
+      const cleaned = text.replace(/\?+$/, "").trim().toLowerCase();
+      const hasConfirmation = confirmationWords.some((w) => cleaned.includes(w));
       if (hasConfirmation) return false;
       const endsWithQuestion = /\?\s*$/.test(text.trim());
-      const hasQuestionLeader = questionLeaders.some((l) =>
-        cleaned.startsWith(l),
-      );
+      const hasQuestionLeader = questionLeaders.some((l) => cleaned.startsWith(l));
       return endsWithQuestion || hasQuestionLeader;
     };
 
@@ -167,162 +109,22 @@ function detectLowQualityReply(
   // 规则3：主题偏离检测
   if (variantPlot && variantPlot.trim().length > 0) {
     const stopWords = new Set([
-      "the",
-      "a",
-      "an",
-      "is",
-      "are",
-      "was",
-      "were",
-      "be",
-      "been",
-      "being",
-      "have",
-      "has",
-      "had",
-      "do",
-      "does",
-      "did",
-      "will",
-      "would",
-      "could",
-      "should",
-      "may",
-      "might",
-      "can",
-      "shall",
-      "to",
-      "of",
-      "in",
-      "for",
-      "on",
-      "with",
-      "at",
-      "by",
-      "from",
-      "it",
-      "its",
-      "this",
-      "that",
-      "these",
-      "those",
-      "and",
-      "or",
-      "but",
-      "not",
-      "no",
-      "if",
-      "so",
-      "as",
-      "than",
-      "then",
-      "just",
-      "also",
-      "very",
-      "too",
-      "all",
-      "some",
-      "any",
-      "each",
-      "every",
-      "both",
-      "few",
-      "more",
-      "most",
-      "other",
-      "only",
-      "own",
-      "same",
-      "into",
-      "up",
-      "out",
-      "about",
-      "over",
-      "after",
-      "before",
-      "between",
-      "under",
-      "again",
-      "further",
-      "once",
-      "here",
-      "there",
-      "when",
-      "where",
-      "why",
-      "how",
-      "which",
-      "who",
-      "whom",
-      "whose",
-      "what",
-      "的",
-      "了",
-      "在",
-      "是",
-      "我",
-      "有",
-      "和",
-      "就",
-      "不",
-      "人",
-      "都",
-      "一",
-      "一个",
-      "上",
-      "也",
-      "很",
-      "到",
-      "说",
-      "要",
-      "去",
-      "你",
-      "会",
-      "着",
-      "没有",
-      "看",
-      "好",
-      "自己",
-      "这",
-      "他",
-      "她",
-      "它",
-      "们",
-      "那",
-      "些",
-      "什么",
-      "怎么",
-      "哪",
-      "吗",
-      "啊",
-      "吧",
-      "呢",
-      "哦",
-      "嗯",
-      "哈",
-      "呀",
-      "还",
-      "被",
-      "把",
-      "让",
-      "向",
-      "从",
-      "对",
-      "与",
-      "或",
-      "而",
-      "但",
-      "且",
-      "因",
-      "为",
-      "所",
-      "以",
-      "能",
-      "可",
-      "将",
-      "已",
-      "并",
-      "其",
+      "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
+      "have", "has", "had", "do", "does", "did", "will", "would", "could",
+      "should", "may", "might", "can", "shall", "to", "of", "in", "for",
+      "on", "with", "at", "by", "from", "it", "its", "this", "that", "these",
+      "those", "and", "or", "but", "not", "no", "if", "so", "as", "than",
+      "then", "just", "also", "very", "too", "all", "some", "any", "each",
+      "every", "both", "few", "more", "most", "other", "only", "own", "same",
+      "into", "up", "out", "about", "over", "after", "before", "between",
+      "under", "again", "further", "once", "here", "there", "when", "where",
+      "why", "how", "which", "who", "whom", "whose", "what",
+      "的", "了", "在", "是", "我", "有", "和", "就", "不", "人", "都", "一",
+      "一个", "上", "也", "很", "到", "说", "要", "去", "你", "会", "着",
+      "没有", "看", "好", "自己", "这", "他", "她", "它", "们", "那", "些",
+      "什么", "怎么", "哪", "吗", "啊", "吧", "呢", "哦", "嗯", "哈", "呀",
+      "还", "被", "把", "让", "向", "从", "对", "与", "或", "而", "但", "且",
+      "因", "为", "所", "以", "能", "可", "将", "已", "并", "其",
     ]);
 
     const tokens = variantPlot
@@ -344,41 +146,6 @@ function detectLowQualityReply(
   }
 
   return { isLowQuality: false, reason: "" };
-}
-
-function getAiReply(task: TaskData | null): string {
-  const generic = [
-    "Sure, what would you like?",
-    "Anything else I can help you with?",
-    "Let me check that for you.",
-    "That'll be $5.50, please.",
-    "Would you like anything to drink with that?",
-    "Sorry, could you repeat that?",
-  ];
-  const label = (task?.scene_label ?? "") + (task?.roles ?? "") + (task?.variant_plot ?? "");
-  const specific: string[] = [];
-  if (/咖啡|cafe|coffee/i.test(label)) {
-    specific.push("What size — small, medium, or large?", "Hot or iced?", "Would you like to add a pastry?");
-  } else if (/图书馆|library/i.test(label)) {
-    specific.push("Do you have your library card?", "That book is due in two weeks.");
-  } else if (/餐厅|restaurant/i.test(label)) {
-    specific.push("Would you like to start with appetizers?", "How would you like that cooked?");
-  } else if (/机场|airport/i.test(label)) {
-    specific.push("Window or aisle seat?", "Do you have any checked bags?");
-  } else if (/商场|mall|shop/i.test(label)) {
-    specific.push("What size are you looking for?", "We have this in several colors.");
-  } else if (/医院|hospital/i.test(label)) {
-    specific.push("Do you have an appointment?", "Please describe your symptoms.");
-  }
-  if (/做错|退换|mistake|wrong/i.test(label)) {
-    specific.push("I'm sorry about that. Let me fix it right away.", "My apologies. Would you like a refund or a replacement?");
-  } else if (/优惠|折扣|discount|sale/i.test(label)) {
-    specific.push("We have a 20% discount on that today.", "Would you like to join our loyalty program?");
-  } else if (/超重|升级|upgrade/i.test(label)) {
-    specific.push("There's an additional fee for excess baggage.", "Would you like to upgrade to business class?");
-  }
-  const pool = specific.length > 0 ? [...specific, ...generic] : generic;
-  return pool[Math.floor(Math.random() * pool.length)];
 }
 
 /* ============================================================
@@ -444,7 +211,6 @@ export default function Attempt2Page() {
   useEffect(() => {
     const passed = isDeviceCheckPassed();
     setDevicePassed(passed);
-    // 未通过时自动唤起模态框
     if (!passed) setShowDeviceModal(true);
   }, []);
 
@@ -470,8 +236,9 @@ export default function Attempt2Page() {
       const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
       audioStreamRef.current = audioStream;
       setMicStatus("ready");
-      // 移动端不创建 AudioContext analyser（可能与 MediaRecorder 冲突导致录音无声）
       const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      const tracks = audioStream.getAudioTracks();
+      console.log(`[attempt2] 麦克风就绪, tracks=${tracks.length}`, tracks.map(t => ({ label: t.label, enabled: t.enabled, muted: t.muted, readyState: t.readyState, id: t.id.slice(0, 8) })));
       if (!isMobile) {
         const ctx = new AudioContext();
         audioContextRef.current = ctx;
@@ -520,7 +287,6 @@ export default function Attempt2Page() {
     } catch (err) {
       console.error("麦克风获取失败:", err);
       setMicStatus("error");
-      // 不再伪装：摄像头流没有音频轨道，不能用它当音频源
       setCurrentSubtitle("麦克风获取失败，请授予权限后刷新页面");
     }
   }, []);
@@ -584,7 +350,6 @@ export default function Attempt2Page() {
 
   // ---- AI 状态 ----
   const [aiSpeaking, setAiSpeaking] = useState(false);
-  // 安全设置 aiSpeaking，25s 后强制回弹防止 UI 卡死
   const setAiSpeakingWithTimeout = useCallback((speaking: boolean) => {
     if (aiSpeakingTimerRef.current) { clearTimeout(aiSpeakingTimerRef.current); aiSpeakingTimerRef.current = null; }
     setAiSpeaking(speaking);
@@ -597,7 +362,6 @@ export default function Attempt2Page() {
     }
   }, []);
   const [waitingForAiReply, setWaitingForAiReply] = useState(false);
-  const [speechStage, setSpeechStage] = useState<SpeechProcessingStage>("idle");
   const startedRef = useRef(false);
   const [isFinal, setIsFinal] = useState(false);
   const [wrappingUp, setWrappingUp] = useState(false);
@@ -609,33 +373,11 @@ export default function Attempt2Page() {
   const [replaying, setReplaying] = useState(false);
   const [uploading, setUploading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const speechStageTimerRefs = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   // ---- 轮次限制（客户端兜底）----
   const userTurnCount = history.filter((h) => h.role === "user").length;
   const turnLimitReached = userTurnCount >= ATTEMPT2_MAX_USER_TURNS;
   const canRecord = micReady && !uploading && !waitingForAiReply && !isFinal && !turnLimitReached && !wrappingUp && !aiSpeaking;
-
-  const clearSpeechStageTimers = useCallback(() => {
-    speechStageTimerRefs.current.forEach((timer) => clearTimeout(timer));
-    speechStageTimerRefs.current = [];
-  }, []);
-
-  const scheduleSpeechProcessingStages = useCallback(() => {
-    clearSpeechStageTimers();
-    setSpeechStage("upload_complete");
-    setCurrentSubtitle("上传完成");
-    speechStageTimerRefs.current = [
-      setTimeout(() => {
-        setSpeechStage("asr_processing");
-        setCurrentSubtitle("ASR 处理中...");
-      }, 450),
-      setTimeout(() => {
-        setSpeechStage("waiting_model_reply");
-        setCurrentSubtitle("等待模型回复...");
-      }, 1650),
-    ];
-  }, [clearSpeechStageTimers]);
 
   // ---- 键盘提示自动消失 ----
   const [showHint, setShowHint] = useState(true);
@@ -653,20 +395,7 @@ export default function Attempt2Page() {
     }
   }, [history.length]);
 
-  // ---- 语音识别（Web Speech API）----
-  const speechRecognitionRef = useRef<SpeechRecognition | null>(null);
-  const [speechSupported] = useState(() => {
-    const ok = typeof window !== "undefined" && !!(window.SpeechRecognition || window.webkitSpeechRecognition);
-    console.log(`[attempt2] Web Speech API: ${ok ? "支持" : "不支持"} (SpeechRecognition=${!!(typeof window !== "undefined" && window.SpeechRecognition)}, webkit=${!!(typeof window !== "undefined" && window.webkitSpeechRecognition)})`);
-    return ok;
-  });
-  const [interimTranscript, setInterimTranscript] = useState("");
-  const finalTranscriptRef = useRef("");
-  const interimTranscriptRef = useRef("");
-
   // ---- AI 开场白 ----
-  // 不再在此直接启动倒计时，统一走 设备检测 → initDevices → 麦克风就绪 → 倒计时 流程
-
   // 倒计时结束：开始 AI 开场白
   useEffect(() => {
     if (countdownKey === null) return;
@@ -678,7 +407,7 @@ export default function Attempt2Page() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [countdownKey]);
 
-  // 设备检测通过后的回调：记录通过状态但不关闭模态框（用户手动关闭）
+  // 设备检测通过后的回调
   const handleDevicePassed = useCallback(() => {
     setDevicePassed(true);
   }, []);
@@ -712,52 +441,22 @@ export default function Attempt2Page() {
             : data.ai_audio_url;
           lastAiAudioUrlRef.current = fullUrl;
           lastAiTextRef.current = data.ai_text;
-          playAiAudio(fullUrl, data.ai_text).finally(() => {
+          playAiAudio(fullUrl).finally(() => {
             setAiSpeaking(false);
             setReplayAvailable(true);
           });
         } else {
           lastAiTextRef.current = data.ai_text;
-          playAiAudio(null, data.ai_text).finally(() => {
-            setAiSpeaking(false);
-            setReplayAvailable(true);
-          });
+          setAiSpeaking(false);
+          setReplayAvailable(true);
         }
       } else {
         throw new Error(`${res.status}`);
       }
     } catch (err) {
       console.error("[startAiOpening] 失败:", err);
-      const variantContext = task.variant_plot ?? "";
-      const mockText = variantContext.includes("做错")
-        ? "I'm sorry, but I think there might be a mistake with my order. Could you check this for me?"
-        : variantContext.includes("优惠")
-          ? "Welcome back! Today we have a special promotion. How can I help you?"
-          : variantContext.includes("超重") || variantContext.includes("超售")
-            ? "I'm sorry, but we have a situation with your booking. Let me explain..."
-            : `Let's continue our conversation. ${getAiReply(task)}`;
-      let mockAudioUrl = "";
-      try {
-        const ttsRes = await fetch(`${BASE_URL}/api/chat/tts`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: mockText }) });
-        if (ttsRes.ok) { const ttsData = await ttsRes.json() as { audio_url: string }; mockAudioUrl = ttsData.audio_url || ""; }
-      } catch { /* ignore */ }
-      setCurrentSubtitle(mockText);
-      setHistory([{ role: "ai", text: mockText, audio_url: mockAudioUrl }]);
-      if (mockAudioUrl) {
-        const fullUrl = mockAudioUrl.startsWith("/") ? `${BASE_URL}${mockAudioUrl}` : mockAudioUrl;
-        lastAiAudioUrlRef.current = fullUrl;
-        lastAiTextRef.current = mockText;
-        playAiAudio(fullUrl, mockText).finally(() => {
-          setAiSpeaking(false);
-          setReplayAvailable(true);
-        });
-      } else {
-        lastAiTextRef.current = mockText;
-        playAiAudio(null, mockText).finally(() => {
-          setAiSpeaking(false);
-          setReplayAvailable(true);
-        });
-      }
+      setCurrentSubtitle("AI 开场白生成失败，请刷新页面重试");
+      setAiSpeaking(false);
     }
   };
 
@@ -770,22 +469,19 @@ export default function Attempt2Page() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const holdBtnRef = useRef<HTMLButtonElement>(null);
-  const isRecordingRef = useRef(false); // 防 beginRecord 重复触发
-  const aiSpeakingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null); // aiSpeaking 安全超时
+  const isRecordingRef = useRef(false);
+  const aiSpeakingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const beginRecord = useCallback(() => {
     if (!canRecord) return;
     if (!audioStreamRef.current || recording || uploading) return;
-    // 防重复：用 ref 追踪真实录制状态，避免 onMouseDown/onTouchStart 竞态
     if (isRecordingRef.current) return;
     isRecordingRef.current = true;
 
     setReplayAvailable(false);
 
-    // 移动端检测（提前到此处，供 MIME 选择和 AudioContext 跳过使用）
     const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
-    // 音频轨道健康检查：确保流仍有活跃音轨（移动端可能被系统回收）
     const audioTracks = audioStreamRef.current.getAudioTracks();
     const activeTracks = audioTracks.filter(t => t.readyState === "live");
     console.log(`[attempt2] 音频轨道: total=${audioTracks.length}, live=${activeTracks.length}, isMobile=${isMobile}`);
@@ -797,8 +493,6 @@ export default function Attempt2Page() {
     }
 
     // --- MediaRecorder ---
-    // 移动端：Android Chrome 上 audio/webm;codecs=opus 虽然 isTypeSupported 返回 true
-    // 但实际录制出的音频是静音（已知 Chrome bug）。移动端改用纯 webm。
     let mimeType: string;
     if (isMobile) {
       mimeType = MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "";
@@ -816,14 +510,13 @@ export default function Attempt2Page() {
     let recorder: MediaRecorder;
     try {
       const opts: MediaRecorderOptions = mimeType ? { mimeType } : {};
-      // 移动端设置比特率，确保录音质量
       if (isMobile && mimeType.includes("webm")) {
         opts.audioBitsPerSecond = 64000;
       }
       recorder = new MediaRecorder(audioStreamRef.current, opts);
     } catch (err: any) {
       console.error("[attempt2] MediaRecorder 创建失败:", err.message || err);
-      isRecordingRef.current = false; // ← 关键修复：错误路径必须重置
+      isRecordingRef.current = false;
       alert("无法启动录音，请检查麦克风权限: " + (err.message ?? ""));
       return;
     }
@@ -837,18 +530,13 @@ export default function Attempt2Page() {
 
     recorder.onerror = () => {
       console.error("[attempt2] MediaRecorder onerror");
-      isRecordingRef.current = false; // 错误时也重置
+      isRecordingRef.current = false;
       setRecording(false);
-      setSpeechStage("idle");
     };
 
     recorder.onstop = async () => {
-      if (chunksRef.current.length === 0) {
-        setSpeechStage("idle");
-        return;
-      }
+      if (chunksRef.current.length === 0) return;
       setUploading(true);
-      setSpeechStage("uploading");
 
       let audioUrl = "";
       try {
@@ -872,119 +560,47 @@ export default function Attempt2Page() {
         }
       } catch { /* ignore */ }
 
-      const finalTranscript = finalTranscriptRef.current.trim();
-      const interimTranscriptText = interimTranscriptRef.current.trim();
-      const userText = finalTranscript || interimTranscriptText;
-      console.log(`[attempt2] onstop: userText="${userText}", audioUrl="${audioUrl}", blobKB=${Math.round((new Blob(chunksRef.current)).size / 1024)}`);
+      console.log(`[attempt2] onstop: audioUrl="${audioUrl}"`);
       const userTurn: ConversationTurn = {
         role: "user",
-        text: userText || undefined,
         audio_url: audioUrl || undefined,
-        final_transcript: finalTranscript || undefined,
-        interim_transcript: interimTranscriptText || undefined,
-        sent_user_text: userText || undefined,
       };
       const newHistory = [...history, userTurn];
       setHistory(newHistory);
 
-      if (userText) {
-        setCurrentSubtitle(`你说：${userText}`);
-      }
-
-      setUploading(false); // 上传完成，之后是 AI 处理
-      scheduleSpeechProcessingStages();
-      await callChatTurn(audioUrl, userText, newHistory);
+      setUploading(false);
+      setWaitingForAiReply(true);
+      await callChatTurn(audioUrl, "", newHistory);
     };
 
-    recorder.start();
+    recorder.onstart = () => {
+      console.log(`[attempt2] MediaRecorder started, state=${recorder.state}, mime=${recorder.mimeType}, isMobile=${isMobile}`);
+    };
+    recorder.start(isMobile ? 1000 : undefined);
+    console.log(`[attempt2] recorder.start(${isMobile ? 1000 : "无参数"}) 已调用`);
     setPressing(true);
     setRecording(true);
-    setSpeechStage("recording");
     setElapsed(0);
     timerRef.current = setInterval(() => setElapsed((n) => n + 1), 1000);
 
-    // --- Speech Recognition ---
-    finalTranscriptRef.current = "";
-    interimTranscriptRef.current = "";
-    setInterimTranscript("");
+    // 录音开始提示
     setCurrentSubtitle("正在听你说话...");
-
-    if (speechSupported) {
-      // 移动端禁用 SpeechRecognition（与 MediaRecorder 同时持有麦克风会导致录音无声）
-      if (isMobile) {
-        console.log("[attempt2] 移动端跳过 SpeechRecognition，避免与 MediaRecorder 冲突");
-      } else {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SpeechRecognition) return;
-      const recognition = new SpeechRecognition();
-      recognition.continuous = true;
-      recognition.interimResults = true;
-      recognition.lang = "en-US";
-
-      recognition.onresult = (event: SpeechRecognitionEvent) => {
-        let interim = "";
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const r = event.results[i];
-          if (r.isFinal) {
-            finalTranscriptRef.current += (finalTranscriptRef.current ? " " : "") + r[0].transcript.trim();
-          } else {
-            interim += r[0].transcript;
-          }
-        }
-        setInterimTranscript(interim);
-        interimTranscriptRef.current = interim;
-
-        const display = finalTranscriptRef.current +
-          (interim ? (finalTranscriptRef.current ? " " : "") + interim : "");
-        setCurrentSubtitle(display || "正在听你说话...");
-      };
-
-      recognition.onerror = (e: Event) => {
-        const err = (e as any).error;
-        console.warn(`[attempt2] SpeechRecognition 错误: ${err}`, e);
-        if (err === "not-allowed") setCurrentSubtitle("麦克风权限未授予");
-        else if (err === "network") setCurrentSubtitle("语音识别需联网，请检查网络");
-        else if (err !== "aborted" && err !== "no-speech") setCurrentSubtitle(`语音识别出错: ${err}`);
-      };
-
-      recognition.onend = () => {
-        // Web Speech 交付完所有结果后，停止录音器，保证文本已被 capture
-        if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
-          mediaRecorderRef.current.stop();
-        }
-        speechRecognitionRef.current = null;
-      };
-
-      try {
-        recognition.start();
-        speechRecognitionRef.current = recognition;
-        console.log("[attempt2] SpeechRecognition 已启动, lang=en-US");
-      } catch (e: any) {
-        console.warn("[attempt2] SpeechRecognition.start() 失败:", e.message || e);
-        setCurrentSubtitle("语音识别启动失败，录音仍会进行");
-      }
-      } // end else (desktop SpeechRecognition)
-    }
-  }, [recording, uploading, history, speechSupported, canRecord, scheduleSpeechProcessingStages]);
+  }, [recording, uploading, history, canRecord]);
 
   const endRecord = useCallback(() => {
-    if (!isRecordingRef.current) return; // 已经在结束中或从未开始
+    if (!isRecordingRef.current) return;
     isRecordingRef.current = false;
     setPressing(false);
     if (pressTimerRef.current) {
       clearTimeout(pressTimerRef.current);
       pressTimerRef.current = null;
     }
-    // 停止 Web Speech，onend 里会调 recorder.stop()，保证文本已被 capture
-    speechRecognitionRef.current?.stop();
     setRecording(false);
-    setUploading(false); // 重置上传状态
+    setUploading(false);
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
-    // 强制停止录音器（不依赖 React 状态，防闭包过时）
-    // state !== "inactive" 而非 === "recording"：Android Chrome 上 state 可能卡在 "paused"
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
       try {
         mediaRecorderRef.current.stop();
@@ -996,20 +612,17 @@ export default function Attempt2Page() {
     } else {
       console.warn(`[attempt2] endRecord: recorder state=${mediaRecorderRef.current.state}，已跳过 stop`);
     }
-  }, [recording]);
+  }, []);
 
   const callChatTurn = async (audio_url: string, user_text: string, currentHistory: ConversationTurn[]) => {
-    // 剔除末尾用户轮次（后端 generate_reply 会单独追加 user_text，避免 LLM 收到重复消息）
     const historyForBackend = currentHistory.length > 0 && currentHistory[currentHistory.length - 1].role === "user"
       ? currentHistory.slice(0, -1)
       : currentHistory;
-    // Plan A 自动收尾：用户达轮次上限时不再立即 setIsFinal，而是串行触发一次 chatTurn
-    // 注入 WRAP_UP_HINT 让 AI 自然告别；失败时降级为通用告别模板
+
+    // Plan A 自动收尾
     if (turnLimitReached && !isFinal && !wrappingUp) {
       setWrappingUp(true);
       setWaitingForAiReply(true);
-      clearSpeechStageTimers();
-      setSpeechStage("wrapping_up");
       setCurrentSubtitle("AI 正在收尾...");
       setPendingAiSubtitle(null);
       console.info("[attempt2] Plan A 触发：自动调用 chatTurn 让 AI 收尾");
@@ -1035,9 +648,7 @@ export default function Attempt2Page() {
         });
         if (res.ok) {
           const data = await res.json() as { ai_text: string; ai_audio_url?: string; is_final?: boolean; turn_feedback?: TurnFeedback; llm_error?: string; user_text?: string; asr_error?: string };
-          // 模型调用失败：直接展示真实错误
           if (data.llm_error) {
-            setSpeechStage("idle");
             setWaitingForAiReply(false);
             setAiSpeaking(false);
             const errorMsg = `[模型调用失败] ${data.llm_error}`;
@@ -1053,7 +664,6 @@ export default function Attempt2Page() {
           }
           setWaitingForAiReply(false);
           setAiSpeakingWithTimeout(true);
-          setSpeechStage("ai_speaking");
           const aiTurn: ConversationTurn = {
             role: "ai",
             text: data.ai_text,
@@ -1089,18 +699,14 @@ export default function Attempt2Page() {
               : data.ai_audio_url;
             lastAiAudioUrlRef.current = fullUrl;
             lastAiTextRef.current = data.ai_text;
-            playAiAudio(fullUrl, data.ai_text).finally(() => {
+            playAiAudio(fullUrl).finally(() => {
               setAiSpeaking(false);
               setReplayAvailable(true);
-              setSpeechStage("idle");
             });
           } else {
             lastAiTextRef.current = data.ai_text;
-            playAiAudio(null, data.ai_text).finally(() => {
-              setAiSpeaking(false);
-              setReplayAvailable(true);
-              setSpeechStage("idle");
-            });
+            setAiSpeaking(false);
+            setReplayAvailable(true);
           }
         } else {
           throw new Error(`${res.status}`);
@@ -1117,7 +723,6 @@ export default function Attempt2Page() {
         setIsFinal(true);
         setWaitingForAiReply(false);
         setAiSpeaking(false);
-        setSpeechStage("idle");
       } finally {
         setWrappingUp(false);
       }
@@ -1126,7 +731,7 @@ export default function Attempt2Page() {
     if (isFinal) return;
     const currentTask = taskRef.current;
     setWaitingForAiReply(true);
-    setPendingAiSubtitle(null); // 清空上一句的待显字幕
+    setPendingAiSubtitle(null);
     try {
       const body: Record<string, unknown> = {
         task_id: (currentTask as any)?.task_id ?? 0,
@@ -1137,7 +742,7 @@ export default function Attempt2Page() {
         evaluation_criteria: currentTask?.evaluation_criteria || "",
         variant_context: currentTask?.variant_plot ?? "",
       };
-      body.user_text = user_text;  // Web Speech 文本作为兜底，后端优先 Whisper
+      body.user_text = user_text;
       body.audio_url = audio_url;
 
       const res = await fetch(`${BASE_URL}/api/chat/turn`, {
@@ -1148,9 +753,7 @@ export default function Attempt2Page() {
 
       if (res.ok) {
         const data = await res.json() as { ai_text: string; ai_audio_url?: string; is_final?: boolean; turn_feedback?: TurnFeedback; llm_error?: string; user_text?: string; asr_error?: string };
-        // 模型调用失败：直接展示真实错误
         if (data.llm_error) {
-          setSpeechStage("idle");
           setWaitingForAiReply(false);
           setAiSpeaking(false);
           const errorMsg = `[模型调用失败] ${data.llm_error}`;
@@ -1164,10 +767,8 @@ export default function Attempt2Page() {
           setHistory(prev => [...prev, errorTurn]);
           return;
         }
-        clearSpeechStageTimers();
         setWaitingForAiReply(false);
         setAiSpeakingWithTimeout(true);
-        setSpeechStage("ai_speaking");
         const aiTurn: ConversationTurn = {
           role: "ai",
           text: data.ai_text,
@@ -1197,7 +798,6 @@ export default function Attempt2Page() {
           }
           return [...prev, aiTurn];
         });
-        // AI 说完：先存到 pending，等用户点击"显示字幕"才显示
         setPendingAiSubtitle(data.ai_text);
 
         // 质量检测
@@ -1221,61 +821,49 @@ export default function Attempt2Page() {
             : data.ai_audio_url;
           lastAiAudioUrlRef.current = fullUrl;
           lastAiTextRef.current = data.ai_text;
-          playAiAudio(fullUrl, data.ai_text).finally(() => {
+          playAiAudio(fullUrl).finally(() => {
             setAiSpeaking(false);
             setReplayAvailable(true);
-            setSpeechStage("idle");
           });
         } else {
           lastAiTextRef.current = data.ai_text;
-          playAiAudio(null, data.ai_text).finally(() => {
-            setAiSpeaking(false);
-            setReplayAvailable(true);
-            setSpeechStage("idle");
-          });
+          setAiSpeaking(false);
+          setReplayAvailable(true);
         }
       } else {
         throw new Error(`${res.status}`);
       }
     } catch {
-      clearSpeechStageTimers();
       setWaitingForAiReply(false);
-      setSpeechStage("idle");
-      const mockText = getAiReply(task);
-      const aiTurn: ConversationTurn = { role: "ai", text: mockText };
-      setHistory((prev) => [...prev, aiTurn]);
-      setPendingAiSubtitle(mockText);
-      setTimeout(() => setAiSpeaking(false), 2000);
+      setAiSpeaking(false);
+      setCurrentSubtitle("对话请求失败，请重试");
     }
   };
 
   // ---- 重新生成 AI 回复 ----
   const handleRetryAiReply = async () => {
     if (!history.length || retryingAiReply) return;
-    
-    // 找到最后一轮 AI 回复的索引
+
     const lastAiIndex = history.map(h => h.role).lastIndexOf("ai");
     if (lastAiIndex === -1) return;
-    
-    // 找到对应的用户轮次（在 AI 轮次之前）
+
     const userTurns = history.filter(h => h.role === "user");
     const lastUserTurn = userTurns[userTurns.length - 1];
     if (!lastUserTurn) return;
-    
+
     const userText = lastUserTurn.resolved_user_text || lastUserTurn.sent_user_text || lastUserTurn.text || "";
-    
-    // 移除最后一轮 AI 回复
+
     const historyWithoutLastAi = history.slice(0, lastAiIndex);
-    
+
     setRetryingAiReply(true);
     setLowQualityFlag(null);
-    
+
     try {
       const currentTask = taskRef.current;
       const historyForBackend = historyWithoutLastAi.length > 0 && historyWithoutLastAi[historyWithoutLastAi.length - 1].role === "user"
         ? historyWithoutLastAi.slice(0, -1)
         : historyWithoutLastAi;
-      
+
       const body: Record<string, unknown> = {
         task_id: (currentTask as any)?.task_id ?? 0,
         conversation_history: historyForBackend,
@@ -1286,22 +874,22 @@ export default function Attempt2Page() {
         variant_context: currentTask?.variant_plot ?? "",
       };
       body.user_text = userText;
-      
+
       const res = await fetch(`${BASE_URL}/api/chat/turn`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      
+
       if (res.ok) {
         const data = await res.json() as { ai_text: string; ai_audio_url?: string; is_final?: boolean; turn_feedback?: TurnFeedback; llm_error?: string; user_text?: string };
-        
+
         if (data.llm_error) {
           alert("重试失败: " + data.llm_error);
           setRetryingAiReply(false);
           return;
         }
-        
+
         const newAiTurn: ConversationTurn = {
           role: "ai",
           text: data.ai_text,
@@ -1309,16 +897,15 @@ export default function Attempt2Page() {
           turn_feedback: data.turn_feedback && data.turn_feedback.short_comment ? data.turn_feedback : undefined,
           feedback_collapsed: false,
         };
-        
+
         const newHistory = [...historyWithoutLastAi, newAiTurn];
         setHistory(newHistory);
         setPendingAiSubtitle(data.ai_text);
-        
+
         if (data.is_final) {
           setIsFinal(true);
         }
-        
-        // 播放新生成的 AI 音频
+
         if (data.ai_audio_url) {
           const fullUrl = data.ai_audio_url.startsWith("/")
             ? `${BASE_URL}${data.ai_audio_url}`
@@ -1327,22 +914,19 @@ export default function Attempt2Page() {
           lastAiTextRef.current = data.ai_text;
           setAiSpeakingWithTimeout(true);
           setReplayAvailable(false);
-          setSpeechStage("ai_speaking");
-          playAiAudio(fullUrl, data.ai_text).finally(() => {
+          playAiAudio(fullUrl).finally(() => {
             setAiSpeaking(false);
             setReplayAvailable(true);
-            setSpeechStage("idle");
           });
         } else {
           lastAiTextRef.current = data.ai_text;
           setAiSpeakingWithTimeout(true);
           setReplayAvailable(false);
-          setSpeechStage("ai_speaking");
-          playAiAudio(null, data.ai_text).finally(() => {
+          // 无音频：短暂延迟后恢复
+          setTimeout(() => {
             setAiSpeaking(false);
             setReplayAvailable(true);
-            setSpeechStage("idle");
-          });
+          }, 2000);
         }
       } else {
         throw new Error(`${res.status}`);
@@ -1381,9 +965,8 @@ export default function Attempt2Page() {
     return () => {
       if (pressTimerRef.current) clearTimeout(pressTimerRef.current);
       if (timerRef.current) clearInterval(timerRef.current);
-      clearSpeechStageTimers();
     };
-  }, [clearSpeechStageTimers]);
+  }, []);
 
   // ---- 提交二次产出 ----
   const [submitting, setSubmitting] = useState(false);
@@ -1401,7 +984,6 @@ export default function Attempt2Page() {
         })),
         attempt_number: 2,
       };
-      // 收集用户录音的 audio_url，供后续评价页进行发音分析
       const audioUrls = history.filter(h => h.role === "user" && h.audio_url).map(h => h.audio_url);
       if (audioUrls.length > 0) {
         localStorage.setItem("attempt2_audio_urls", JSON.stringify(audioUrls));
@@ -1421,7 +1003,6 @@ export default function Attempt2Page() {
             }))
         )
       );
-      // 保存 attempt2 完整对话文本供评价页使用
       const convText2 = history.map(h => `[${h.role}]: ${h.text || ""}`).filter(x => x).join("\n");
       localStorage.setItem("conversationText2", convText2);
       const res = await fetch(`${BASE_URL}/api/attempt2/submit`, {
@@ -1605,7 +1186,11 @@ export default function Attempt2Page() {
                 {formatTime(elapsed)}
               </span>
             )}
-            {(uploading || waitingForAiReply) && <span className="text-white/60">{getProcessingStageLabel(speechStage)}</span>}
+            {(uploading || waitingForAiReply) && (
+              <span className="text-white/60">
+                {uploading ? "上传中..." : "AI 正在思考..."}
+              </span>
+            )}
           </div>
         </div>
 
@@ -1641,26 +1226,18 @@ export default function Attempt2Page() {
                 {ai.split("——")[0]}
               </p>
               <p className={`text-xs ${aiSpeaking || waitingForAiReply ? "text-primary animate-pulse" : "text-muted-foreground"}`}>
-                {aiSpeaking ? "正在说话..." : recording ? "正在听..." : waitingForAiReply ? getProcessingStageLabel(speechStage) : "等待中"}
+                {aiSpeaking ? "正在说话..." : recording ? "正在听..." : uploading ? "上传中..." : waitingForAiReply ? "AI 正在思考..." : "等待中"}
               </p>
               {waitingForAiReply && history.filter(h => h.role === "ai").length <= 1 && (
                 <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 animate-in fade-in duration-300">首句回复可能需等待 10-30 秒，请耐心等待</p>
               )}
             </div>
 
-            {/* 字幕区 — 实时转写 + AI 回复 */}
+            {/* 字幕区 */}
             <div className="max-w-[90%] rounded-xl bg-muted/50 px-4 py-2.5 text-center min-h-[3rem] flex items-center justify-center">
-              {recording && interimTranscript ? (
-                <p className="text-xs">
-                  <span className="text-card-foreground">{currentSubtitle.replace(interimTranscript, "").trim()}</span>
-                  {" "}
-                  <span className="italic text-muted-foreground/70">{interimTranscript}</span>
-                </p>
-              ) : (
-                <p className={`text-xs ${aiSpeaking ? "text-card-foreground" : "text-muted-foreground"}`}>
-                  {currentSubtitle ? <ClickableEnglish text={currentSubtitle} /> : "按住下方按钮或空格键开始对话"}
-                </p>
-              )}
+              <p className={`text-xs ${aiSpeaking ? "text-card-foreground" : "text-muted-foreground"}`}>
+                {currentSubtitle ? <ClickableEnglish text={currentSubtitle} /> : "按住下方按钮或空格键开始对话"}
+              </p>
             </div>
 
             {/* 重播按钮 + 显示字幕按钮 同行 */}
@@ -1692,10 +1269,6 @@ export default function Attempt2Page() {
                           audio.onerror = () => resolve();
                           audio.play().catch(() => resolve());
                         });
-                      }
-                      // 降级：浏览器 TTS
-                      if (lastAiTextRef.current) {
-                        await speakWithBrowserTTS(lastAiTextRef.current);
                       }
                     } catch { /* ignore */ }
                     setReplaying(false);
@@ -1886,7 +1459,7 @@ export default function Attempt2Page() {
       {/* ---- 底部控制栏 ---- */}
       <div className="shrink-0 border-t border-border bg-card px-4 py-3 space-y-2">
         {/* 波形图 */}
-        <RecordingWaveform stream={audioStreamRef.current} isRecording={recording} />
+        <RecordingWaveform isRecording={recording} />
 
         {isFinal && (
           <div className="rounded-lg bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 px-4 py-2.5 text-center">
@@ -1905,18 +1478,15 @@ export default function Attempt2Page() {
 
         {(uploading || waitingForAiReply) && (
           <p className="text-center text-xs text-muted-foreground">
-            {getProcessingStageLabel(speechStage)}
+            {uploading ? "上传中..." : "AI 正在思考..."}
           </p>
         )}
         <div className="flex items-center gap-3">
           <button
             ref={holdBtnRef}
-            onMouseDown={() => { if (micReady && !uploading && !isFinal) beginRecord(); }}
-            onMouseUp={endRecord}
-            onMouseLeave={endRecord}
-            onTouchStart={(e) => { e.preventDefault(); if (micReady && !uploading && !isFinal) beginRecord(); }}
-            onTouchEnd={(e) => { e.preventDefault(); endRecord(); }}
-            onTouchCancel={(e) => { e.preventDefault(); endRecord(); }}
+            onPointerDown={() => { if (canRecord) beginRecord(); }}
+            onPointerUp={endRecord}
+            onPointerLeave={endRecord}
             disabled={!micReady || uploading || waitingForAiReply || isFinal || !canRecord}
             className={`
               shrink-0 select-none rounded-full px-8 py-3 text-sm font-semibold transition-all duration-150
@@ -1944,7 +1514,7 @@ export default function Attempt2Page() {
                   : uploading
                     ? "处理中..."
                     : waitingForAiReply
-                      ? getProcessingStageLabel(speechStage)
+                      ? "AI 正在思考..."
                     : isFinal
                       ? "对话已结束"
                       : turnLimitReached
@@ -1955,12 +1525,6 @@ export default function Attempt2Page() {
           <span className="hidden sm:inline text-xs text-muted-foreground">
             或按空格键
           </span>
-
-          {!speechSupported && (
-            <span className="text-xs text-amber-600 dark:text-amber-400">
-              当前浏览器不支持实时转写，录音仍可用
-            </span>
-          )}
 
           <div className="flex-1" />
 

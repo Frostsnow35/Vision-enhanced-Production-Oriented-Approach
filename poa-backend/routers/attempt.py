@@ -15,7 +15,6 @@ from schemas import (
     AttemptSubmitResponse,
 )
 from services.ai_service import diagnose_attempt, _extract_high_freq_errors
-from services.asr_service import transcribe_audio
 from models import Attempt, Gap, Evaluation
 
 logging.basicConfig(level=logging.INFO)
@@ -28,7 +27,7 @@ def _build_diagnosis_text(req: AttemptSubmitRequest) -> str:
     """
     从请求中提取用于诊断的全文。
     优先使用 conversation 数组（新格式），fallback 到 attempt_text（旧格式）。
-    对 conversation 中的音频消息，调用 Whisper 转写后追加到文本中。
+    音频消息用占位符标记，不在此处转写（转写已在 chat.py 中完成）。
     """
     # 1. 如果前端传了 conversation 数组，遍历提取文本 + 转写音频
     if req.conversation:
@@ -38,23 +37,7 @@ def _build_diagnosis_text(req: AttemptSubmitRequest) -> str:
             if msg.content and msg.content.strip():
                 parts.append(f"[{msg.role}]: {msg.content.strip()}")
             elif msg.audio_url:
-                # 尝试转写，但只试一次；失败或文件不存在就用占位符跳过
-                transcribed = ""
-                audio_file = msg.audio_url
-                resolved = audio_file
-                if audio_file.startswith("/uploads/"):
-                    resolved = os.path.join(UPLOAD_DIR, audio_file[len("/uploads/"):])
-                if os.path.isfile(resolved):
-                    logger.info(f"[attempt] 转写音频: {resolved}")
-                    transcribed = transcribe_audio(resolved)
-                elif os.path.isfile(audio_file):
-                    transcribed = transcribe_audio(audio_file)
-                if transcribed:
-                    parts.append(f"[{msg.role}]: {transcribed}")
-                else:
-                    # 跳过无法转写的音频，不阻塞流程
-                    logger.warning(f"[attempt] 跳过无法转写的音频: {audio_file}")
-                    parts.append(f"[{msg.role}]: [audio message]")
+                parts.append(f"[{msg.role}]: [audio message]")
         if parts:
             return "\n".join(parts)
 
@@ -75,7 +58,7 @@ async def submit_attempt1(req: AttemptSubmitRequest, db: Session = Depends(get_d
       新: { task_id, conversation: [...], attempt_number: 1 }
       旧: { attempt_text: "..." }
 
-    conversation 中的音频消息会自动调用 Whisper 转写。
+    conversation 中的音频消息使用占位符标记。
 
     同时从 attempt_text 中提取 phrase-level 高频错误短语（独立 LLM 调用）。
     """

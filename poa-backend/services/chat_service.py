@@ -522,34 +522,6 @@ def _extract_completion_flag(text: str):
     return clean_text, is_final
 
 
-def _mock_reply(user_text: str, task_context: Dict[str, Any]):
-    """Mock 降级回复，返回 (text, is_final)。"""
-    lowered = user_text.lower()
-
-    if "thank" in lowered or "thanks" in lowered:
-        replies = [
-            ("You're welcome! Have a great day!", True),
-            ("My pleasure! Have a wonderful day!", True),
-        ]
-        return random.choice(replies)
-
-    if "goodbye" in lowered or "bye" in lowered:
-        return ("Goodbye! Take care!", True)
-
-    replies = [
-        ("Sure, what would you like?", False),
-        ("Anything else I can help you with?", False),
-        ("Let me check that for you.", False),
-        ("That'll be $5.50, please.", False),
-        ("Would you like anything to drink with that?", False),
-        ("Sorry, could you repeat that?", False),
-    ]
-
-    if "how much" in lowered or "price" in lowered:
-        return ("That'll be $5.50, please.", False)
-    if "?" in user_text:
-        return ("Let me check that for you.", False)
-    return random.choice(replies)
 
 
 # ============================================================
