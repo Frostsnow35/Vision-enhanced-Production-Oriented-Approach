@@ -171,7 +171,14 @@ class VolcanoStreamASR:
     async def connect(self) -> None:
         """建立与火山引擎流式 ASR 的 WebSocket 连接。"""
         if not _is_asr_configured():
-            raise RuntimeError("ASR 未配置: 缺少 DOUBAO_ASR_API_KEY 或 DOUBAO_ASR_APP_ID/TOKEN")
+            missing = []
+            if not DOUBAO_ASR_API_KEY:
+                missing.append("DOUBAO_ASR_API_KEY")
+            if not DOUBAO_ASR_APP_ID:
+                missing.append("DOUBAO_ASR_APP_ID")
+            if not DOUBAO_ASR_TOKEN:
+                missing.append("DOUBAO_ASR_TOKEN")
+            raise RuntimeError(f"ASR 未配置: 缺少 {' / '.join(missing)}")
 
         headers = _build_asr_headers(self._req_id, DOUBAO_ASR_STREAM_RESOURCE_ID)
         # websockets 库 additional_headers 接受 [(key, value), ...]
