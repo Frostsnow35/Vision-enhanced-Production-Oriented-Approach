@@ -139,7 +139,7 @@ class ChatTurnResponse(BaseModel):
 async def chat_start(req: ChatStartRequest):
     """
     生成 AI 开场白 + TTS 语音。
-    请求可携带 task_id 和场景信息，也可从 localStorage 的 currentTask 提供。
+    文字秒返回；若 TTS 缓存命中则带音频 URL，否则后台生成、前端用浏览器语音。
     """
     task_context = {
         "scene_label": req.scene_label,
@@ -154,7 +154,26 @@ async def chat_start(req: ChatStartRequest):
         logger.info(f"[chat/start] 使用预生成 opening_line: {ai_text[:60]}")
     else:
         ai_text = generate_opening(task_context)
-    ai_audio_url = text_to_speech(ai_text) if ai_text else ""
+
+    ai_audio_url = ""
+    if ai_text:
+        import hashlib
+        _tts_dir = os.path.join(UPLOAD_DIR, "tts")
+        text_hash = hashlib.md5(ai_text.encode()).hexdigest()[:12]
+        cached_path = os.path.join(_tts_dir, f"{text_hash}.mp3")
+        if os.path.isfile(cached_path):
+            ai_audio_url = f"/uploads/tts/{text_hash}.mp3"
+            logger.info(f"[chat/start] TTS 缓存命中 → 秒返: {cached_path}")
+        else:
+            # 缓存未命中，后台生成 TTS（首次加载场景时出现，后续瞬时命中）
+            import threading
+            def _warm_tts():
+                try:
+                    text_to_speech(ai_text)
+                except Exception as ex:
+                    logger.warning(f"[chat/start] 后台 TTS 预热失败: {ex}")
+            threading.Thread(target=_warm_tts, daemon=True).start()
+            logger.info(f"[chat/start] TTS 缓存未命中，后台生成，前端用浏览器语音")
 
     return ChatStartResponse(ai_text=ai_text, ai_audio_url=ai_audio_url)
 
@@ -328,6 +347,7 @@ async def asr_diag(request: Request):
     ASR 全链路诊断：静音连通性测试 + 真实语音(TTS)转写测试。
     若 speech_test_result 含预期文字则说明 ASR 全链路正常。
     """
+    # ASR 全链路诊断：真实语音(TTS)转写测试（跳过静音测试避免 Railway 超时）
     import subprocess
     import uuid
 
@@ -336,10 +356,8 @@ async def asr_diag(request: Request):
     mp3_dir = os.path.join(UPLOAD_DIR, "audio")
     os.makedirs(mp3_dir, exist_ok=True)
 
-    # 1. 检查 upload_dir
+    # 1. 基础检查
     upload_dir_exists = os.path.isdir(UPLOAD_DIR)
-
-    # 2. 检查 ffmpeg
     ffmpeg_available = False
     try:
         r = subprocess.run(["ffmpeg", "-version"], capture_output=True, timeout=5)
@@ -347,41 +365,16 @@ async def asr_diag(request: Request):
     except Exception:
         pass
 
-    # 3. 静音连通性测试
-    silent_test = "skipped"
-    if upload_dir_exists and ffmpeg_available:
-        silent_name = f"asr_diag_silent_{uuid.uuid4().hex}.mp3"
-        silent_path = os.path.join(mp3_dir, silent_name)
-        try:
-            subprocess.run(
-                ["ffmpeg", "-y", "-f", "lavfi", "-i", "anullsrc=r=16000:cl=mono",
-                 "-t", "1", "-ar", "16000", "-ac", "1", "-b:a", "32k", silent_path],
-                capture_output=True, timeout=10,
-            )
-            if os.path.isfile(silent_path):
-                silent_url = f"{backend_url}/uploads/audio/{silent_name}"
-                from services.asr_service import transcribe_with_doubao_standard
-                _ = transcribe_with_doubao_standard(silent_url, audio_format="mp3", max_wait_sec=15)
-                silent_test = "submit_ok"  # 静音文件提交成功即说明连通性正常
-                try:
-                    os.remove(silent_path)
-                except Exception:
-                    pass
-        except Exception as e:
-            silent_test = f"failed:{e}"
-            errors.append(f"静音连通性测试失败: {e}")
-    else:
-        silent_test = "prerequisites_missing"
-
-    # 4. 真实语音 ASR 测试（用 gTTS 生成 "Hello, this is an ASR test"）
+    # 2. 真实语音 ASR 测试（用 gTTS 生成短句 → 提交火山 ASR）
     speech_test_phrase = ""
     speech_test_submit_ok = False
     speech_test_result = ""
+    asr_pipeline_ok = False
     if upload_dir_exists and ffmpeg_available:
         try:
             from gtts import gTTS
-            speech_test_phrase = "Hello, this is an ASR test."
-            speech_name = f"asr_diag_speech_{uuid.uuid4().hex}.mp3"
+            speech_test_phrase = "Hello, this is a test."
+            speech_name = f"asr_diag_{uuid.uuid4().hex}.mp3"
             speech_path = os.path.join(mp3_dir, speech_name)
             tts = gTTS(text=speech_test_phrase, lang="en", slow=False)
             tts.save(speech_path)
@@ -389,24 +382,25 @@ async def asr_diag(request: Request):
             if os.path.isfile(speech_path) and os.path.getsize(speech_path) > 500:
                 speech_url = f"{backend_url}/uploads/audio/{speech_name}"
                 from services.asr_service import transcribe_with_doubao_standard
-                result = transcribe_with_doubao_standard(speech_url, audio_format="mp3", max_wait_sec=30)
+                result = transcribe_with_doubao_standard(speech_url, audio_format="mp3", max_wait_sec=15)
                 if result:
                     speech_test_submit_ok = True
                     speech_test_result = result
+                    asr_pipeline_ok = "hello" in result.lower()
                 else:
-                    errors.append("真实语音 ASR 转写返回空，可能音频无法被火山下载或处理超时")
+                    errors.append("ASR 提交/查询成功但未返回转写（可能是网络或超时）")
                 try:
                     os.remove(speech_path)
                 except Exception:
                     pass
             else:
-                errors.append("gTTS 生成的语音文件过小或不存在")
+                errors.append("gTTS 生成音频过小")
         except ImportError:
-            errors.append("gTTS 未安装，无法进行真实语音测试")
+            errors.append("gTTS 未安装")
         except Exception as e:
-            errors.append(f"真实语音 ASR 测试失败: {e}")
-
-    asr_pipeline_ok = silent_test == "submit_ok" and speech_test_submit_ok
+            errors.append(f"测试异常: {str(e)[:120]}")
+    else:
+        errors.append(f"前置条件不满足: dir={upload_dir_exists} ffmpeg={ffmpeg_available}")
 
     return AsrDiagResponse(
         upload_dir=UPLOAD_DIR,
@@ -414,7 +408,7 @@ async def asr_diag(request: Request):
         backend_public_url=backend_url,
         ffmpeg_available=ffmpeg_available,
         asr_pipeline_ok=asr_pipeline_ok,
-        silent_test=silent_test,
+        silent_test="skipped",
         speech_test_phrase=speech_test_phrase,
         speech_test_submit_ok=speech_test_submit_ok,
         speech_test_result=speech_test_result,

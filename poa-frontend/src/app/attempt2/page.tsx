@@ -640,7 +640,9 @@ export default function Attempt2Page() {
   // ---- 语音识别（Web Speech API）----
   const speechRecognitionRef = useRef<SpeechRecognition | null>(null);
   const [speechSupported] = useState(() => {
-    return typeof window !== "undefined" && !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+    const ok = typeof window !== "undefined" && !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+    console.log(`[attempt2] Web Speech API: ${ok ? "支持" : "不支持"} (SpeechRecognition=${!!(typeof window !== "undefined" && window.SpeechRecognition)}, webkit=${!!(typeof window !== "undefined" && window.webkitSpeechRecognition)})`);
+    return ok;
   });
   const [interimTranscript, setInterimTranscript] = useState("");
   const finalTranscriptRef = useRef("");

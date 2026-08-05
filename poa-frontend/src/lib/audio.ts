@@ -10,25 +10,81 @@
 export function speakWithBrowserTTS(text: string): Promise<void> {
   return new Promise((resolve) => {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      console.warn("[audio] speechSynthesis 不可用");
       resolve();
       return;
     }
+    const synth = window.speechSynthesis;
     // 取消任何正在进行的朗读
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = "en-US";
-    utterance.rate = 0.9;
-    utterance.onend = () => resolve();
-    utterance.onerror = () => resolve();
-    // 安全网：15秒超时
-    const safety = setTimeout(() => {
-      window.speechSynthesis.cancel();
-      resolve();
-    }, 15000);
-    utterance.onend = () => { clearTimeout(safety); resolve(); };
-    utterance.onerror = () => { clearTimeout(safety); resolve(); };
-    window.speechSynthesis.speak(utterance);
+    synth.cancel();
+    // 等待 voices 加载（移动端可能需要异步加载）
+    const doSpeak = () => {
+      let voices = synth.getVoices();
+      if (voices.length === 0) {
+        console.warn("[audio] speechSynthesis voices 为空，延迟重试");
+        setTimeout(() => {
+          voices = synth.getVoices();
+          const enVoice = voices.find(v => v.lang.startsWith("en")) || voices[0];
+          speakUtterance(synth, text, enVoice, resolve);
+        }, 200);
+      } else {
+        const enVoice = voices.find(v => v.lang.startsWith("en"));
+        speakUtterance(synth, text, enVoice || undefined, resolve);
+      }
+    };
+    if (synth.getVoices().length > 0) {
+      doSpeak();
+    } else {
+      synth.onvoiceschanged = () => {
+        synth.onvoiceschanged = null;
+        doSpeak();
+      };
+      // 安全网：500ms 后无论如何都尝试
+      setTimeout(() => {
+        if ((synth.onvoiceschanged as any) !== null) {
+          synth.onvoiceschanged = null;
+          doSpeak();
+        }
+      }, 500);
+    }
   });
+}
+
+function speakUtterance(
+  synth: SpeechSynthesis,
+  text: string,
+  voice: SpeechSynthesisVoice | undefined,
+  resolve: () => void
+): void {
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = "en-US";
+  utterance.rate = 0.9;
+  if (voice) utterance.voice = voice;
+  console.log(`[audio] 开始朗读 (voice=${voice?.name || "default"}): ${text.slice(0, 60)}...`);
+
+  let done = false;
+  const finish = () => {
+    if (done) return;
+    done = true;
+    clearTimeout(safety);
+    console.log("[audio] 朗读完成");
+    resolve();
+  };
+  utterance.onend = finish;
+  utterance.onerror = (e) => {
+    console.warn("[audio] 朗读出错:", (e as any)?.error || e);
+    finish();
+  };
+
+  // 安全网：15秒超时
+  const safety = setTimeout(() => {
+    console.warn("[audio] 朗读超时(15s)");
+    synth.cancel();
+    finish();
+  }, 15000);
+
+  synth.speak(utterance);
+  console.log("[audio] speak() 已调用");
 }
 
 /**
