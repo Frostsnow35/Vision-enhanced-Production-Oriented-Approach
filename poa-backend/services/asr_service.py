@@ -73,6 +73,8 @@ def transcribe_with_doubao_standard(audio_url: str, audio_format: str = "mp3", m
         "audio": {
             "format": audio_format,
             "url": audio_url,
+            # 指定识别语言为英语，提升准确率（默认中英混合）
+            "language": "en-US",
         },
         "request": {
             "model_name": "bigmodel",
