@@ -11,10 +11,11 @@ from pydantic import BaseModel
 
 from services.chat_service import generate_opening, generate_reply, text_to_speech, _generate_turn_feedback
 from services.asr_service import transcribe_with_doubao_standard
-from config import UPLOAD_DIR
+from config import UPLOAD_DIR, BACKEND_PUBLIC_URL
 
 # 公网可访问的后端地址，优先用环境变量（Railway 容器内 request.base_url 可能是内网地址）
-_BACKEND_PUBLIC_URL = os.getenv("BACKEND_PUBLIC_URL", "").rstrip("/")
+# 直接复用 config 中已清洗（去反引号/引号/空格）的值
+_BACKEND_PUBLIC_URL = BACKEND_PUBLIC_URL
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("chat_router")

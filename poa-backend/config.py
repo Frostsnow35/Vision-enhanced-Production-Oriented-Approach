@@ -85,4 +85,5 @@ DOUBAO_ASR_QUERY_URL = os.getenv("DOUBAO_ASR_QUERY_URL", "https://openspeech.byt
 # 后端公网访问地址，用于构造 ASR/TTS 等外部服务可下载的音频 URL
 # Railway 容器内 request.base_url 可能拿到内网地址（0.0.0.0:8000），导致火山引擎无法下载
 # 示例: https://poa-backend-production-c371.up.railway.app
-BACKEND_PUBLIC_URL = os.getenv("BACKEND_PUBLIC_URL", "").rstrip("/")
+# 注意: 粘贴环境变量时可能误带反引号/引号/空格，这里做防御性清洗
+BACKEND_PUBLIC_URL = os.getenv("BACKEND_PUBLIC_URL", "").strip().strip("`'\"").rstrip("/")
