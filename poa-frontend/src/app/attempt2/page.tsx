@@ -437,9 +437,10 @@ export default function Attempt2Page() {
             if (!isPlaying) setReplayAvailable(true);
           });
         } else {
+          console.warn("[startAiOpening] TTS 音频 URL 为空，后端未生成语音。检查 DOUBAO_TTS_*/gTTS 配置。");
           lastAiTextRef.current = data.ai_text;
           setAiSpeaking(false);
-          setReplayAvailable(true);
+          setReplayAvailable(false);
         }
       } else {
         throw new Error(`${res.status}`);
@@ -531,6 +532,7 @@ export default function Attempt2Page() {
       setUploading(true);
 
       let audioUrl = "";
+      let uploadFailed = false;
       try {
         const blobType = recorder.mimeType || mimeType || "audio/webm";
         const ext = blobType.includes("mp4") ? "mp4" : "webm";
@@ -549,8 +551,21 @@ export default function Attempt2Page() {
         if (uploadRes.ok) {
           const data = await uploadRes.json() as { audio_url: string };
           audioUrl = data.audio_url;
+        } else {
+          console.error("[attempt2] 上传失败:", uploadRes.status, await uploadRes.text().catch(() => ""));
+          uploadFailed = true;
         }
-      } catch { /* ignore */ }
+      } catch (err) {
+        console.error("[attempt2] 上传异常:", err);
+        uploadFailed = true;
+      }
+
+      if (uploadFailed) {
+        setUploading(false);
+        setCurrentSubtitle("上传失败，请检查网络后重试");
+        setHistory((prev) => [...prev, { role: "user", text: "[上传失败]", error: true } as ConversationTurn]);
+        return;
+      }
 
       console.log(`[attempt2] onstop: audioUrl="${audioUrl}"`);
       const userTurn: ConversationTurn = {

@@ -360,6 +360,11 @@ export default function Attempt1Page() {
         const fullUrl = data.ai_audio_url
           ? (data.ai_audio_url.startsWith("/") ? `${BASE_URL}${data.ai_audio_url}` : data.ai_audio_url)
           : "";
+        if (!fullUrl) {
+          console.warn("[startAiOpening] TTS 音频 URL 为空，后端未生成语音。检查 DOUBAO_TTS_*/gTTS 配置。");
+          setSpeechStage("idle");
+          setReplayAvailable(false);
+        }
         if (fullUrl) lastAiAudioUrlRef.current = fullUrl;
         lastAiTextRef.current = data.ai_text;
         playAiAudio(fullUrl || null, (isPlaying) => {
@@ -576,6 +581,7 @@ export default function Attempt1Page() {
       setSpeechStage("uploading");
       setCurrentSubtitle("上传中...");
       let audioUrl = "";
+      let uploadFailed = false;
       try {
         const blobType = recorder.mimeType || mimeType || "audio/webm";
         const ext = blobType.includes("mp4") ? "mp4" : "webm";
@@ -583,8 +589,25 @@ export default function Attempt1Page() {
         const form = new FormData();
         form.append("file", blob, `turn-${Date.now()}.${ext}`);
         const uploadRes = await fetch(`${BASE_URL}/api/upload/audio`, { method: "POST", body: form });
-        if (uploadRes.ok) { const data = await uploadRes.json() as { audio_url: string }; audioUrl = data.audio_url; }
-      } catch { /* ignore */ }
+        if (uploadRes.ok) {
+          const data = await uploadRes.json() as { audio_url: string };
+          audioUrl = data.audio_url;
+        } else {
+          console.error("[attempt1] 上传失败:", uploadRes.status, await uploadRes.text().catch(() => ""));
+          uploadFailed = true;
+        }
+      } catch (err) {
+        console.error("[attempt1] 上传异常:", err);
+        uploadFailed = true;
+      }
+
+      if (uploadFailed) {
+        setUploading(false);
+        setSpeechStage("idle");
+        setCurrentSubtitle("上传失败，请检查网络后重试");
+        setHistory((prev) => [...prev, { role: "user", text: "[上传失败]", error: true } as ConversationTurn]);
+        return;
+      }
 
       const userTurn: ConversationTurn = {
         role: "user",
