@@ -132,8 +132,9 @@ export function useBrowserASR(lang: string = "en-US") {
     setIsListening(false);
   }, []);
 
-  /** 从 ref 读取最终转录文本（同步，不依赖 React 状态） */
-  const getText = useCallback(() => (finalRef.current || "").trim(), []);
+  /** 从 ref 读取最终转录文本（同步，不依赖 React 状态）。
+   * 优先 final（含标点），回退 interim（浏览器 stop 时未必标记 final）。 */
+  const getText = useCallback(() => (finalRef.current || interimRef.current || "").trim(), []);
 
   return {
     supported,

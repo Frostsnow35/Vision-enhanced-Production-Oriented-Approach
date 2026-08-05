@@ -540,8 +540,9 @@ export default function Attempt2Page() {
     recorder.onstop = async () => {
       // 停止浏览器语音识别并等待最终结果落盘
       try { browserASR.stop(); } catch { /* ignore */ }
-      await new Promise((r) => setTimeout(r, 200));
+      await new Promise((r) => setTimeout(r, 300));
       browserTextRef.current = browserASR.getText();
+      console.log("[attempt2] browserASR.getText() 返回:", JSON.stringify(browserTextRef.current));
 
       if (chunksRef.current.length === 0) return;
       setUploading(true);

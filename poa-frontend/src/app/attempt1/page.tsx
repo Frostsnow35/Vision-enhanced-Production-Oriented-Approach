@@ -591,8 +591,9 @@ export default function Attempt1Page() {
     recorder.onstop = async () => {
       // 停止浏览器语音识别并等待最终结果落盘（rec.stop() 是异步的，onresult 可能在 stop 之后才触发最后一句话）
       try { browserASR.stop(); } catch { /* ignore */ }
-      await new Promise((r) => setTimeout(r, 200));
+      await new Promise((r) => setTimeout(r, 300));
       browserTextRef.current = browserASR.getText();
+      console.log("[attempt1] browserASR.getText() 返回:", JSON.stringify(browserTextRef.current));
 
       if (chunksRef.current.length === 0) {
         setSpeechStage("idle");
