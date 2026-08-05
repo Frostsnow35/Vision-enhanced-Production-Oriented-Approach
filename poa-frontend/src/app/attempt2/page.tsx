@@ -350,17 +350,6 @@ export default function Attempt2Page() {
 
   // ---- AI 状态 ----
   const [aiSpeaking, setAiSpeaking] = useState(false);
-  const setAiSpeakingWithTimeout = useCallback((speaking: boolean) => {
-    if (aiSpeakingTimerRef.current) { clearTimeout(aiSpeakingTimerRef.current); aiSpeakingTimerRef.current = null; }
-    setAiSpeaking(speaking);
-    if (speaking) {
-      aiSpeakingTimerRef.current = setTimeout(() => {
-        console.warn("[attempt2] aiSpeaking 安全超时(25s)，强制回弹");
-        setAiSpeaking(false);
-        setReplayAvailable(true);
-      }, 25000);
-    }
-  }, []);
   const [waitingForAiReply, setWaitingForAiReply] = useState(false);
   const startedRef = useRef(false);
   const [isFinal, setIsFinal] = useState(false);
@@ -414,7 +403,8 @@ export default function Attempt2Page() {
 
   const startAiOpening = async () => {
     if (!task) return;
-    setAiSpeakingWithTimeout(true);
+    setWaitingForAiReply(true);
+    setCurrentSubtitle("正在准备开场白...");
     try {
       const res = await fetch(`${BASE_URL}/api/chat/start`, {
         method: "POST",
@@ -432,6 +422,7 @@ export default function Attempt2Page() {
       });
       if (res.ok) {
         const data = await res.json() as { ai_text: string; ai_audio_url?: string };
+        setWaitingForAiReply(false);
         setPendingAiSubtitle(data.ai_text);
         setHistory([{ role: "ai", text: data.ai_text, audio_url: data.ai_audio_url }]);
 
@@ -441,9 +432,9 @@ export default function Attempt2Page() {
             : data.ai_audio_url;
           lastAiAudioUrlRef.current = fullUrl;
           lastAiTextRef.current = data.ai_text;
-          playAiAudio(fullUrl).finally(() => {
-            setAiSpeaking(false);
-            setReplayAvailable(true);
+          playAiAudio(fullUrl, (isPlaying) => {
+            setAiSpeaking(isPlaying);
+            if (!isPlaying) setReplayAvailable(true);
           });
         } else {
           lastAiTextRef.current = data.ai_text;
@@ -455,6 +446,7 @@ export default function Attempt2Page() {
       }
     } catch (err) {
       console.error("[startAiOpening] 失败:", err);
+      setWaitingForAiReply(false);
       setCurrentSubtitle("AI 开场白生成失败，请刷新页面重试");
       setAiSpeaking(false);
     }
@@ -470,7 +462,7 @@ export default function Attempt2Page() {
   const pressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const holdBtnRef = useRef<HTMLButtonElement>(null);
   const isRecordingRef = useRef(false);
-  const aiSpeakingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
 
   const beginRecord = useCallback(() => {
     if (!canRecord) return;
@@ -663,7 +655,6 @@ export default function Attempt2Page() {
             return;
           }
           setWaitingForAiReply(false);
-          setAiSpeakingWithTimeout(true);
           const aiTurn: ConversationTurn = {
             role: "ai",
             text: data.ai_text,
@@ -699,9 +690,9 @@ export default function Attempt2Page() {
               : data.ai_audio_url;
             lastAiAudioUrlRef.current = fullUrl;
             lastAiTextRef.current = data.ai_text;
-            playAiAudio(fullUrl).finally(() => {
-              setAiSpeaking(false);
-              setReplayAvailable(true);
+            playAiAudio(fullUrl, (isPlaying) => {
+              setAiSpeaking(isPlaying);
+              if (!isPlaying) setReplayAvailable(true);
             });
           } else {
             lastAiTextRef.current = data.ai_text;
@@ -768,7 +759,6 @@ export default function Attempt2Page() {
           return;
         }
         setWaitingForAiReply(false);
-        setAiSpeakingWithTimeout(true);
         const aiTurn: ConversationTurn = {
           role: "ai",
           text: data.ai_text,
@@ -821,9 +811,9 @@ export default function Attempt2Page() {
             : data.ai_audio_url;
           lastAiAudioUrlRef.current = fullUrl;
           lastAiTextRef.current = data.ai_text;
-          playAiAudio(fullUrl).finally(() => {
-            setAiSpeaking(false);
-            setReplayAvailable(true);
+          playAiAudio(fullUrl, (isPlaying) => {
+            setAiSpeaking(isPlaying);
+            if (!isPlaying) setReplayAvailable(true);
           });
         } else {
           lastAiTextRef.current = data.ai_text;
@@ -912,21 +902,14 @@ export default function Attempt2Page() {
             : data.ai_audio_url;
           lastAiAudioUrlRef.current = fullUrl;
           lastAiTextRef.current = data.ai_text;
-          setAiSpeakingWithTimeout(true);
-          setReplayAvailable(false);
-          playAiAudio(fullUrl).finally(() => {
-            setAiSpeaking(false);
-            setReplayAvailable(true);
+          playAiAudio(fullUrl, (isPlaying) => {
+            setAiSpeaking(isPlaying);
+            if (!isPlaying) setReplayAvailable(true);
           });
         } else {
           lastAiTextRef.current = data.ai_text;
-          setAiSpeakingWithTimeout(true);
-          setReplayAvailable(false);
-          // 无音频：短暂延迟后恢复
-          setTimeout(() => {
-            setAiSpeaking(false);
-            setReplayAvailable(true);
-          }, 2000);
+          setAiSpeaking(false);
+          setReplayAvailable(true);
         }
       } else {
         throw new Error(`${res.status}`);

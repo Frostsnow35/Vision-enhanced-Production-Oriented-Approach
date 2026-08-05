@@ -342,7 +342,8 @@ export default function Attempt1Page() {
 
   const startAiOpening = async () => {
     if (!task) return;
-    setAiSpeaking(true);
+    setWaitingForAiReply(true);
+    setCurrentSubtitle("正在准备开场白...");
     try {
       const data = await chatStart(
         task.scene_label,
@@ -352,6 +353,7 @@ export default function Attempt1Page() {
         undefined,
         (task as any).opening_line || ""
       );
+      setWaitingForAiReply(false);
       setPendingAiSubtitle(data.ai_text);
       setHistory([{ role: "ai", text: data.ai_text, audio_url: data.ai_audio_url }]);
       {
@@ -372,6 +374,7 @@ export default function Attempt1Page() {
       }
     } catch (err) {
       console.error("[startAiOpening] LLM 失败:", err);
+      setWaitingForAiReply(false);
       setCurrentSubtitle("AI 开场失败，请刷新重试");
       setAiSpeaking(false);
     }

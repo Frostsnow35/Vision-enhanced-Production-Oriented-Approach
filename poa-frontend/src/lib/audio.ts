@@ -12,7 +12,10 @@ export async function playAiAudio(
   audioUrl: string | undefined | null,
   onStateChange?: (isPlaying: boolean) => void
 ): Promise<void> {
-  if (!audioUrl) return;
+  if (!audioUrl) {
+    onStateChange?.(false);
+    return;
+  }
 
   const fullUrl = audioUrl.startsWith("http") ? audioUrl : audioUrl;
   onStateChange?.(true);
