@@ -30,6 +30,10 @@ export function useBrowserASR(lang: string = "en-US") {
   // 累积 ref：保存 final（已完成）+ 当前 interim 的最新组合文本，
   // 作为 stop() 时 onresult 尚未触发的兜底，避免丢字。
   const cumulativeRef = useRef("");
+  // 历史上最后一次非空转录文本。
+  // continuous=true 模式下，用户说完话立即停止时，识别器会清空 interim 且不产生 final，
+  // 导致 finalRef/cumulativeRef 都为空；此 ref 保存最近一次非空文本，保证不丢字。
+  const lastGoodRef = useRef("");
 
   const [isListening, setIsListening] = useState(false);
   const [interimTranscript, setInterimTranscript] = useState("");
@@ -60,6 +64,7 @@ export function useBrowserASR(lang: string = "en-US") {
     interimRef.current = "";
     finalRef.current = "";
     cumulativeRef.current = "";
+    lastGoodRef.current = "";
     setInterimTranscript("");
     setFinalTranscript("");
     setError("");
@@ -78,6 +83,11 @@ export function useBrowserASR(lang: string = "en-US") {
       setInterimTranscript(interim);
       // 累积 ref：final（已确认）+ 当前 interim（最新可能文本）
       cumulativeRef.current = finalRef.current + interim;
+      // 保存最近一次非空文本（final 或 interim），防止停止瞬间被清空导致丢字
+      const combined = (finalRef.current + " " + interim).trim();
+      if (combined) {
+        lastGoodRef.current = combined;
+      }
     };
 
     rec.onerror = (e: any) => {
@@ -125,7 +135,8 @@ export function useBrowserASR(lang: string = "en-US") {
       recRef.current = null;
     }
     setIsListening(false);
-    const text = (finalRef.current || cumulativeRef.current || interimRef.current || "").trim();
+    // 优先 final（含标点），其次 lastGood（最近一次非空，含 interim），再回退累积/interim
+    const text = (finalRef.current || lastGoodRef.current || cumulativeRef.current || interimRef.current || "").trim();
     setFinalTranscript(text);
     return text;
   }, []);
@@ -141,8 +152,8 @@ export function useBrowserASR(lang: string = "en-US") {
   }, []);
 
   /** 从 ref 读取最终转录文本（同步，不依赖 React 状态）。
-   * 优先 final（含标点），其次 cumulative（累积），最后 interim。 */
-  const getText = useCallback(() => (finalRef.current || cumulativeRef.current || interimRef.current || "").trim(), []);
+   * 优先 final（含标点），其次 lastGood（最近一次非空），最后累积/interim。 */
+  const getText = useCallback(() => (finalRef.current || lastGoodRef.current || cumulativeRef.current || interimRef.current || "").trim(), []);
 
   return {
     supported,
