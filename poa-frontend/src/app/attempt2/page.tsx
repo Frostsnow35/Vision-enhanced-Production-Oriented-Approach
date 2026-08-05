@@ -541,7 +541,7 @@ export default function Attempt2Page() {
       // 停止浏览器语音识别并等待最终结果落盘
       try { browserASR.stop(); } catch { /* ignore */ }
       await new Promise((r) => setTimeout(r, 200));
-      browserTextRef.current = browserASR.finalTranscript || "";
+      browserTextRef.current = browserASR.getText();
 
       if (chunksRef.current.length === 0) return;
       setUploading(true);
