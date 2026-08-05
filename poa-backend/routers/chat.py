@@ -417,17 +417,20 @@ async def asr_diag(request: Request):
             if os.path.isfile(speech_path) and os.path.getsize(speech_path) > 500:
                 speech_url = f"{backend_url}/uploads/audio/{speech_name}"
                 from services.asr_service import transcribe_with_doubao_standard
-                result = transcribe_with_doubao_standard(speech_url, audio_format="mp3", max_wait_sec=15)
+                # 注意：火山引擎是异步下载音频的（提交后可能延迟 20s+ 才来取文件），
+                # 因此测试文件必须保留在磁盘上，不能提前删除，否则火山下载时 404。
+                result = transcribe_with_doubao_standard(speech_url, audio_format="mp3", max_wait_sec=40)
                 if result:
                     speech_test_submit_ok = True
                     speech_test_result = result
                     asr_pipeline_ok = "hello" in result.lower()
                 else:
                     errors.append("ASR 提交/查询成功但未返回转写（可能是网络或超时）")
-                try:
-                    os.remove(speech_path)
-                except Exception:
-                    pass
+                # 测试文件保留 2 分钟后由系统定期清理，避免提前删除导致火山下载 404
+                # try:
+                #     os.remove(speech_path)
+                # except Exception:
+                #     pass
             else:
                 errors.append("gTTS 生成音频过小")
         except ImportError:

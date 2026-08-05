@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from config import engine, UPLOAD_DIR, DOUBAO_API_KEY, DOUBAO_ASR_APP_ID, DOUBAO_ASR_TOKEN, DOUBAO_ASR_RESOURCE_ID, BACKEND_PUBLIC_URL
+from config import engine, UPLOAD_DIR, DOUBAO_API_KEY, DOUBAO_ASR_APP_ID, DOUBAO_ASR_TOKEN, DOUBAO_ASR_API_KEY, DOUBAO_ASR_RESOURCE_ID, BACKEND_PUBLIC_URL
 from models import Base
 
 from routers.upload import router as upload_router
