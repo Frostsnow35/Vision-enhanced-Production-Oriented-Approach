@@ -231,6 +231,7 @@ class VolcanoStreamASR:
             raise RuntimeError("WebSocket 未连接，请先调用 connect()")
 
         # 双向流式(bigmodel)不支持 audio.language 字段，默认中英文混合识别
+        # 注意: enable_ddc / show_utterances 可能为 2.0 专有参数，1.0 (volc.bigasr) 慎用
         config = {
             "user": {"uid": "poa_user", "platform": "web", "sdk_version": "1.0"},
             "audio": {
@@ -243,8 +244,6 @@ class VolcanoStreamASR:
                 "model_name": "bigmodel",
                 "enable_itn": True,
                 "enable_punc": True,
-                "enable_ddc": True,
-                "show_utterances": True,
             },
         }
         self._seq += 1
@@ -330,6 +329,14 @@ class VolcanoStreamASR:
             f"payload_size={len(msg) - 8} text='{_clip_text(text, 80)}'"
         )
 
+        # 诊断：text 为空时打印完整 JSON body，确认火山是否在别的字段返回了结果
+        if not text and body:
+            body_str = json.dumps(body, ensure_ascii=False)
+            logger.warning(
+                f"[ASR-Stream←火山] 响应 #{self._resp_count} text为空，原始body: "
+                f"{_clip_text(body_str, 500)}"
+            )
+
         return (text, is_final)
 
     async def close(self) -> None:
@@ -368,7 +375,6 @@ def transcribe_with_doubao_standard(audio_url: str, audio_format: str = "mp3", m
         "audio": {
             "format": audio_format,
             "url": audio_url,
-            "language": "en-US",
         },
         "request": {
             "model_name": "bigmodel",
