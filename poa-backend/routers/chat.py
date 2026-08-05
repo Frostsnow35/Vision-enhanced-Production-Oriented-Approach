@@ -283,7 +283,7 @@ async def chat_turn(req: ChatTurnRequest, request: Request):
         if not user_text and os.path.isfile(audio_path):
             public_url, audio_format = _build_public_audio_url(request, audio_path)
             if public_url and audio_format:
-                user_text = transcribe_with_doubao_standard(public_url, audio_format=audio_format)
+                user_text = transcribe_with_doubao_standard(public_url, audio_format=audio_format, max_wait_sec=45)
                 if user_text:
                     user_text_source = "standard_asr"
                     logger.info(f"[chat] ASR 结果: {user_text[:100]}")
@@ -426,7 +426,7 @@ async def asr_diag(request: Request):
                 from services.asr_service import transcribe_with_doubao_standard
                 # 注意：火山引擎是异步下载音频的（提交后可能延迟 20s+ 才来取文件），
                 # 因此测试文件必须保留在磁盘上，不能提前删除，否则火山下载时 404。
-                result = transcribe_with_doubao_standard(speech_url, audio_format="mp3", max_wait_sec=40)
+                result = transcribe_with_doubao_standard(speech_url, audio_format="mp3", max_wait_sec=55)
                 if result:
                     speech_test_submit_ok = True
                     speech_test_result = result
