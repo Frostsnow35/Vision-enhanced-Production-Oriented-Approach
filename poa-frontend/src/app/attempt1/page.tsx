@@ -589,11 +589,16 @@ export default function Attempt1Page() {
       setSpeechStage("idle");
     };
     recorder.onstop = async () => {
-      // 停止浏览器语音识别并等待最终结果落盘（rec.stop() 是异步的，onresult 可能在 stop 之后才触发最后一句话）
-      try { browserASR.stop(); } catch { /* ignore */ }
-      await new Promise((r) => setTimeout(r, 300));
-      browserTextRef.current = browserASR.getText();
-      console.log("[attempt1] browserASR.getText() 返回:", JSON.stringify(browserTextRef.current));
+      // 停止浏览器语音识别，直接使用 stop() 返回值（含 cumulativeRef 兜底，不依赖 300ms 延迟）
+      let asrResult = "";
+      try { asrResult = browserASR.stop() || ""; } catch { /* ignore */ }
+      // 如果 stop() 返回空，再给 onresult 回调一次最后机会
+      if (!asrResult) {
+        await new Promise((r) => setTimeout(r, 200));
+        asrResult = browserASR.getText();
+      }
+      browserTextRef.current = asrResult;
+      console.log("[attempt1] browserASR 结果:", JSON.stringify(browserTextRef.current));
 
       if (chunksRef.current.length === 0) {
         setSpeechStage("idle");

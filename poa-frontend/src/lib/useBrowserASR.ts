@@ -27,6 +27,9 @@ export function useBrowserASR(lang: string = "en-US") {
   const recRef = useRef<any>(null);
   const interimRef = useRef("");
   const finalRef = useRef("");
+  // 累积 ref：保存 final（已完成）+ 当前 interim 的最新组合文本，
+  // 作为 stop() 时 onresult 尚未触发的兜底，避免丢字。
+  const cumulativeRef = useRef("");
 
   const [isListening, setIsListening] = useState(false);
   const [interimTranscript, setInterimTranscript] = useState("");
@@ -56,6 +59,7 @@ export function useBrowserASR(lang: string = "en-US") {
 
     interimRef.current = "";
     finalRef.current = "";
+    cumulativeRef.current = "";
     setInterimTranscript("");
     setFinalTranscript("");
     setError("");
@@ -72,6 +76,8 @@ export function useBrowserASR(lang: string = "en-US") {
       }
       interimRef.current = interim;
       setInterimTranscript(interim);
+      // 累积 ref：final（已确认）+ 当前 interim（最新可能文本）
+      cumulativeRef.current = finalRef.current + interim;
     };
 
     rec.onerror = (e: any) => {
@@ -108,7 +114,9 @@ export function useBrowserASR(lang: string = "en-US") {
 
   /**
    * 停止语音识别，返回最终的完整转写文本。
-   * 优先返回 final 结果（含标点），其次返回 interim 结果（可能缺少标点）。
+   * 优先 final（含标点），其次 cumulative（累积），最后 interim。
+   * 注意：rec.stop() 是异步的，onresult 可能在 stop() 返回后才触发，
+   * 因此 cumulativeRef 作为安全网，确保不会因时序丢失文本。
    */
   const stop = useCallback((): string => {
     const rec = recRef.current;
@@ -117,7 +125,7 @@ export function useBrowserASR(lang: string = "en-US") {
       recRef.current = null;
     }
     setIsListening(false);
-    const text = (finalRef.current || interimRef.current || "").trim();
+    const text = (finalRef.current || cumulativeRef.current || interimRef.current || "").trim();
     setFinalTranscript(text);
     return text;
   }, []);
@@ -133,8 +141,8 @@ export function useBrowserASR(lang: string = "en-US") {
   }, []);
 
   /** 从 ref 读取最终转录文本（同步，不依赖 React 状态）。
-   * 优先 final（含标点），回退 interim（浏览器 stop 时未必标记 final）。 */
-  const getText = useCallback(() => (finalRef.current || interimRef.current || "").trim(), []);
+   * 优先 final（含标点），其次 cumulative（累积），最后 interim。 */
+  const getText = useCallback(() => (finalRef.current || cumulativeRef.current || interimRef.current || "").trim(), []);
 
   return {
     supported,

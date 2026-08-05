@@ -12,10 +12,8 @@ DOUBAO_TTS_VOICE=en_female_dacey_uranus_bigtts
 DOUBAO_ASR_APP_ID=6352558460
 DOUBAO_ASR_TOKEN=4kCi0u3uo3Y_OBTS8aK4xaYSbhwcrg9q
 DOUBAO_ASR_RESOURCE_ID=volc.seedasr.auc
+# 重要：后端公网地址，火山 ASR 需要通过公网下载音频文件
+# 设为 Railway 给你的后端域名，例如 https://poa-backend-production-c371.up.railway.app
 BACKEND_PUBLIC_URL=https://poa-backend-production-c371.up.railway.app
 ARK_API_KEY=<YOUR_ARK_API_KEY>
 ARK_MODEL_ID=doubao-1.5-vision-pro-32k
-ASR_ENABLED=0
-# 重要：后端公网地址，火山 ASR 需要通过公网下载音频文件
-# 设为 Railway 给你的后端域名，例如 https://poa-backend-production-c371.up.railway.app
-BACKEND_PUBLIC_URL=<YOUR_BACKEND_PUBLIC_URL>
