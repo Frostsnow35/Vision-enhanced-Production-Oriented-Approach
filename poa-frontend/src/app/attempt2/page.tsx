@@ -786,6 +786,10 @@ export default function Attempt2Page() {
           if (!resolvedUserText && data.asr_error) {
             resolvedUserText = `[语音转写失败: ${data.asr_error}] 请重试或直接输入文字`;
           }
+          if (!resolvedUserText) {
+            resolvedUserText = "[语音未识别]";
+            console.log("[backfill] no user_text from server, asr_error:", data.asr_error || "无");
+          }
           if (resolvedUserText) {
             const lastUserIdx = [...prev].reverse().findIndex(h => h.role === "user");
             if (lastUserIdx >= 0) {
@@ -839,10 +843,14 @@ export default function Attempt2Page() {
       } else {
         throw new Error(`${res.status}`);
       }
-    } catch {
+    } catch (err: any) {
+      console.error("[callChatTurn] 失败:", err);
       setWaitingForAiReply(false);
       setAiSpeaking(false);
-      setCurrentSubtitle("对话请求失败，请重试");
+      setUploading(false);
+      const errText = err?.message || String(err);
+      setCurrentSubtitle(`对话失败: ${errText}`);
+      setHistory(prev => [...prev, { role: "ai", text: `[请求失败] ${errText}`, error: true } as ConversationTurn]);
     }
   };
 

@@ -470,7 +470,8 @@ export default function Attempt1Page() {
             ];
           }
         } else {
-          console.log("[backfill] no user_text from server");
+          resolvedUserText = "[语音未识别]";
+          console.log("[backfill] no user_text from server, asr_error:", data.asr_error || "无");
         }
         return [...prev, aiTurn];
       });
@@ -500,13 +501,15 @@ export default function Attempt1Page() {
         setReplayAvailable(true);
         setSpeechStage("idle");
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("[callChatTurn] 失败:", err);
       setWaitingForAiReply(false);
       setUploading(false);
       setAiSpeaking(false);
       setSpeechStage("idle");
-      setCurrentSubtitle("对话请求失败，请重试");
+      const errText = err?.message || String(err);
+      setCurrentSubtitle(`对话失败: ${errText}`);
+      setHistory(prev => [...prev, { role: "ai", text: `[请求失败] ${errText}`, error: true } as ConversationTurn]);
     }
   };
 
