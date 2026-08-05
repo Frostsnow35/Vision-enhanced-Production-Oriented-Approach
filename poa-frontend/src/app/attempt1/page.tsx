@@ -1135,9 +1135,17 @@ export default function Attempt1Page() {
         )}
         <div className="flex items-center gap-3">
           <button
-            onPointerDown={() => { if (canRecord) beginRecord(); }}
-            onPointerUp={endRecord}
-            onPointerLeave={endRecord}
+            onPointerDown={(e) => {
+              e.preventDefault();
+              e.currentTarget.setPointerCapture(e.pointerId);
+              if (canRecord) beginRecord();
+            }}
+            onPointerUp={(e) => {
+              e.preventDefault();
+              e.currentTarget.releasePointerCapture(e.pointerId);
+              endRecord();
+            }}
+            onLostPointerCapture={endRecord}
             disabled={!canRecord}
             title={recordDisabledReason || (recording ? "松开结束录音" : "按住说话")}
             className={`shrink-0 select-none rounded-full px-8 py-3 text-sm font-semibold transition-all duration-150 active:scale-95 touch-none ${
