@@ -580,6 +580,18 @@ export default function Attempt2Page() {
 
   // ---- AI 状态 ----
   const [aiSpeaking, setAiSpeaking] = useState(false);
+  // 安全设置 aiSpeaking，25s 后强制回弹防止 UI 卡死
+  const setAiSpeakingWithTimeout = useCallback((speaking: boolean) => {
+    if (aiSpeakingTimerRef.current) { clearTimeout(aiSpeakingTimerRef.current); aiSpeakingTimerRef.current = null; }
+    setAiSpeaking(speaking);
+    if (speaking) {
+      aiSpeakingTimerRef.current = setTimeout(() => {
+        console.warn("[attempt2] aiSpeaking 安全超时(25s)，强制回弹");
+        setAiSpeaking(false);
+        setReplayAvailable(true);
+      }, 25000);
+    }
+  }, []);
   const [waitingForAiReply, setWaitingForAiReply] = useState(false);
   const [speechStage, setSpeechStage] = useState<SpeechProcessingStage>("idle");
   const startedRef = useRef(false);
@@ -669,7 +681,7 @@ export default function Attempt2Page() {
 
   const startAiOpening = async () => {
     if (!task) return;
-    setAiSpeaking(true);
+    setAiSpeakingWithTimeout(true);
     try {
       const res = await fetch(`${BASE_URL}/api/chat/start`, {
         method: "POST",
@@ -754,10 +766,15 @@ export default function Attempt2Page() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const holdBtnRef = useRef<HTMLButtonElement>(null);
+  const isRecordingRef = useRef(false); // 防 beginRecord 重复触发
+  const aiSpeakingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null); // aiSpeaking 安全超时
 
   const beginRecord = useCallback(() => {
     if (!canRecord) return;
     if (!audioStreamRef.current || recording || uploading) return;
+    // 防重复：用 ref 追踪真实录制状态，避免 onMouseDown/onTouchStart 竞态
+    if (isRecordingRef.current) return;
+    isRecordingRef.current = true;
 
     setReplayAvailable(false);
 
@@ -904,6 +921,8 @@ export default function Attempt2Page() {
   }, [recording, uploading, history, speechSupported, canRecord, scheduleSpeechProcessingStages]);
 
   const endRecord = useCallback(() => {
+    if (!isRecordingRef.current) return; // 已经在结束中
+    isRecordingRef.current = false;
     setPressing(false);
     if (pressTimerRef.current) {
       clearTimeout(pressTimerRef.current);
@@ -981,7 +1000,7 @@ export default function Attempt2Page() {
             return;
           }
           setWaitingForAiReply(false);
-          setAiSpeaking(true);
+          setAiSpeakingWithTimeout(true);
           setSpeechStage("ai_speaking");
           const aiTurn: ConversationTurn = {
             role: "ai",
@@ -1095,7 +1114,7 @@ export default function Attempt2Page() {
         }
         clearSpeechStageTimers();
         setWaitingForAiReply(false);
-        setAiSpeaking(true);
+        setAiSpeakingWithTimeout(true);
         setSpeechStage("ai_speaking");
         const aiTurn: ConversationTurn = {
           role: "ai",
@@ -1254,7 +1273,7 @@ export default function Attempt2Page() {
             : data.ai_audio_url;
           lastAiAudioUrlRef.current = fullUrl;
           lastAiTextRef.current = data.ai_text;
-          setAiSpeaking(true);
+          setAiSpeakingWithTimeout(true);
           setReplayAvailable(false);
           setSpeechStage("ai_speaking");
           playAiAudio(fullUrl, data.ai_text).finally(() => {
@@ -1264,7 +1283,7 @@ export default function Attempt2Page() {
           });
         } else {
           lastAiTextRef.current = data.ai_text;
-          setAiSpeaking(true);
+          setAiSpeakingWithTimeout(true);
           setReplayAvailable(false);
           setSpeechStage("ai_speaking");
           playAiAudio(null, data.ai_text).finally(() => {

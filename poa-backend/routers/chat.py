@@ -141,6 +141,9 @@ async def chat_start(req: ChatStartRequest):
     生成 AI 开场白 + TTS 语音。
     文字秒返回；若 TTS 缓存命中则带音频 URL，否则后台生成、前端用浏览器语音。
     """
+    import time as _time
+    _t0 = _time.time()
+
     task_context = {
         "scene_label": req.scene_label,
         "roles": req.roles,
@@ -175,6 +178,7 @@ async def chat_start(req: ChatStartRequest):
             threading.Thread(target=_warm_tts, daemon=True).start()
             logger.info(f"[chat/start] TTS 缓存未命中，后台生成，前端用浏览器语音")
 
+    logger.info(f"[chat/start] 响应耗时: {(_time.time() - _t0)*1000:.0f}ms, has_audio={bool(ai_audio_url)}")
     return ChatStartResponse(ai_text=ai_text, ai_audio_url=ai_audio_url)
 
 

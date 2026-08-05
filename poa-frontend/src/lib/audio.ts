@@ -108,8 +108,8 @@ export async function playAiAudio(
         audio.onended = () => resolve();
         audio.onerror = () => reject(new Error("Audio load error"));
         audio.play().catch((e) => reject(e));
-        // 安全网：30秒超时
-        const safety = setTimeout(() => { audio.pause(); resolve(); }, 30000);
+        // 安全网：10秒超时（服务器音频应快速加载）
+        const safety = setTimeout(() => { audio.pause(); resolve(); }, 10000);
         audio.onended = () => { clearTimeout(safety); resolve(); };
         audio.onerror = () => { clearTimeout(safety); reject(new Error("Audio error")); };
       });
