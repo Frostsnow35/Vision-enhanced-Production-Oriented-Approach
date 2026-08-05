@@ -1,4 +1,4 @@
-# ---- POA Frontend (Next.js) ----
+# ---- POA Frontend (Next.js standalone) ----
 FROM node:20-alpine AS builder
 
 WORKDIR /app
@@ -6,12 +6,12 @@ WORKDIR /app
 COPY poa-frontend/package.json poa-frontend/package-lock.json* ./
 RUN npm ci
 
-COPY poa-frontend/ .
-
-# ARG for build-time env
+# ARG for build-time env（NEXT_PUBLIC_* 必须在构建时注入，运行时 ENV 对 standalone 模式无效）
+# Railway: 在 railway.json buildArgs 或 Settings → Build Variables 中设置
 ARG NEXT_PUBLIC_API_BASE
 ENV NEXT_PUBLIC_API_BASE=${NEXT_PUBLIC_API_BASE}
 
+COPY poa-frontend/ .
 RUN npm run build
 
 FROM node:20-alpine AS runner

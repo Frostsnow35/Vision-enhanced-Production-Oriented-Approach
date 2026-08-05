@@ -1,5 +1,10 @@
 # ===== POA 前端环境变量 =====
-# 在 Railway → poa-frontend → Variables → Bulk Import 中粘贴
-# 将 <BACKEND_DOMAIN> 替换为实际后端域名（如 poa-backend-xxxx.up.railway.app）
-
-NEXT_PUBLIC_API_BASE=https://<BACKEND_DOMAIN>
+# Railway 上的环境变量（Variables，运行时可见，但 NEXT_PUBLIC_* 需要在 Build 阶段注入，见 Dockerfile.frontend）
+#
+# 注意：NEXT_PUBLIC_API_BASE 必须在 Railway Build Variables 中设置（ARG），
+# 不是在 Variables 中设置（运行时 ENV 对 standalone 模式无效）。
+# 请在 Railway Dashboard → poa-frontend → Settings → Build Variables 中添加：
+#   NEXT_PUBLIC_API_BASE = https://poa-backend-production-c371.up.railway.app
+#
+# 以下为 Build Variables 示例值（Bulk Import 格式，需在 Railway Build Variables 区域粘贴）:
+# NEXT_PUBLIC_API_BASE=https://poa-backend-production-c371.up.railway.app

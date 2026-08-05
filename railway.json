@@ -10,7 +10,10 @@
     "poa-frontend": {
       "build": {
         "builder": "DOCKERFILE",
-        "dockerfilePath": "Dockerfile.frontend"
+        "dockerfilePath": "Dockerfile.frontend",
+        "buildArgs": {
+          "NEXT_PUBLIC_API_BASE": "https://poa-backend-production-c371.up.railway.app"
+        }
       },
       "port": 3000
     }
