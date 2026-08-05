@@ -305,50 +305,59 @@ def generate_materials(
     gaps_text = "\n".join(gap_descriptions)
     scene_text = f"场景: {scene_label or '未知'}, 角色: {roles or '未知'}, 目标: {goal or '未知'}"
 
-    system_prompt = (
-        "你是一个英语口语教学专家。根据学生的诊断短板和场景上下文，生成精准的促成学习材料。\n"
-        "输出严格 JSON 格式，不要 markdown 代码块标记，不要多余文字。\n\n"
-        'JSON 结构:\n'
-        '{\n'
-        '  "phrases": [\n'
-        '    {"function": "语言功能标签(中文)", "sentence": "英语例句"},\n'
-        '    ...  (4~8个词块/句式)\n'
-        '  ],\n'
-        '  "dialogue": {\n'
-        '    "title": "示范对话标题",\n'
-        '    "lines": [\n'
-        '      {"speaker": "角色名", "text": "英语对话"},\n'
-        '      ...  (6~10轮对话)\n'
-        '    ]\n'
-        '  },\n'
-        '  "exercises": [\n'
-        '    {\n'
-        '      "id": 1,\n'
-        '      "context": "语境描述(中文)",\n'
-        '      "options": [\n'
-        '        {"key": "A", "text": "选项文本(英语)"},\n'
-        '        {"key": "B", "text": "选项文本(英语)"},\n'
-        '        {"key": "C", "text": "选项文本(英语)"},\n'
-        '        {"key": "D", "text": "选项文本(英语)"}\n'
-        '      ],\n'
-        '      "answer": "正确答案的key (A/B/C/D)",\n'
-        '      "explanation": "解释为什么这个选项最好(中文)"\n'
-        '    },\n'
-        '    ...  (2~3道题)\n'
-        '  ]\n'
-        '}\n\n'
-        "要求:\n"
-        "1. phrases 必须针对学生的诊断短板，覆盖薄弱语言功能\n"
-        "2. dialogue 必须贴合给定场景，台词自然地道\n"
-        "3. exercises 的每个问题必须与一个 Gap 对应，考察该薄弱点\n"
-        "4. 所有英语内容必须语法正确、语用得体\n"
-        "5. 直接输出 JSON，不要任何说明文字"
-    )
+    system_prompt = """\
+你是一个英语口语教学专家。根据学生的诊断短板和给定的场景上下文，生成精准的促成学习材料。
+
+【场景锁定 —— 最高优先级，违反即失败】
+你生成的所有内容（词块、对话、练习）必须严格属于当前场景的领域。
+- 绝对禁止出现与本场景无关的内容。例如：场景是书画店，绝对禁止出现餐厅点餐、机场值机、医院挂号等内容。
+- 所有 phrases 的例句必须使用场景特定词汇（书画店：scroll/painting/calligraphy/brush/ink；咖啡店：latte/espresso/oat milk；机场：boarding pass/luggage/gate 等）。
+- dialogue 的台词必须反映该场景的实际交互流程，speaker 名称用场景角色名（如「顾客」和「店员」，而非泛化的「A/B」）。
+- exercises 的语境必须设在该场景中，选项内容与场景领域相关。
+
+输出严格 JSON 格式，不要 markdown 代码块标记，不要多余文字。
+
+JSON 结构:
+{
+  "phrases": [
+    {"function": "语言功能标签(中文)", "sentence": "英语例句"},
+    ...  (4~8个词块/句式)
+  ],
+  "dialogue": {
+    "title": "示范对话标题",
+    "lines": [
+      {"speaker": "角色名", "text": "英语对话"},
+      ...  (6~10轮对话)
+    ]
+  },
+  "exercises": [
+    {
+      "id": 1,
+      "context": "语境描述(中文，必须基于当前场景)",
+      "options": [
+        {"key": "A", "text": "选项文本(英语)"},
+        {"key": "B", "text": "选项文本(英语)"},
+        {"key": "C", "text": "选项文本(英语)"},
+        {"key": "D", "text": "选项文本(英语)"}
+      ],
+      "answer": "正确答案的key (A/B/C/D)",
+      "explanation": "解释为什么这个选项最好(中文)"
+    },
+    ...  (2~3道题)
+  ]
+}
+
+要求:
+1. phrases 必须针对学生的诊断短板，覆盖薄弱语言功能
+2. dialogue 必须严格贴合给定场景，台词自然地道，speaker 用场景角色名
+3. exercises 的每个问题必须与一个 Gap 对应，考察该薄弱点
+4. 所有英语内容必须语法正确、语用得体
+5. 直接输出 JSON，不要任何说明文字"""
 
     user_prompt = (
+        f"【场景上下文 —— 所有生成内容必须严格限定在此场景内】\n{scene_text}\n\n"
         f"学生的诊断短板:\n{gaps_text}\n\n"
-        f"场景上下文:\n{scene_text}\n\n"
-        "请生成精准的促成学习材料。"
+        "请生成精准的促成学习材料。记住：词块例句、对话角色、练习语境都必须属于上述场景，禁止出现任何其他场景的内容。"
     )
 
     messages = [

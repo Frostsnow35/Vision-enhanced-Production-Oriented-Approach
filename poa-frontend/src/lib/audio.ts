@@ -31,11 +31,11 @@ export async function playAiAudio(
     await new Promise<void>((resolve, reject) => {
       const audio = new Audio(audioUrl);
       _currentAudio = audio;
-      // 120 秒安全超时（覆盖 TTS 长语音场景，如开场白/长回复）
+      // 30 秒安全超时（正常 TTS 一句话不会超过 30 秒，超时即视为异常）
       const safety = setTimeout(() => {
         _currentAudio = null;
         resolve();
-      }, 120_000);
+      }, 30_000);
       audio.onended = () => {
         clearTimeout(safety);
         _currentAudio = null;

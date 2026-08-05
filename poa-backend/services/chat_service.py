@@ -158,21 +158,22 @@ _TURN_FEEDBACK_PROMPT = """\
 You are an English oral practice evaluator. Given the student's most recent message in the conversation, give a SHORT, specific feedback for this turn.
 
 【Rules】
-1. score (integer 0-100): holistic text quality score based on:
-   - Grammar correctness (语法规范性)
-   - Vocabulary appropriateness (词汇适配性)
-   - Conversational coherence & politeness (话语回适合配性)
+1. scores: three separate integer scores (0-100), one for each text quality dimension:
+   - grammar: Grammar correctness (语法规范性) — tense, subject-verb agreement, word order, articles
+   - vocabulary: Vocabulary appropriateness (词汇适配性) — word choice accuracy, collocation, scene-appropriate terms
+   - coherence: Conversational coherence & politeness (话语回适合配性) — turn-taking quality, relevance to context, politeness level
    Do NOT evaluate voice/pronunciation/prosody — text input only.
+   Scoring anchor:
    - 90-100: near-native, accurate and natural
    - 70-89: generally correct but with minor errors or slightly awkward phrasing
    - 50-69: basic communication achieved but with noticeable grammar/vocab issues
    - 0-49: barely understandable or completely off-topic
 2. short_comment (15-30 Chinese chars): must quote the student's exact wording or specific words from this turn. Be specific and actionable.
-3. If the student input is [inaudible] / empty / garbled, return score=0 and a short comment asking them to repeat.
+3. If the student input is [inaudible] / empty / garbled, return all scores=0 and a short comment asking them to repeat.
 
 【Output】STRICT JSON, nothing else:
 {
-  "score": 72,
+  "scores": {"grammar": 78, "vocabulary": 85, "coherence": 72},
   "short_comment": "建议用 'I would like' 替代 'I want'，表达更礼貌。"
 }
 """
@@ -197,15 +198,24 @@ def _match_closing_line(ai_text: str, closing_line: str) -> bool:
     return ratio >= _CLOSING_LINE_MATCH_THRESHOLD
 
 
+def _validate_score(val) -> int:
+    """校验单个评分为 0-100 的整数。"""
+    try:
+        s = int(val)
+        return max(0, min(100, s))
+    except (ValueError, TypeError):
+        return 0
+
+
 def _generate_turn_feedback(user_text: str, ai_text: str, task_context: Dict[str, Any]) -> Dict[str, Any]:
     """
-    为本轮对话生成实时短反馈（评分 + 短评）。失败时返回空 dict，前端不渲染卡片。
+    为本轮对话生成实时短反馈（三维评分 + 短评）。失败时返回空 dict，前端不渲染。
     使用 LLM（doubao），失败返回 {}。
     """
     # 兜底过滤：inaudible / 过短 / 包含方括号噪点
     if not user_text or user_text.strip() in ("[inaudible]", "[silence]", "", "[audio message]"):
         return {
-            "score": 0,
+            "scores": {"grammar": 0, "vocabulary": 0, "coherence": 0},
             "short_comment": "没有听清，请再试一次。",
         }
     if len(user_text.strip()) < 3:
@@ -246,20 +256,28 @@ def _generate_turn_feedback(user_text: str, ai_text: str, task_context: Dict[str
                 cleaned = cleaned[4:]
             cleaned = cleaned.strip()
         data = _json.loads(cleaned)
-        score = data.get("score", None)
-        # 校验 score 为 0-100 的整数
-        if score is not None:
-            try:
-                score = int(score)
-                score = max(0, min(100, score))
-            except (ValueError, TypeError):
-                score = None
         comment = (data.get("short_comment") or "").strip()
         if len(comment) > 80:
             comment = comment[:78] + "..."
+
+        # 解析 scores：优先新格式 {"grammar":78,"vocabulary":85,"coherence":72}
+        raw_scores = data.get("scores")
+        if isinstance(raw_scores, dict):
+            scores = {
+                "grammar": _validate_score(raw_scores.get("grammar", 0)),
+                "vocabulary": _validate_score(raw_scores.get("vocabulary", 0)),
+                "coherence": _validate_score(raw_scores.get("coherence", 0)),
+            }
+        elif "score" in data:
+            # 兼容旧格式（单总分）
+            s = _validate_score(data["score"])
+            scores = {"grammar": s, "vocabulary": s, "coherence": s}
+        else:
+            scores = None
+
         result: Dict[str, Any] = {"short_comment": comment}
-        if score is not None:
-            result["score"] = score
+        if scores:
+            result["scores"] = scores
         return result
     except Exception as e:
         logger.warning(f"[chat] turn_feedback 生成失败: {e}")

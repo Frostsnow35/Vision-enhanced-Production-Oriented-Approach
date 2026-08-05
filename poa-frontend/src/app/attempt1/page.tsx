@@ -1082,10 +1082,17 @@ export default function Attempt1Page() {
                 const isError = h.error === true;
                 const nextAi = i + 1 < history.length ? history[i + 1] : null;
                 const fb = nextAi && nextAi.role === "ai" && nextAi.turn_feedback ? nextAi.turn_feedback : null;
-                // 评分条颜色：低分红 → 中黄 → 高绿
-                const scoreColor = fb && fb.score != null
-                  ? fb.score >= 80 ? "bg-emerald-500" : fb.score >= 60 ? "bg-amber-500" : "bg-red-500"
-                  : "";
+                // 三维评分条（颜色：语法=红 词汇=紫 话轮=青）
+                const dimColors: Record<string, string> = {
+                  grammar: "bg-rose-500",
+                  vocabulary: "bg-violet-500",
+                  coherence: "bg-cyan-500",
+                };
+                const dimLabels: Record<string, string> = {
+                  grammar: "语法",
+                  vocabulary: "词汇",
+                  coherence: "话轮",
+                };
                 return (
                   <div key={i} className={`flex flex-col ${isUser ? "items-end" : "items-start"}`}>
                     <div
@@ -1112,16 +1119,21 @@ export default function Attempt1Page() {
                         {isUser ? "你" : "AI"}
                       </span>
                       {isUser && fb && (
-                        <div className="flex items-center gap-1.5 max-w-[200px]">
-                          {fb.score != null && (
-                            <div className="flex items-center gap-1 shrink-0">
-                              <div className="w-10 h-1.5 rounded-full bg-muted overflow-hidden">
-                                <div
-                                  className={`h-full rounded-full transition-all duration-500 ${scoreColor}`}
-                                  style={{ width: `${fb.score}%` }}
-                                />
-                              </div>
-                              <span className="text-[9px] font-semibold text-muted-foreground tabular-nums">{fb.score}</span>
+                        <div className="flex flex-col gap-0.5 max-w-[220px]">
+                          {fb.scores && (
+                            <div className="flex items-center gap-1.5">
+                              {(["grammar", "vocabulary", "coherence"] as const).map((dim) => (
+                                <div key={dim} className="flex items-center gap-0.5">
+                                  <span className="text-[8px] text-muted-foreground/60 w-5">{dimLabels[dim]}</span>
+                                  <div className="w-6 h-1 rounded-full bg-muted overflow-hidden">
+                                    <div
+                                      className={`h-full rounded-full transition-all duration-500 ${dimColors[dim]}`}
+                                      style={{ width: `${fb.scores![dim]}%` }}
+                                    />
+                                  </div>
+                                  <span className="text-[8px] font-semibold text-muted-foreground tabular-nums w-4">{fb.scores[dim]}</span>
+                                </div>
+                              ))}
                             </div>
                           )}
                           {fb.short_comment && (

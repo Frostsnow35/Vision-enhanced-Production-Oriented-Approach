@@ -154,8 +154,8 @@ export interface ChatStartResponse {
 }
 
 export interface TurnFeedback {
-  score?: number;          // 0-100 文本质量综合分（语法/词汇/话轮适配），文本输入场景不含语音评分
-  short_comment: string;   // 15-80 字短评（引用用户本轮原文中具体词句）
+  scores?: { grammar: number; vocabulary: number; coherence: number };  // 三维文本评分（0-100）
+  short_comment: string;   // 15-80 字短评
 }
 
 export interface ChatTurnResponse {
