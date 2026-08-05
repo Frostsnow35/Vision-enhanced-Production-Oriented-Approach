@@ -327,11 +327,18 @@ async def chat_turn(req: ChatTurnRequest, request: Request):
             asr_error=asr_error,
         )
 
-    # 3. 实时短反馈（针对用户本轮输入）
-    turn_feedback = _generate_turn_feedback(user_text, ai_text, task_context)
-
-    # 4. TTS
-    ai_audio_url = text_to_speech(ai_text) if ai_text else ""
+    # 3+4. TTS 与实时短反馈并行执行（互不依赖，串行会拉长总时长，突破 Railway 60s Keep-Alive）
+    turn_feedback: dict = {}
+    ai_audio_url = ""
+    try:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            tts_future = pool.submit(lambda: text_to_speech(ai_text) if ai_text else "")
+            fb_future = pool.submit(_generate_turn_feedback, user_text, ai_text, task_context)
+            ai_audio_url = tts_future.result()
+            turn_feedback = fb_future.result()
+    except Exception as e:
+        logger.warning(f"[chat/turn] TTS/反馈并行执行异常: {e}")
 
     response_user_text = user_text if user_text != "[inaudible]" else ""
     logger.info(

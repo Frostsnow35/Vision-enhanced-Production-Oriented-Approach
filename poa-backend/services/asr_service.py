@@ -34,12 +34,13 @@ def _build_asr_headers(req_id: str, with_sequence: bool = True) -> dict:
     return headers
 
 
-def transcribe_with_doubao_standard(audio_url: str, audio_format: str = "mp3", max_wait_sec: int = 60) -> str:
+def transcribe_with_doubao_standard(audio_url: str, audio_format: str = "mp3", max_wait_sec: int = 25) -> str:
     """
     使用火山引擎录音文件识别标准版进行语音转写（提交任务 + 轮询查询结果）。
     @param audio_url  音频的公网可访问 URL
     @param audio_format  音频容器格式：wav / mp3 / ogg
-    @param max_wait_sec  最大轮询等待秒数，默认 60
+    @param max_wait_sec  最大轮询等待秒数，默认 25（实测 8s 音频约 12s 出结果；
+            上限受 Railway 60s Keep-Alive 限制，turn 总时长必须远小于 60s）
     @return  转写文本，失败返回 ""
     """
     app_id = DOUBAO_ASR_APP_ID
