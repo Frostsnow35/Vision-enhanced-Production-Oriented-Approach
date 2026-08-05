@@ -74,6 +74,8 @@ export function useStreamASR() {
   const resolveStopRef = useRef<((text: string) => void) | null>(null);
   const stopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const gotFinalRef = useRef(false);
+  const chunkSentCount = useRef(0);     // 已发送到后端的 PCM 块计数
+  const chunkVerifyDone = useRef(false); // 前 3 块验证是否已完成
 
   // ---- 清理 ----
   const cleanup = useCallback(() => {
@@ -218,6 +220,23 @@ export function useStreamASR() {
               offset += chunk.length;
             }
             try {
+              // 前 3 块打印 PCM 诊断：确认麦克风是否真的在采音
+              if (!chunkVerifyDone.current && chunkSentCount.current < 3) {
+                let _min = 32767, _max = -32768, _nonzero = 0;
+                for (let _i = 0; _i < merged.length; _i++) {
+                  const _v = merged[_i];
+                  if (_v !== 0) _nonzero++;
+                  if (_v < _min) _min = _v;
+                  if (_v > _max) _max = _v;
+                }
+                const ratio = ((_nonzero / merged.length) * 100).toFixed(1);
+                console.log(
+                  `[ASR-Stream→] PCM块 #${chunkSentCount.current + 1} samples=${merged.length} ` +
+                  `min=${_min} max=${_max} nonzero=${_nonzero}(${ratio}%)`
+                );
+                chunkSentCount.current++;
+                if (chunkSentCount.current >= 3) chunkVerifyDone.current = true;
+              }
               ws.send(merged.buffer);
             } catch {
               // ignore send errors

@@ -124,6 +124,7 @@ async def asr_stream(ws: WebSocket):
     final_holder = {"text": ""}
     done_event = asyncio.Event()
     audio_frame_count = 0  # 从前端收到的 PCM 帧计数
+    pcm_verify_done = False  # 前3帧已做诊断
 
     async def _receiver():
         """持续读取火山响应：推送 interim 字幕，收到 final 后结束。"""
@@ -169,6 +170,32 @@ async def asr_stream(ws: WebSocket):
             if "bytes" in data:
                 pcm_bytes = data["bytes"]
                 audio_frame_count += 1
+
+                # 前 3 帧做 PCM 诊断：确认音频是否有数据（非全零）且字节序合理
+                if not pcm_verify_done and audio_frame_count <= 3:
+                    samples = len(pcm_bytes) // 2  # 16-bit
+                    # 抽样检查 Int16 值的范围（跳过全部 6400 个样本的遍历）
+                    zero_count = 0
+                    total = samples
+                    all_zero = True
+                    sample_values = []
+                    for i in range(0, len(pcm_bytes), 2):
+                        val = int.from_bytes(pcm_bytes[i:i + 2], "little", signed=True)
+                        if val != 0:
+                            all_zero = False
+                        else:
+                            zero_count += 1
+                        if len(sample_values) < 10:
+                            sample_values.append(val)
+                    logger.info(
+                        f"[ASR-Stream←前端] 音频帧 #{audio_frame_count} "
+                        f"size={len(pcm_bytes)}B samples={samples} "
+                        f"all_zero={all_zero} zero_pct={zero_count / total * 100:.1f}% "
+                        f"first10={sample_values}"
+                    )
+                    if audio_frame_count >= 3:
+                        pcm_verify_done = True
+
                 await asr.send_audio(pcm_bytes)
                 if audio_frame_count <= 3:
                     logger.info(f"[ASR-Stream←前端] 音频帧 #{audio_frame_count} 大小={len(pcm_bytes)}B")
