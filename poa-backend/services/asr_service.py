@@ -103,27 +103,40 @@ def _parse_response(msg: bytes) -> dict:
     （JSON body 中无 is_final 字段）。
     @return {"message_type": int, "flags": int, "body": dict}
     """
-    MAX_PAYLOAD_SIZE = 8 * 1024 * 1024  # 防御：拒绝超长 payload
+    MAX_PAYLOAD_SIZE = 64 * 1024 * 1024  # 大模型最终结果可能很大（含音频/调试信息）
     if len(msg) < 8:
         return {"message_type": 0, "flags": 0, "body": {}}
     message_type = msg[1] >> 4
     flags = msg[1] & 0x0F
     compression = msg[2] & 0x0F
+    serialization = msg[2] >> 4
     payload_size = int.from_bytes(msg[4:8], "big")
     if payload_size > MAX_PAYLOAD_SIZE:
-        logger.warning(f"[ASR] 响应 payload 异常过大: {payload_size}，丢弃")
+        logger.warning(f"[ASR] 响应 payload 异常过大: {payload_size}（max={MAX_PAYLOAD_SIZE}），丢弃")
         return {"message_type": message_type, "flags": flags, "body": {}}
     payload = msg[8:8 + payload_size]
+    decompressed = False
     if compression == GZIP_COMPRESSION and payload:
         try:
             payload = gzip.decompress(payload)
-        except Exception:
-            pass
+            decompressed = True
+        except Exception as e:
+            logger.warning(f"[ASR] GZIP 解压失败 compression={compression} payload_size={payload_size} exc={e} "
+                           f"first_bytes={_clip_text(payload[:80].hex(), 160)}")
     body = {}
+    parse_ok = False
     try:
         body = json.loads(payload.decode("utf-8"))
-    except Exception:
-        pass
+        parse_ok = True
+    except Exception as e:
+        logger.warning(f"[ASR] JSON 解析失败 decompressed={decompressed} compression={compression} "
+                       f"serialization={serialization} payload_size={payload_size} exc={e} "
+                       f"first_bytes={_clip_text(payload[:200].hex(), 400)}")
+    if not parse_ok and body == {}:
+        # 完全无法解析，记录原始帧头
+        logger.warning(f"[ASR] 响应无法解析 msg_type={message_type} flags={flags} "
+                       f"compression={compression} serialization={serialization} "
+                       f"payload_size={payload_size} raw_header={list(msg[:12])}")
     return {"message_type": message_type, "flags": flags, "body": body}
 
 
@@ -329,12 +342,12 @@ class VolcanoStreamASR:
             f"payload_size={len(msg) - 8} text='{_clip_text(text, 80)}'"
         )
 
-        # 诊断：text 为空时打印完整 JSON body，确认火山是否在别的字段返回了结果
-        if not text and body:
-            body_str = json.dumps(body, ensure_ascii=False)
+        # 诊断：text 为空时打印完整 JSON body（以及 payload_size），确认火山返回了什么
+        if not text:
+            body_str = json.dumps(body, ensure_ascii=False) if body else "(empty)"
             logger.warning(
-                f"[ASR-Stream←火山] 响应 #{self._resp_count} text为空，原始body: "
-                f"{_clip_text(body_str, 500)}"
+                f"[ASR-Stream←火山] 响应 #{self._resp_count} text为空 "
+                f"payload_size={len(msg) - 8} body: {_clip_text(body_str, 500)}"
             )
 
         return (text, is_final)
