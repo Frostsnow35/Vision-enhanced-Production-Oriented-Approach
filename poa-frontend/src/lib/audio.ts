@@ -3,40 +3,52 @@
  * 仅播放服务器 TTS 音频，不降级浏览器 SpeechSynthesis（避免不自然的机器语音）。
  */
 
+let _currentAudio: HTMLAudioElement | null = null;
+
 /**
- * 播放服务端 TTS 音频。
- * @param audioUrl 服务端返回的音频 URL（可为空）
+ * 播放服务端 TTS 音频。新播放会自动停止上一个未结束的音频。
+ * @param audioUrl 服务端返回的音频 URL（可为空，已含 BASE_URL）
  * @param onStateChange 播放状态回调
  */
 export async function playAiAudio(
   audioUrl: string | undefined | null,
   onStateChange?: (isPlaying: boolean) => void
 ): Promise<void> {
+  // 停止上一个正在播放的音频
+  if (_currentAudio) {
+    _currentAudio.pause();
+    _currentAudio = null;
+  }
+
   if (!audioUrl) {
     onStateChange?.(false);
     return;
   }
 
-  const fullUrl = audioUrl.startsWith("http") ? audioUrl : audioUrl;
   onStateChange?.(true);
 
   try {
     await new Promise<void>((resolve, reject) => {
-      const audio = new Audio(fullUrl);
+      const audio = new Audio(audioUrl);
+      _currentAudio = audio;
+      // 120 秒安全超时（覆盖 TTS 长语音场景，如开场白/长回复）
       const safety = setTimeout(() => {
-        audio.pause();
+        _currentAudio = null;
         resolve();
-      }, 15000);
+      }, 120_000);
       audio.onended = () => {
         clearTimeout(safety);
+        _currentAudio = null;
         resolve();
       };
       audio.onerror = () => {
         clearTimeout(safety);
+        _currentAudio = null;
         reject(new Error("Audio load error"));
       };
-      audio.play().catch((e) => {
+      audio.play().catch((e: Error) => {
         clearTimeout(safety);
+        _currentAudio = null;
         reject(e);
       });
     });

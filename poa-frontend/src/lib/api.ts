@@ -154,8 +154,8 @@ export interface ChatStartResponse {
 }
 
 export interface TurnFeedback {
-  dimensions: string[];   // 七维名称（最多 3 个）
-  short_comment: string;  // 15-30 字短评（引用用户本轮原文中具体词句）
+  score?: number;          // 0-100 文本质量综合分（语法/词汇/话轮适配），文本输入场景不含语音评分
+  short_comment: string;   // 15-80 字短评（引用用户本轮原文中具体词句）
 }
 
 export interface ChatTurnResponse {

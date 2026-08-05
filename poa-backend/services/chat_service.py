@@ -158,21 +158,21 @@ _TURN_FEEDBACK_PROMPT = """\
 You are an English oral practice evaluator. Given the student's most recent message in the conversation, give a SHORT, specific feedback for this turn.
 
 【Rules】
-1. Identify up to 3 dimensions this turn touches (use these EXACT Chinese names from the seven-dimension evaluation system):
-   - 发音标准度
-   - 语法规范性
-   - 词汇适配性
-   - 语言功能达成度
-   - 语用策略得体性
-   - 话语回适合配性
-   - 副语言匹配度
-   Note: For text-only input, prefer 语法规范性 / 词汇适配性 / 语用策略得体性 / 话语回适合配性.
+1. score (integer 0-100): holistic text quality score based on:
+   - Grammar correctness (语法规范性)
+   - Vocabulary appropriateness (词汇适配性)
+   - Conversational coherence & politeness (话语回适合配性)
+   Do NOT evaluate voice/pronunciation/prosody — text input only.
+   - 90-100: near-native, accurate and natural
+   - 70-89: generally correct but with minor errors or slightly awkward phrasing
+   - 50-69: basic communication achieved but with noticeable grammar/vocab issues
+   - 0-49: barely understandable or completely off-topic
 2. short_comment (15-30 Chinese chars): must quote the student's exact wording or specific words from this turn. Be specific and actionable.
-3. If the student input is [inaudible] / empty / garbled, return empty dimensions and a short comment asking them to repeat.
+3. If the student input is [inaudible] / empty / garbled, return score=0 and a short comment asking them to repeat.
 
 【Output】STRICT JSON, nothing else:
 {
-  "dimensions": ["语法规范性", "语用策略得体性"],
+  "score": 72,
   "short_comment": "建议用 'I would like' 替代 'I want'，表达更礼貌。"
 }
 """
@@ -199,13 +199,13 @@ def _match_closing_line(ai_text: str, closing_line: str) -> bool:
 
 def _generate_turn_feedback(user_text: str, ai_text: str, task_context: Dict[str, Any]) -> Dict[str, Any]:
     """
-    为本轮对话生成实时短反馈。失败时返回空 dict，前端不渲染卡片。
+    为本轮对话生成实时短反馈（评分 + 短评）。失败时返回空 dict，前端不渲染卡片。
     使用 LLM（doubao），失败返回 {}。
     """
     # 兜底过滤：inaudible / 过短 / 包含方括号噪点
     if not user_text or user_text.strip() in ("[inaudible]", "[silence]", "", "[audio message]"):
         return {
-            "dimensions": ["话语回适合配性"],
+            "score": 0,
             "short_comment": "没有听清，请再试一次。",
         }
     if len(user_text.strip()) < 3:
@@ -246,13 +246,21 @@ def _generate_turn_feedback(user_text: str, ai_text: str, task_context: Dict[str
                 cleaned = cleaned[4:]
             cleaned = cleaned.strip()
         data = _json.loads(cleaned)
-        dims = data.get("dimensions", []) or []
+        score = data.get("score", None)
+        # 校验 score 为 0-100 的整数
+        if score is not None:
+            try:
+                score = int(score)
+                score = max(0, min(100, score))
+            except (ValueError, TypeError):
+                score = None
         comment = (data.get("short_comment") or "").strip()
-        # 字段裁剪：dimensions ≤ 3，short_comment ≤ 80 字
-        dims = [d for d in dims if isinstance(d, str)][:3]
         if len(comment) > 80:
             comment = comment[:78] + "..."
-        return {"dimensions": dims, "short_comment": comment}
+        result: Dict[str, Any] = {"short_comment": comment}
+        if score is not None:
+            result["score"] = score
+        return result
     except Exception as e:
         logger.warning(f"[chat] turn_feedback 生成失败: {e}")
         return {}

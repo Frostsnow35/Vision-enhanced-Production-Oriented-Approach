@@ -1357,40 +1357,6 @@ export default function Attempt2Page() {
             <p className="text-xs text-muted-foreground/60">
               已对话 {history.length} 轮
             </p>
-            {(() => {
-              const lastFb = [...history].reverse().find((h) => h.role === "ai" && h.turn_feedback);
-              if (!lastFb || !lastFb.turn_feedback) return null;
-              const fb = lastFb.turn_feedback;
-              const collapsed = !!lastFb.feedback_collapsed;
-              const colorMap: Record<string, string> = {
-                "发音标准度": "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
-                "语法规范性": "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300",
-                "词汇适配性": "bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300",
-                "语言功能达成度": "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
-                "语用策略得体性": "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
-                "话语回适合配性": "bg-cyan-100 text-cyan-700 dark:bg-cyan-950 dark:text-cyan-300",
-                "副语言匹配度": "bg-pink-100 text-pink-700 dark:bg-pink-950 dark:text-pink-300",
-              };
-              return (
-                <div className="max-w-[90%] w-full rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 mt-1 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                  <div className="flex items-center justify-between mb-1">
-                    <div className="flex flex-wrap gap-1">
-                      {fb.dimensions.length > 0 ? fb.dimensions.map((d) => (
-                        <span key={d} className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${colorMap[d] || "bg-muted text-muted-foreground"}`}>{d}</span>
-                      )) : <span className="text-[10px] text-muted-foreground">本轮反馈</span>}
-                    </div>
-                    <button
-                      onClick={() => setHistory((prev) => prev.map((h, i) => i === prev.findLastIndex((x) => x === lastFb) ? { ...h, feedback_collapsed: !collapsed } : h))}
-                      className="text-muted-foreground/60 hover:text-muted-foreground transition-colors text-xs"
-                      title={collapsed ? "展开" : "折叠"}
-                    >
-                      {collapsed ? "▼" : "▲"}
-                    </button>
-                  </div>
-                  {!collapsed && <p className="text-xs text-card-foreground/80 leading-relaxed">{fb.short_comment}</p>}
-                </div>
-              );
-            })()}
           </div>
 
           {/* 下半段：可滚动历史对话气泡列表 */}
@@ -1406,15 +1372,10 @@ export default function Attempt2Page() {
                 const isError = h.error === true;
                 const nextAi = i + 1 < history.length ? history[i + 1] : null;
                 const fb = nextAi && nextAi.role === "ai" && nextAi.turn_feedback ? nextAi.turn_feedback : null;
-                const colorMap: Record<string, string> = {
-                  "发音标准度": "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
-                  "语法规范性": "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300",
-                  "词汇适配性": "bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300",
-                  "语言功能达成度": "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
-                  "语用策略得体性": "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
-                  "话语回适合配性": "bg-cyan-100 text-cyan-700 dark:bg-cyan-950 dark:text-cyan-300",
-                  "副语言匹配度": "bg-pink-100 text-pink-700 dark:bg-pink-950 dark:text-pink-300",
-                };
+                // 评分条颜色：低分红 → 中黄 → 高绿
+                const scoreColor = fb && fb.score != null
+                  ? fb.score >= 80 ? "bg-emerald-500" : fb.score >= 60 ? "bg-amber-500" : "bg-red-500"
+                  : "";
                 return (
                   <div key={i} className={`flex flex-col ${isUser ? "items-end" : "items-start"}`}>
                     <div
@@ -1458,12 +1419,20 @@ export default function Attempt2Page() {
                         {isUser ? "你" : "AI"}
                       </span>
                       {isUser && fb && (
-                        <div className="flex flex-wrap gap-0.5">
-                          {fb.dimensions.map((d) => (
-                            <span key={d} className={`rounded-full px-1.5 py-0 text-[9px] font-medium ${colorMap[d] || "bg-muted text-muted-foreground"}`}>{d}</span>
-                          ))}
+                        <div className="flex items-center gap-1.5 max-w-[200px]">
+                          {fb.score != null && (
+                            <div className="flex items-center gap-1 shrink-0">
+                              <div className="w-10 h-1.5 rounded-full bg-muted overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full transition-all duration-500 ${scoreColor}`}
+                                  style={{ width: `${fb.score}%` }}
+                                />
+                              </div>
+                              <span className="text-[9px] font-semibold text-muted-foreground tabular-nums">{fb.score}</span>
+                            </div>
+                          )}
                           {fb.short_comment && (
-                            <span className="text-[9px] text-muted-foreground/70 max-w-[200px] truncate">{fb.short_comment}</span>
+                            <span className="text-[9px] text-muted-foreground/70 truncate">{fb.short_comment}</span>
                           )}
                         </div>
                       )}
