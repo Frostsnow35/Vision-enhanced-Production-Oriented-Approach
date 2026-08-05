@@ -468,6 +468,11 @@ export default function Attempt2Page() {
     if (isRecordingRef.current) return;
     isRecordingRef.current = true;
 
+    // 用户手势后恢复 AudioContext：避免 suspended 状态导致 analyser 全零
+    if (audioContextRef.current && audioContextRef.current.state === "suspended") {
+      audioContextRef.current.resume().catch(() => {});
+    }
+
     setReplayAvailable(false);
 
     const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -1445,7 +1450,7 @@ export default function Attempt2Page() {
       {/* ---- 底部控制栏 ---- */}
       <div className="shrink-0 border-t border-border bg-card px-4 py-3 space-y-2">
         {/* 波形图 */}
-        <RecordingWaveform isRecording={recording} />
+        <RecordingWaveform isRecording={recording} analyserRef={analyserRef} />
 
         {isFinal && (
           <div className="rounded-lg bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 px-4 py-2.5 text-center">
