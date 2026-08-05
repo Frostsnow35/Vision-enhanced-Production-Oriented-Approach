@@ -127,10 +127,11 @@ DOUBAO_TTS_RESOURCE_ID = os.getenv("DOUBAO_TTS_RESOURCE_ID", "seed-tts-2.0")
 DOUBAO_TTS_URL = "https://openspeech.bytedance.com/api/v3/tts/unidirectional"
 
 # ─── 豆包 ASR 配置（火山引擎流式语音识别 —— WebSocket 实时转写）───
-# 鉴权：优先新版 X-Api-Key，回退旧版 App-Key + Access-Key
-DOUBAO_ASR_APP_ID = os.getenv("DOUBAO_ASR_APP_ID", "")
-DOUBAO_ASR_TOKEN = os.getenv("DOUBAO_ASR_TOKEN", "")
-DOUBAO_ASR_API_KEY = os.getenv("DOUBAO_ASR_API_KEY", "")
+# 鉴权：优先新版 X-Api-Key，回退旧版 App-Key + Access-Key（两者都必需）
+# strip：防止粘贴环境变量时误带引号/空格导致鉴权失败
+DOUBAO_ASR_APP_ID = os.getenv("DOUBAO_ASR_APP_ID", "").strip()
+DOUBAO_ASR_TOKEN = os.getenv("DOUBAO_ASR_TOKEN", "").strip()
+DOUBAO_ASR_API_KEY = os.getenv("DOUBAO_ASR_API_KEY", "").strip()
 # 流式模型 resource_id（需带计费后缀）: volc.bigasr.sauc.duration(1.0小时版) / volc.bigasr.sauc.concurrent(1.0并发版)
 # 2.0 版为 volc.seedasr.sauc.duration，需先在火山控制台开通对应资源（实测当前账号未开通，会返回 400）
 DOUBAO_ASR_STREAM_RESOURCE_ID = os.getenv("DOUBAO_ASR_STREAM_RESOURCE_ID", "volc.bigasr.sauc.duration")
