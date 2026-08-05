@@ -13,7 +13,7 @@ import ClickableEnglish from "@/components/ClickableEnglish";
 import DeviceCheckModal from "@/components/DeviceCheckModal";
 import CountdownEffect from "@/components/CountdownEffect";
 import TaskGate from "@/components/TaskGate";
-import { useBrowserASR } from "@/lib/useBrowserASR";
+import { useStreamASR } from "@/lib/useStreamASR";
 
 /* ============================================================
    常量
@@ -138,8 +138,8 @@ export default function Attempt1Page() {
 
   // ---- 设备模态框（自动唤起）----
   const [showDeviceModal, setShowDeviceModal] = useState(false);
-  // ---- 浏览器原生语音识别（边说边出字幕）----
-  const browserASR = useBrowserASR("en-US");
+  // ---- 火山流式语音识别（WebSocket 代理，边说边出字幕）----
+  const streamASR = useStreamASR();
   // ---- 3 秒倒计时 ----
   const [countdownKey, setCountdownKey] = useState<number | null>(null);
   const [pendingAiSubtitle, setPendingAiSubtitle] = useState<string | null>(null);
@@ -404,7 +404,7 @@ export default function Attempt1Page() {
   const canRecord = micReady && !uploading && !waitingForAiReply && !aiSpeaking && !isFinal && !turnLimitReached && !wrappingUp;
 
   // ---- 通话轮次 ----
-  const callChatTurn = async (audio_url: string, user_text: string, currentHistory: ConversationTurn[]) => {
+  const callChatTurn = async (user_text: string, currentHistory: ConversationTurn[]) => {
     // 剔除末尾用户轮次（后端 generate_reply 会单独追加 user_text，避免 LLM 收到重复消息）
     const historyForBackend = currentHistory.length > 0 && currentHistory[currentHistory.length - 1].role === "user"
       ? currentHistory.slice(0, -1)
@@ -416,7 +416,6 @@ export default function Attempt1Page() {
     try {
       const data = await chatTurn(
         user_text,
-        audio_url,
         historyForBackend,
         currentTask?.scene_label || "",
         currentTask?.roles || "",
@@ -531,8 +530,8 @@ export default function Attempt1Page() {
       audioContextRef.current.resume().catch(() => {});
     }
 
-    // 启动浏览器原生语音识别（Chrome/Edge 内置，边说边出字幕）
-    browserASR.start("en-US");
+    // 启动火山流式语音识别（WebSocket → 后端 → 火山 ASR）
+    streamASR.start();
 
     setReplayAvailable(false);
 
@@ -589,16 +588,11 @@ export default function Attempt1Page() {
       setSpeechStage("idle");
     };
     recorder.onstop = async () => {
-      // 停止浏览器语音识别，直接使用 stop() 返回值（含 cumulativeRef 兜底，不依赖 300ms 延迟）
+      // 停止火山流式语音识别，获取最终转写文本
       let asrResult = "";
-      try { asrResult = browserASR.stop() || ""; } catch { /* ignore */ }
-      // 如果 stop() 返回空，再给 onresult 回调一次最后机会
-      if (!asrResult) {
-        await new Promise((r) => setTimeout(r, 200));
-        asrResult = browserASR.getText();
-      }
+      try { asrResult = (await streamASR.stop()) || ""; } catch { /* ignore */ }
       browserTextRef.current = asrResult;
-      console.log("[attempt1] browserASR 结果:", JSON.stringify(browserTextRef.current));
+      console.log("[attempt1] streamASR 结果:", JSON.stringify(browserTextRef.current));
 
       if (chunksRef.current.length === 0) {
         setSpeechStage("idle");
@@ -666,7 +660,6 @@ export default function Attempt1Page() {
           const wrapUpUserText = "[system: conversation limit reached] " + WRAP_UP_HINT;
           const data = await chatTurn(
             wrapUpUserText,
-            audioUrl,
             historyForPlanA,
             currentTask2?.scene_label || "",
             currentTask2?.roles || "",
@@ -738,9 +731,9 @@ export default function Attempt1Page() {
         return;
       }
       const browserText = browserTextRef.current;
-      const userTextForBackend = browserText || ""; // 空字串让后端自行ASR或统一走 [inaudible] 流程
-      console.log("[attempt1] 浏览器 ASR 转录:", browserText || "(无，交由后端ASR)");
-      await callChatTurn(audioUrl, userTextForBackend, newHistory);
+      const userTextForBackend = browserText || "";
+      console.log("[attempt1] 流式 ASR 转录:", browserText || "(无文本)");
+      await callChatTurn(userTextForBackend, newHistory);
     };
     recorder.onstart = () => {
       console.log(`[attempt1] MediaRecorder started, state=${recorder.state}, mime=${recorder.mimeType}, isMobile=${isMobile}`);
@@ -992,15 +985,15 @@ export default function Attempt1Page() {
               )}
             </div>
             <div className="max-w-[90%] rounded-xl bg-muted/50 px-4 py-2.5 text-center min-h-[3rem] flex flex-col items-center justify-center gap-1">
-              {/* 录音中：显示浏览器实时识别字幕 */}
-              {recording && browserASR.isListening && browserASR.interimTranscript && (
+              {/* 录音中：显示火山流式实时识别字幕 */}
+              {recording && streamASR.isRecording && streamASR.interimText && (
                 <p className="text-xs text-primary/80 animate-pulse">
-                  {browserASR.interimTranscript}
+                  {streamASR.interimText}
                 </p>
               )}
-              {/* 浏览器 ASR 错误提示 */}
-              {recording && browserASR.error && (
-                <p className="text-xs text-destructive">{browserASR.error}</p>
+              {/* 流式 ASR 错误提示 */}
+              {recording && streamASR.error && (
+                <p className="text-xs text-destructive">{streamASR.error}</p>
               )}
               <p className={`text-xs ${aiSpeaking ? "text-card-foreground" : "text-muted-foreground"}`}>
                 {currentSubtitle ? <ClickableEnglish text={currentSubtitle} /> : "点击下方按钮或按空格键开始对话"}

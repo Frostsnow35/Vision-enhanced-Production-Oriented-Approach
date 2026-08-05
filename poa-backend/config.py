@@ -72,12 +72,19 @@ DOUBAO_TTS_RESOURCE_ID = os.getenv("DOUBAO_TTS_RESOURCE_ID", "seed-tts-2.0")
 # TTS API endpoint (V3)
 DOUBAO_TTS_URL = "https://openspeech.bytedance.com/api/v3/tts/unidirectional"
 
-# 豆包 ASR 配置（火山引擎录音文件识别标准版 —— 提交任务 + 查询结果）
+# ─── 豆包 ASR 配置（火山引擎流式语音识别 —— WebSocket 实时转写）───
+# 鉴权：优先新版 X-Api-Key，回退旧版 App-Key + Access-Key
 DOUBAO_ASR_APP_ID = os.getenv("DOUBAO_ASR_APP_ID", "")
 DOUBAO_ASR_TOKEN = os.getenv("DOUBAO_ASR_TOKEN", "")
-# 新版控制台鉴权：仅需 X-Api-Key（优先于旧版 App-Key + Access-Key）
 DOUBAO_ASR_API_KEY = os.getenv("DOUBAO_ASR_API_KEY", "")
-# 标准版模型2.0: volc.seedasr.auc；模型1.0: volc.bigasr.auc
+# 流式模型 resource_id（需带计费后缀）: volc.seedasr.sauc.duration(小时版) / volc.seedasr.sauc.concurrent(并发版)
+DOUBAO_ASR_STREAM_RESOURCE_ID = os.getenv("DOUBAO_ASR_STREAM_RESOURCE_ID", "volc.seedasr.sauc.duration")
+# 火山流式 ASR WebSocket 地址
+DOUBAO_ASR_STREAM_URL = os.getenv("DOUBAO_ASR_STREAM_URL", "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel")
+# 流式 ASR 超时秒数
+DOUBAO_ASR_STREAM_TIMEOUT = int(os.getenv("DOUBAO_ASR_STREAM_TIMEOUT", "60"))
+
+# ─── 旧版 ASR 配置（录音文件识别标准版，保留兼容但不作为主通道）───
 DOUBAO_ASR_RESOURCE_ID = os.getenv("DOUBAO_ASR_RESOURCE_ID", "volc.seedasr.auc")
 DOUBAO_ASR_SUBMIT_URL = os.getenv("DOUBAO_ASR_SUBMIT_URL", "https://openspeech.bytedance.com/api/v3/auc/bigmodel/submit")
 DOUBAO_ASR_QUERY_URL = os.getenv("DOUBAO_ASR_QUERY_URL", "https://openspeech.bytedance.com/api/v3/auc/bigmodel/query")

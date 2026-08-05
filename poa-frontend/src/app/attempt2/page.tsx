@@ -13,7 +13,7 @@ import ClickableEnglish from "@/components/ClickableEnglish";
 import DeviceCheckModal from "@/components/DeviceCheckModal";
 import CountdownEffect from "@/components/CountdownEffect";
 import TaskGate from "@/components/TaskGate";
-import { useBrowserASR } from "@/lib/useBrowserASR";
+import { useStreamASR } from "@/lib/useStreamASR";
 
 /* ============================================================
    常量
@@ -200,8 +200,8 @@ export default function Attempt2Page() {
 
   // ---- 设备模态框（自动唤起）----
   const [showDeviceModal, setShowDeviceModal] = useState(false);
-  // ---- 浏览器原生语音识别（边说边出字幕）----
-  const browserASR = useBrowserASR("en-US");
+  // ---- 火山流式语音识别（WebSocket 代理，边说边出字幕）----
+  const streamASR = useStreamASR();
   // ---- 3 秒倒计时 ----
   const [countdownKey, setCountdownKey] = useState<number | null>(null);
   // ---- 待显示的 AI 字幕（需手动点击才显示）----
@@ -478,8 +478,8 @@ export default function Attempt2Page() {
       audioContextRef.current.resume().catch(() => {});
     }
 
-    // 启动浏览器原生语音识别（Chrome/Edge 内置，边说边出字幕）
-    browserASR.start("en-US");
+    // 启动火山流式语音识别（WebSocket → 后端 → 火山 ASR）
+    streamASR.start();
 
     setReplayAvailable(false);
 
@@ -538,11 +538,13 @@ export default function Attempt2Page() {
     };
 
     recorder.onstop = async () => {
-      // 停止浏览器语音识别并等待最终结果落盘
-      try { browserASR.stop(); } catch { /* ignore */ }
-      await new Promise((r) => setTimeout(r, 300));
-      browserTextRef.current = browserASR.getText();
-      console.log("[attempt2] browserASR.getText() 返回:", JSON.stringify(browserTextRef.current));
+      // 停止火山流式语音识别并等待最终结果
+      try {
+        browserTextRef.current = (await streamASR.stop()) || "";
+      } catch {
+        browserTextRef.current = "";
+      }
+      console.log("[attempt2] streamASR 结果:", JSON.stringify(browserTextRef.current));
 
       if (chunksRef.current.length === 0) return;
       setUploading(true);
@@ -597,8 +599,8 @@ export default function Attempt2Page() {
       setWaitingForAiReply(true);
       const browserText = browserTextRef.current;
       const userTextForBackend = browserText || "";
-      console.log("[attempt2] 浏览器 ASR 转录:", browserText || "(无，交由后端ASR)");
-      await callChatTurn(audioUrl, userTextForBackend, newHistory);
+      console.log("[attempt2] 流式 ASR 转录:", browserText || "(无文本)");
+      await callChatTurn(userTextForBackend, newHistory);
     };
 
     recorder.onstart = () => {
@@ -637,7 +639,7 @@ export default function Attempt2Page() {
     }
   }, []);
 
-  const callChatTurn = async (audio_url: string, user_text: string, currentHistory: ConversationTurn[]) => {
+  const callChatTurn = async (user_text: string, currentHistory: ConversationTurn[]) => {
     const historyForBackend = currentHistory.length > 0 && currentHistory[currentHistory.length - 1].role === "user"
       ? currentHistory.slice(0, -1)
       : currentHistory;
@@ -663,7 +665,6 @@ export default function Attempt2Page() {
           closing_line: (currentTask2 as any)?.closing_line ?? "",
         };
         body.user_text = wrapUpUserText;
-        body.audio_url = audio_url;
         const res = await fetch(`${BASE_URL}/api/chat/turn`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -765,7 +766,6 @@ export default function Attempt2Page() {
         variant_context: currentTask?.variant_plot ?? "",
       };
       body.user_text = user_text;
-      body.audio_url = audio_url;
 
       const res = await fetch(`${BASE_URL}/api/chat/turn`, {
         method: "POST",
@@ -1246,15 +1246,15 @@ export default function Attempt2Page() {
 
             {/* 字幕区 */}
             <div className="max-w-[90%] rounded-xl bg-muted/50 px-4 py-2.5 text-center min-h-[3rem] flex flex-col items-center justify-center gap-1">
-              {/* 录音中：显示浏览器实时识别字幕 */}
-              {recording && browserASR.isListening && browserASR.interimTranscript && (
+              {/* 录音中：显示火山流式实时识别字幕 */}
+              {recording && streamASR.isRecording && streamASR.interimText && (
                 <p className="text-xs text-primary/80 animate-pulse">
-                  {browserASR.interimTranscript}
+                  {streamASR.interimText}
                 </p>
               )}
-              {/* 浏览器 ASR 错误提示 */}
-              {recording && browserASR.error && (
-                <p className="text-xs text-destructive">{browserASR.error}</p>
+              {/* 流式 ASR 错误提示 */}
+              {recording && streamASR.error && (
+                <p className="text-xs text-destructive">{streamASR.error}</p>
               )}
               <p className={`text-xs ${aiSpeaking ? "text-card-foreground" : "text-muted-foreground"}`}>
                 {currentSubtitle ? <ClickableEnglish text={currentSubtitle} /> : "点击下方按钮或按空格键开始对话"}

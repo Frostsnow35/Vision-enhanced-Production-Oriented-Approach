@@ -189,7 +189,6 @@ export async function chatStart(
 
 export async function chatTurn(
   user_text: string,
-  audio_url: string,
   conversation_history: any[],
   scene_label: string,
   roles: string,
@@ -199,7 +198,6 @@ export async function chatTurn(
 ): Promise<ChatTurnResponse> {
   return request<ChatTurnResponse>("/api/chat/turn", {
     user_text,
-    audio_url,
     conversation_history,
     scene_label,
     roles,
