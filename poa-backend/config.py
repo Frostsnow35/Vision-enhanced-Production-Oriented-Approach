@@ -1,16 +1,70 @@
 import os
 import re
+import logging
+from urllib.parse import quote_plus, urlparse, urlunparse
 from dotenv import load_dotenv
 
 load_dotenv()
 
+# 确保模块级日志有输出（main.py 导入本模块时 basicConfig 尚未执行）
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
+
+logger = logging.getLogger("poa.config")
+
+
+def _sanitize_database_url(raw_url: str) -> str:
+    """
+    清洗 DATABASE_URL，解决 Railway 上常见的解析问题：
+    1. 去除首尾空白、换行、引号
+    2. postgres:// → postgresql://（SQLAlchemy 2.0 已移除 postgres:// 别名）
+    3. 对密码中的特殊字符做 URL 编码
+    """
+    url = raw_url.strip().strip("`'\"")
+
+    if not url:
+        return url
+
+    # SQLAlchemy 2.0 不再接受 postgres:// 前缀
+    if url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql://", 1)
+    elif url.startswith("postgresql://"):
+        pass  # already correct
+    elif url.startswith("sqlite"):
+        return url  # SQLite 无需进一步处理
+    else:
+        # 非数据库 URL，原样返回（让 SQLAlchemy 自行报错）
+        return url
+
+    # 解析 URL 并对密码做 URL 编码，防止特殊字符导致解析失败
+    try:
+        parsed = urlparse(url)
+        if parsed.password:
+            encoded_password = quote_plus(parsed.password)
+            # 仅在密码确实需要编码时才重建 URL
+            if encoded_password != parsed.password:
+                netloc = f"{parsed.username}:{encoded_password}@{parsed.hostname}"
+                if parsed.port:
+                    netloc += f":{parsed.port}"
+                parsed = parsed._replace(netloc=netloc)
+                url = urlunparse(parsed)
+    except Exception:
+        pass  # 解析失败时保留原 URL，让 SQLAlchemy 报出更具体的错误
+
+    # 打印清洗后的 URL（密码脱敏）
+    masked = re.sub(r":([^@]+)@", ":****@", url)
+    logger.info("Sanitized DATABASE_URL: %s", masked)
+
+    return url
+
 
 # 数据库：优先使用环境变量 DATABASE_URL，否则使用 Railway 持久卷 /data/ 下的 SQLite
 # 本地开发时回退到项目根目录下的 poa.db
 _DEFAULT_DB = "sqlite:////data/poa.db" if os.path.isdir("/data") else "sqlite:///./poa.db"
-DATABASE_URL = os.getenv("DATABASE_URL", _DEFAULT_DB)
+_RAW_DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+DATABASE_URL = _sanitize_database_url(_RAW_DATABASE_URL) if _RAW_DATABASE_URL else _DEFAULT_DB
 
 _connect_args = {}
 if DATABASE_URL.startswith("sqlite"):
