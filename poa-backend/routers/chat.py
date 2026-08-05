@@ -275,8 +275,8 @@ async def chat_turn(req: ChatTurnRequest, request: Request):
         elif not os.path.isabs(audio_path):
             audio_path = os.path.normpath(os.path.join(UPLOAD_DIR, audio_path))
 
-        if os.path.isfile(audio_path):
-            # 火山引擎录音文件识别标准版（提交任务 + 查询结果）
+        # 仅在前端未提供文本时才走火山ASR（前端浏览器ASR优先级更高）
+        if not user_text and os.path.isfile(audio_path):
             public_url, audio_format = _build_public_audio_url(request, audio_path)
             if public_url and audio_format:
                 user_text = transcribe_with_doubao_standard(public_url, audio_format=audio_format)
@@ -287,9 +287,10 @@ async def chat_turn(req: ChatTurnRequest, request: Request):
                     asr_error = "standard_asr_no_result"
             else:
                 asr_error = "audio_conversion_failed"
-        else:
-            asr_error = "audio_file_missing"
-            logger.warning(f"[chat/turn] 音频文件不存在: {audio_path}")
+        elif not user_text:
+            asr_error = "audio_file_missing" if os.path.isfile(audio_path) else "audio_file_missing"
+            if os.path.isfile(audio_path):
+                logger.warning(f"[chat/turn] 音频文件存在但前端已有文本，跳过ASR: {audio_path}")
     else:
         asr_error = "no_audio_url"
 
