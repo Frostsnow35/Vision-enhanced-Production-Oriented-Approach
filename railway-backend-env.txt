@@ -10,7 +10,9 @@ DOUBAO_TTS_TOKEN=-fF9U2HMGkTza6Mi2lLn8LnHJnAfVy_W
 DOUBAO_TTS_RESOURCE_ID=seed-tts-2.0
 DOUBAO_TTS_VOICE=en_female_dacey_uranus_bigtts
 DOUBAO_ASR_APP_ID=6352558460
-DOUBAO_ASR_TOKEN=4kCi0u3uo3Y_OBTS8aK4xaYSbhwcrg9q
+DOUBAO_ASR_TOKEN=-fF9U2HMGkTza6Mi2lLn8LnHJnAfVy_W
+# 新版控制台 API Key（如果开通了，优先用这个，不需要 APP_ID + TOKEN）
+DOUBAO_ASR_API_KEY=<YOUR_DOUBAO_ASR_API_KEY>
 DOUBAO_ASR_RESOURCE_ID=volc.seedasr.auc
 # 重要：后端公网地址，火山 ASR 需要通过公网下载音频文件
 # 设为 Railway 给你的后端域名，例如 https://poa-backend-production-c371.up.railway.app
