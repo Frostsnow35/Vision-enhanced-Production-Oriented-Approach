@@ -804,6 +804,12 @@ export default function Attempt2Page() {
         const blobType = recorder.mimeType || mimeType || "audio/webm";
         const ext = blobType.includes("mp4") ? "mp4" : "webm";
         const blob = new Blob(chunksRef.current, { type: blobType });
+        const blobKB = Math.round(blob.size / 1024);
+        console.log(`[attempt2] 录音 Blob: ${blobKB}KB, type=${blobType}, chunks=${chunksRef.current.length}`);
+        if (blob.size < 500) {
+          console.warn("[attempt2] 录音 Blob 极小（<500B），可能麦克风未捕获到有效音频");
+          setCurrentSubtitle("警告：录音数据量极小，请在安静环境中重新说话");
+        }
         const form = new FormData();
         form.append("file", blob, `turn-${Date.now()}.${ext}`);
         const uploadRes = await fetch(`${BASE_URL}/api/upload/audio`, {
@@ -1756,6 +1762,20 @@ export default function Attempt2Page() {
                       <ClickableEnglish text={h.text || (isUser ? "（语音识别中...）" : "")} />
                       {isUser && !h.text && h.audio_url && (
                         <div className="mt-1 text-[10px] opacity-60">录音已上传，等待后端识别...</div>
+                      )}
+                      {isUser && h.audio_url && (
+                        <button
+                          className="mt-1 text-[9px] underline opacity-50 hover:opacity-100"
+                          onClick={() => {
+                            const url = (h.audio_url || "").startsWith("/")
+                              ? `${BASE_URL}${h.audio_url}`
+                              : h.audio_url || "";
+                            if (url) {
+                              const a = new Audio(url);
+                              a.play().catch(() => {});
+                            }
+                          }}
+                        >回听录音</button>
                       )}
                     </div>
                     {isUser && (h.final_transcript || h.interim_transcript || h.sent_user_text || h.resolved_user_text) && (

@@ -314,24 +314,27 @@ class AsrDiagResponse(BaseModel):
     upload_dir_exists: bool
     backend_public_url: str
     ffmpeg_available: bool
-    sample_mp3_url: str = ""
-    asr_submit_status: str = ""
-    asr_query_status: str = ""
-    asr_result: str = ""
+    asr_pipeline_ok: bool = False
+    silent_test: str = ""  # 静音测试结果
+    speech_test_phrase: str = ""  # 真实语音测试用短语
+    speech_test_submit_ok: bool = False
+    speech_test_result: str = ""  # ASR 对真实语音的转写结果
     errors: list = []
 
 
 @router.get("/debug/asr-diag", response_model=AsrDiagResponse)
 async def asr_diag(request: Request):
     """
-    ASR 全链路诊断：检查目录、ffmpeg、音频可访问性、火山 ASR 连通性。
-    在 Railway 部署上访问此端点可快速定位哪一步断了。
+    ASR 全链路诊断：静音连通性测试 + 真实语音(TTS)转写测试。
+    若 speech_test_result 含预期文字则说明 ASR 全链路正常。
     """
     import subprocess
     import uuid
 
     errors: list = []
     backend_url = _BACKEND_PUBLIC_URL or str(request.base_url).rstrip("/")
+    mp3_dir = os.path.join(UPLOAD_DIR, "audio")
+    os.makedirs(mp3_dir, exist_ok=True)
 
     # 1. 检查 upload_dir
     upload_dir_exists = os.path.isdir(UPLOAD_DIR)
@@ -344,58 +347,76 @@ async def asr_diag(request: Request):
     except Exception:
         pass
 
-    # 3. 生成测试 mp3（静音 1 秒，16kHz mono）
-    sample_url = ""
-    asr_submit_status = ""
-    asr_query_status = ""
-    asr_result = ""
+    # 3. 静音连通性测试
+    silent_test = "skipped"
     if upload_dir_exists and ffmpeg_available:
-        mp3_dir = os.path.join(UPLOAD_DIR, "audio")
-        os.makedirs(mp3_dir, exist_ok=True)
-        sample_name = f"asr_diag_{uuid.uuid4().hex}.mp3"
-        sample_path = os.path.join(mp3_dir, sample_name)
+        silent_name = f"asr_diag_silent_{uuid.uuid4().hex}.mp3"
+        silent_path = os.path.join(mp3_dir, silent_name)
         try:
             subprocess.run(
                 ["ffmpeg", "-y", "-f", "lavfi", "-i", "anullsrc=r=16000:cl=mono",
-                 "-t", "1", "-ar", "16000", "-ac", "1", "-b:a", "32k", sample_path],
+                 "-t", "1", "-ar", "16000", "-ac", "1", "-b:a", "32k", silent_path],
                 capture_output=True, timeout=10,
             )
-            if os.path.isfile(sample_path):
-                sample_url = f"{backend_url}/uploads/audio/{sample_name}"
-
-                # 4. 提交给火山 ASR 测试
-                audio_format = "mp3"
+            if os.path.isfile(silent_path):
+                silent_url = f"{backend_url}/uploads/audio/{silent_name}"
+                from services.asr_service import transcribe_with_doubao_standard
+                _ = transcribe_with_doubao_standard(silent_url, audio_format="mp3", max_wait_sec=15)
+                silent_test = "submit_ok"  # 静音文件提交成功即说明连通性正常
                 try:
-                    from services.asr_service import transcribe_with_doubao_standard
-                    result_text = transcribe_with_doubao_standard(sample_url, audio_format=audio_format, max_wait_sec=20)
-                    asr_submit_status = "submitted"
-                    if result_text:
-                        asr_query_status = "20000000"
-                        asr_result = result_text
-                    else:
-                        asr_query_status = "no_result_or_timeout"
-                        errors.append("ASR 提交成功但未收到转写结果（静音测试文件预期返回空或超时）")
-                except Exception as e:
-                    asr_submit_status = "exception"
-                    asr_query_status = str(e)[:100]
-                    errors.append(f"ASR 测试异常: {e}")
-
-                # 清理测试文件
-                try:
-                    os.remove(sample_path)
+                    os.remove(silent_path)
                 except Exception:
                     pass
         except Exception as e:
-            errors.append(f"生成测试 mp3 失败: {e}")
+            silent_test = f"failed:{e}"
+            errors.append(f"静音连通性测试失败: {e}")
+    else:
+        silent_test = "prerequisites_missing"
+
+    # 4. 真实语音 ASR 测试（用 gTTS 生成 "Hello, this is an ASR test"）
+    speech_test_phrase = ""
+    speech_test_submit_ok = False
+    speech_test_result = ""
+    if upload_dir_exists and ffmpeg_available:
+        try:
+            from gtts import gTTS
+            speech_test_phrase = "Hello, this is an ASR test."
+            speech_name = f"asr_diag_speech_{uuid.uuid4().hex}.mp3"
+            speech_path = os.path.join(mp3_dir, speech_name)
+            tts = gTTS(text=speech_test_phrase, lang="en", slow=False)
+            tts.save(speech_path)
+
+            if os.path.isfile(speech_path) and os.path.getsize(speech_path) > 500:
+                speech_url = f"{backend_url}/uploads/audio/{speech_name}"
+                from services.asr_service import transcribe_with_doubao_standard
+                result = transcribe_with_doubao_standard(speech_url, audio_format="mp3", max_wait_sec=30)
+                if result:
+                    speech_test_submit_ok = True
+                    speech_test_result = result
+                else:
+                    errors.append("真实语音 ASR 转写返回空，可能音频无法被火山下载或处理超时")
+                try:
+                    os.remove(speech_path)
+                except Exception:
+                    pass
+            else:
+                errors.append("gTTS 生成的语音文件过小或不存在")
+        except ImportError:
+            errors.append("gTTS 未安装，无法进行真实语音测试")
+        except Exception as e:
+            errors.append(f"真实语音 ASR 测试失败: {e}")
+
+    asr_pipeline_ok = silent_test == "submit_ok" and speech_test_submit_ok
 
     return AsrDiagResponse(
         upload_dir=UPLOAD_DIR,
         upload_dir_exists=upload_dir_exists,
         backend_public_url=backend_url,
         ffmpeg_available=ffmpeg_available,
-        sample_mp3_url=sample_url,
-        asr_submit_status=asr_submit_status,
-        asr_query_status=asr_query_status,
-        asr_result=asr_result,
+        asr_pipeline_ok=asr_pipeline_ok,
+        silent_test=silent_test,
+        speech_test_phrase=speech_test_phrase,
+        speech_test_submit_ok=speech_test_submit_ok,
+        speech_test_result=speech_test_result,
         errors=errors,
     )
