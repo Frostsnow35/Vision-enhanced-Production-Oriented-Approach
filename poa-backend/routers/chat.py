@@ -99,13 +99,15 @@ async def asr_stream(ws: WebSocket):
       后端 → 前端: JSON 文本帧 {"type": "final", "text": "..."}（最终结果）
     """
     await ws.accept()
-    logger.info("[ASR-Stream] 前端 WebSocket 已连接")
+    client_info = f"{ws.client.host}:{ws.client.port}" if ws.client else "unknown"
+    logger.info(f"[ASR-Stream] 前端 WebSocket 已连接 client={client_info}")
 
     asr = VolcanoStreamASR()
     try:
         # 1. 建立与火山的 WebSocket 连接并发送首帧
         await asr.connect()
         await asr.start()
+        logger.info("[ASR-Stream] 火山流式 ASR 就绪，等待前端音频...")
     except Exception as e:
         logger.error(f"[ASR-Stream] 火山连接失败: {e}")
         try:
@@ -121,19 +123,19 @@ async def asr_stream(ws: WebSocket):
     stop_flag = False
     final_holder = {"text": ""}
     done_event = asyncio.Event()
+    audio_frame_count = 0  # 从前端收到的 PCM 帧计数
 
     async def _receiver():
         """持续读取火山响应：推送 interim 字幕，收到 final 后结束。"""
         timeout_count = 0
+        nonlocal audio_frame_count
         try:
             while True:
                 result = await asr.receive_once(timeout=15.0)
                 if result is None:
-                    # 单次超时不等同于结束：连续 4 次（约 60s）无响应才放弃，
-                    # 避免瞬时网络抖动导致后续 final 丢失
                     timeout_count += 1
                     if timeout_count >= 4:
-                        logger.warning("[ASR-Stream] 火山连续无响应，结束接收")
+                        logger.warning(f"[ASR-Stream] 火山连续无响应（已收{audio_frame_count}个音频包），结束接收")
                         break
                     continue
                 timeout_count = 0
@@ -141,11 +143,12 @@ async def asr_stream(ws: WebSocket):
                 if text and not is_final:
                     try:
                         await ws.send_json({"type": "interim", "text": text})
+                        logger.info(f"[ASR-Stream→前端] interim: '{_clip_text(text, 60)}'")
                     except Exception:
                         break
                 if is_final:
                     final_holder["text"] = text
-                    logger.info(f"[ASR-Stream] 收到最终结果: {_clip_text(text, 100)}")
+                    logger.info(f"[ASR-Stream→前端] final: '{_clip_text(text, 100)}'")
                     break
         except Exception as e:
             logger.warning(f"[ASR-Stream] 接收协程异常: {e}")
@@ -160,17 +163,22 @@ async def asr_stream(ws: WebSocket):
             try:
                 data = await ws.receive()
             except WebSocketDisconnect:
-                logger.info("[ASR-Stream] 前端 WebSocket 断开")
+                logger.info(f"[ASR-Stream] 前端 WebSocket 断开（已收{audio_frame_count}个音频包）")
                 break
 
             if "bytes" in data:
                 pcm_bytes = data["bytes"]
+                audio_frame_count += 1
                 await asr.send_audio(pcm_bytes)
+                if audio_frame_count <= 3:
+                    logger.info(f"[ASR-Stream←前端] 音频帧 #{audio_frame_count} 大小={len(pcm_bytes)}B")
+                elif audio_frame_count % 30 == 0:
+                    logger.info(f"[ASR-Stream←前端] 已收 {audio_frame_count} 个音频帧")
             elif "text" in data:
                 try:
                     ctrl = json.loads(data["text"])
                     if ctrl.get("action") == "stop":
-                        logger.info("[ASR-Stream] 前端请求停止")
+                        logger.info(f"[ASR-Stream] 前端请求停止（已收{audio_frame_count}个音频包）")
                         stop_flag = True
                 except json.JSONDecodeError:
                     pass
@@ -192,8 +200,10 @@ async def asr_stream(ws: WebSocket):
             recv_task.cancel()
 
     # 4. 将最终结果回传前端
+    final_text = final_holder["text"]
     try:
-        await ws.send_json({"type": "final", "text": final_holder["text"]})
+        await ws.send_json({"type": "final", "text": final_text})
+        logger.info(f"[ASR-Stream→前端] 已推送 final 给前端: '{_clip_text(final_text, 100)}'")
     except Exception:
         pass
 
@@ -204,7 +214,7 @@ async def asr_stream(ws: WebSocket):
     except Exception:
         pass
 
-    logger.info(f"[ASR-Stream] 会话结束，最终文本: {_clip_text(final_holder['text'], 100)}")
+    logger.info(f"[ASR-Stream] 会话结束: audio_frames={audio_frame_count} final='{_clip_text(final_text, 100)}'")
 
 
 # ---- POST /api/chat/start ----

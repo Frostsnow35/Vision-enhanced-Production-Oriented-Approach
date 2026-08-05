@@ -47,6 +47,14 @@ from config import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("asr_service")
 
+
+def _clip_text(text: str, limit: int = 160) -> str:
+    """裁剪日志文本。"""
+    value = "" if text is None else str(text)
+    value = value.replace("\n", "\\n")
+    return value[:limit] + "..." if len(value) > limit else value
+
+
 # ---- 火山流式 ASR 二进制协议常量 ----
 PROTOCOL_VERSION = 0b0001
 DEFAULT_HEADER_SIZE = 0b0001
@@ -167,6 +175,8 @@ class VolcanoStreamASR:
         self._ws: Optional[ClientConnection] = None
         self._req_id = str(uuid.uuid4())
         self._seq = 0
+        self._audio_count = 0       # 已发送的音频包计数（诊断用）
+        self._resp_count = 0        # 已收到的火山响应计数（诊断用）
 
     async def connect(self) -> None:
         """建立与火山引擎流式 ASR 的 WebSocket 连接。"""
@@ -249,8 +259,14 @@ class VolcanoStreamASR:
         if not pcm_bytes:
             return
         self._seq += 1
+        self._audio_count += 1
         frame = _build_audio_frame(pcm_bytes, self._seq)
         await self._ws.send(frame)
+        # 前 5 包每次打印字节数，之后每 20 包汇总
+        if self._audio_count <= 5:
+            logger.info(f"[ASR-Stream→火山] 音频包 #{self._audio_count} seq={self._seq} pcm_bytes={len(pcm_bytes)} compressed={len(frame)}")
+        elif self._audio_count % 20 == 0:
+            logger.info(f"[ASR-Stream→火山] 已发送 {self._audio_count} 个音频包, 最近 pcm_bytes={len(pcm_bytes)}")
 
     async def finish(self) -> None:
         """发送结束帧：负 sequence 的空音频包，触发服务端输出最终结果。"""
@@ -279,23 +295,40 @@ class VolcanoStreamASR:
             return None
 
         if not isinstance(msg, bytes):
+            logger.warning(f"[ASR-Stream] 收到非二进制消息: {type(msg).__name__}")
             return None
 
+        self._resp_count += 1
+
+        # 原始帧头信息（诊断）
+        raw_header = list(msg[:12]) if len(msg) >= 12 else list(msg)
+        logger.debug(f"[ASR-Stream←火山] 响应 #{self._resp_count} raw_header={raw_header}")
+
         parsed = _parse_response(msg)
+        mt = parsed["message_type"]
+        fl = parsed["flags"]
+        body = parsed["body"]
+        text = ""
+        result = body.get("result", {})
+        if result:
+            text = (result.get("text") or "").strip()
+            if not text:
+                utterances = result.get("utterances", [])
+                if utterances:
+                    text = " ".join(u.get("text", "") for u in utterances).strip()
+
         if parsed["message_type"] == SERVER_ERROR_RESPONSE:
-            logger.warning(f"[ASR-Stream] 火山返回错误响应: {parsed['body']}")
+            logger.warning(f"[ASR-Stream←火山] 错误响应 #{self._resp_count}: {body}")
             return ("", True)
 
-        # 最终结果判定：官方协议中由服务器帧 flags=0b0011 标记（不含 JSON is_final 字段）
+        # 最终结果判定：官方协议中由服务器帧 flags=0b0011 标记
         is_final = (parsed["flags"] == SERVER_RESPONSE_FINAL)
 
-        result = parsed["body"].get("result", {})
-        text = (result.get("text") or "").strip()
-
-        if not text:
-            utterances = result.get("utterances", [])
-            if utterances:
-                text = " ".join(u.get("text", "") for u in utterances).strip()
+        logger.info(
+            f"[ASR-Stream←火山] 响应 #{self._resp_count} "
+            f"msg_type={mt} flags={fl} is_final={is_final} "
+            f"payload_size={len(msg) - 8} text='{_clip_text(text, 80)}'"
+        )
 
         return (text, is_final)
 
