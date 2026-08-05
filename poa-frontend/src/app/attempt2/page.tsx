@@ -843,6 +843,7 @@ export default function Attempt2Page() {
       const finalTranscript = finalTranscriptRef.current.trim();
       const interimTranscriptText = interimTranscriptRef.current.trim();
       const userText = finalTranscript || interimTranscriptText;
+      console.log(`[attempt2] onstop: userText="${userText}", audioUrl="${audioUrl}", blobKB=${Math.round((new Blob(chunksRef.current)).size / 1024)}`);
       const userTurn: ConversationTurn = {
         role: "user",
         text: userText || undefined,
@@ -904,7 +905,10 @@ export default function Attempt2Page() {
 
       recognition.onerror = (e: Event) => {
         const err = (e as any).error;
-        if (err !== "aborted" && err !== "no-speech") console.warn("语音识别错误:", err);
+        console.warn(`[attempt2] SpeechRecognition 错误: ${err}`, e);
+        if (err === "not-allowed") setCurrentSubtitle("麦克风权限未授予");
+        else if (err === "network") setCurrentSubtitle("语音识别需联网，请检查网络");
+        else if (err !== "aborted" && err !== "no-speech") setCurrentSubtitle(`语音识别出错: ${err}`);
       };
 
       recognition.onend = () => {
@@ -915,8 +919,14 @@ export default function Attempt2Page() {
         speechRecognitionRef.current = null;
       };
 
-      recognition.start();
-      speechRecognitionRef.current = recognition;
+      try {
+        recognition.start();
+        speechRecognitionRef.current = recognition;
+        console.log("[attempt2] SpeechRecognition 已启动, lang=en-US");
+      } catch (e: any) {
+        console.warn("[attempt2] SpeechRecognition.start() 失败:", e.message || e);
+        setCurrentSubtitle("语音识别启动失败，录音仍会进行");
+      }
     }
   }, [recording, uploading, history, speechSupported, canRecord, scheduleSpeechProcessingStages]);
 
@@ -928,22 +938,18 @@ export default function Attempt2Page() {
       clearTimeout(pressTimerRef.current);
       pressTimerRef.current = null;
     }
-    if (!recording) return;
-
     // 停止 Web Speech，onend 里会调 recorder.stop()，保证文本已 capture
     speechRecognitionRef.current?.stop();
     setRecording(false);
+    setUploading(false); // 重置上传状态
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
-    // 安全超时：如果 onend 3 秒内没触发，强制停录音器
-    const timeoutId = setTimeout(() => {
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
-        mediaRecorderRef.current.stop();
-      }
-    }, 3000);
-    setTimeout(() => clearTimeout(timeoutId), 5000);
+    // 强制停止录音器（不依赖 React 状态，防闭包过时）
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+      mediaRecorderRef.current.stop();
+    }
   }, [recording]);
 
   const callChatTurn = async (audio_url: string, user_text: string, currentHistory: ConversationTurn[]) => {
