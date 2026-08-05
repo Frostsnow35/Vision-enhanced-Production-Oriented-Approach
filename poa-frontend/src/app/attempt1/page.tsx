@@ -742,18 +742,17 @@ export default function Attempt1Page() {
     }
   }, []);
 
-  // ---- 空格键 ----
+  // ---- 空格键（点击切换）----
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      // 客户端轮次兜底：达到上限或对话已结束时不触发录音
-      if (!canRecord) return;
-      if (e.code === "Space" && !e.repeat && document.activeElement === document.body) { e.preventDefault(); pressTimerRef.current = setTimeout(() => beginRecord(), 150); }
+      if (e.code === "Space" && !e.repeat && document.activeElement === document.body) {
+        e.preventDefault();
+        if (recording) { endRecord(); } else if (canRecord) { beginRecord(); }
+      }
     };
-    const onKeyUp = (e: KeyboardEvent) => { if (e.code === "Space") { e.preventDefault(); endRecord(); } };
     window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("keyup", onKeyUp);
-    return () => { window.removeEventListener("keydown", onKeyDown); window.removeEventListener("keyup", onKeyUp); };
-  }, [beginRecord, endRecord, canRecord]);
+    return () => { window.removeEventListener("keydown", onKeyDown); };
+  }, [beginRecord, endRecord, canRecord, recording]);
 
   useEffect(() => {
     return () => {
@@ -1161,20 +1160,13 @@ export default function Attempt1Page() {
         )}
         <div className="flex items-center gap-3">
           <button
-            onPointerDown={(e) => {
-              e.preventDefault();
-              e.currentTarget.setPointerCapture(e.pointerId);
-              if (canRecord) beginRecord();
+            onClick={() => {
+              if (!canRecord) return;
+              if (recording) { endRecord(); } else { beginRecord(); }
             }}
-            onPointerUp={(e) => {
-              e.preventDefault();
-              e.currentTarget.releasePointerCapture(e.pointerId);
-              endRecord();
-            }}
-            onLostPointerCapture={endRecord}
-            disabled={!canRecord}
-            title={recordDisabledReason || (recording ? "松开结束录音" : "按住说话")}
-            className={`shrink-0 select-none rounded-full px-8 py-3 text-sm font-semibold transition-all duration-150 active:scale-95 touch-none ${
+            disabled={!canRecord && !recording}
+            title={recording ? "点击结束录音" : "点击开始说话"}
+            className={`shrink-0 select-none rounded-full px-8 py-3 text-sm font-semibold transition-all duration-150 active:scale-95 ${
               recording
                 ? elapsed >= 28
                   ? "bg-destructive text-destructive-foreground shadow-lg scale-105 animate-pulse"
@@ -1187,9 +1179,9 @@ export default function Attempt1Page() {
                     ? "bg-muted text-muted-foreground cursor-not-allowed"
                     : "bg-primary text-primary-foreground shadow-md hover:shadow-lg hover:bg-primary/90"
             }`}>
-            {!micReady ? "麦克风未就绪" : wrappingUp ? "AI 正在收尾..." : recording ? `松开停止 (${formatTime(elapsed)})` : uploading || waitingForAiReply ? stageToLabel(speechStage) : isFinal ? "对话已结束" : turnLimitReached ? "已达到建议轮次" : "按住说话"}
+            {!micReady ? "麦克风未就绪" : wrappingUp ? "AI 正在收尾..." : recording ? `点击停止 (${formatTime(elapsed)})` : uploading || waitingForAiReply ? stageToLabel(speechStage) : isFinal ? "对话已结束" : turnLimitReached ? "已达到建议轮次" : "点击说话"}
           </button>
-          {showHint && micReady && <span className="hidden sm:inline text-xs text-muted-foreground/60 animate-in fade-in duration-300">或长按空格键录音</span>}
+          {showHint && micReady && <span className="hidden sm:inline text-xs text-muted-foreground/60 animate-in fade-in duration-300">或按空格键切换</span>}
           <div className="flex-1" />
           <Button size="sm" variant="outline" onClick={handleSubmit} disabled={submitting || history.length < MIN_USER_TURNS}>{submitting ? "提交中..." : "提交诊断"}</Button>
           {turnLimitReached && (

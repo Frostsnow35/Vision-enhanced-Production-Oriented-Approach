@@ -454,14 +454,11 @@ export default function Attempt2Page() {
   };
 
   // ---- 语音录制 ----
-  const [pressing, setPressing] = useState(false);
   const [recording, setRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const pressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const holdBtnRef = useRef<HTMLButtonElement>(null);
   const isRecordingRef = useRef(false);
 
 
@@ -585,7 +582,6 @@ export default function Attempt2Page() {
     };
     recorder.start(isMobile ? 1000 : undefined);
     console.log(`[attempt2] recorder.start(${isMobile ? 1000 : "无参数"}) 已调用`);
-    setPressing(true);
     setRecording(true);
     setElapsed(0);
     timerRef.current = setInterval(() => setElapsed((n) => n + 1), 1000);
@@ -597,11 +593,6 @@ export default function Attempt2Page() {
   const endRecord = useCallback(() => {
     if (!isRecordingRef.current) return;
     isRecordingRef.current = false;
-    setPressing(false);
-    if (pressTimerRef.current) {
-      clearTimeout(pressTimerRef.current);
-      pressTimerRef.current = null;
-    }
     setRecording(false);
     setUploading(false);
     if (timerRef.current) {
@@ -945,32 +936,20 @@ export default function Attempt2Page() {
     }
   };
 
-  // ---- 空格键长按 ----
+  // ---- 空格键（点击切换）----
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (!canRecord) return;
       if (e.code === "Space" && !e.repeat && document.activeElement === document.body) {
         e.preventDefault();
-        pressTimerRef.current = setTimeout(() => beginRecord(), 150);
-      }
-    };
-    const onKeyUp = (e: KeyboardEvent) => {
-      if (e.code === "Space") {
-        e.preventDefault();
-        endRecord();
+        if (recording) { endRecord(); } else if (canRecord) { beginRecord(); }
       }
     };
     window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("keyup", onKeyUp);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("keyup", onKeyUp);
-    };
-  }, [beginRecord, endRecord, canRecord]);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [beginRecord, endRecord, canRecord, recording]);
 
   useEffect(() => {
     return () => {
-      if (pressTimerRef.current) clearTimeout(pressTimerRef.current);
       if (timerRef.current) clearInterval(timerRef.current);
     };
   }, []);
@@ -1243,7 +1222,7 @@ export default function Attempt2Page() {
             {/* 字幕区 */}
             <div className="max-w-[90%] rounded-xl bg-muted/50 px-4 py-2.5 text-center min-h-[3rem] flex items-center justify-center">
               <p className={`text-xs ${aiSpeaking ? "text-card-foreground" : "text-muted-foreground"}`}>
-                {currentSubtitle ? <ClickableEnglish text={currentSubtitle} /> : "按住下方按钮或空格键开始对话"}
+                {currentSubtitle ? <ClickableEnglish text={currentSubtitle} /> : "点击下方按钮或按空格键开始对话"}
               </p>
             </div>
 
@@ -1490,22 +1469,14 @@ export default function Attempt2Page() {
         )}
         <div className="flex items-center gap-3">
           <button
-            ref={holdBtnRef}
-            onPointerDown={(e) => {
-              e.preventDefault();
-              e.currentTarget.setPointerCapture(e.pointerId);
-              if (canRecord) beginRecord();
+            onClick={() => {
+              if (!canRecord) return;
+              if (recording) { endRecord(); } else { beginRecord(); }
             }}
-            onPointerUp={(e) => {
-              e.preventDefault();
-              e.currentTarget.releasePointerCapture(e.pointerId);
-              endRecord();
-            }}
-            onLostPointerCapture={endRecord}
-            disabled={!micReady || uploading || waitingForAiReply || isFinal || !canRecord}
+            disabled={!canRecord && !recording}
+            title={recording ? "点击结束录音" : "点击开始说话"}
             className={`
-              shrink-0 select-none rounded-full px-8 py-3 text-sm font-semibold transition-all duration-150
-              active:scale-95 touch-none
+              shrink-0 select-none rounded-full px-8 py-3 text-sm font-semibold transition-all duration-150 active:scale-95
               ${recording
                 ? elapsed >= 28
                   ? "bg-destructive text-destructive-foreground shadow-lg scale-105 animate-pulse"
@@ -1525,7 +1496,7 @@ export default function Attempt2Page() {
               : wrappingUp
                 ? "AI 正在收尾..."
                 : recording
-                  ? `松开停止 (${formatTime(elapsed)})`
+                  ? `点击停止 (${formatTime(elapsed)})`
                   : uploading
                     ? "处理中..."
                     : waitingForAiReply
@@ -1534,11 +1505,11 @@ export default function Attempt2Page() {
                       ? "对话已结束"
                       : turnLimitReached
                         ? "已达到建议轮次"
-                        : "按住说话"}
+                        : "点击说话"}
           </button>
 
           <span className="hidden sm:inline text-xs text-muted-foreground">
-            或按空格键
+            或按空格键切换
           </span>
 
           <div className="flex-1" />
