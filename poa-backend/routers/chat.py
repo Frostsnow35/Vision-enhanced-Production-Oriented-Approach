@@ -407,12 +407,19 @@ async def asr_diag(request: Request):
     asr_pipeline_ok = False
     if upload_dir_exists and ffmpeg_available:
         try:
-            from gtts import gTTS
+            import shutil
             speech_test_phrase = "Hello, this is a test."
             speech_name = f"asr_diag_{uuid.uuid4().hex}.mp3"
             speech_path = os.path.join(mp3_dir, speech_name)
-            tts = gTTS(text=speech_test_phrase, lang="en", slow=False)
-            tts.save(speech_path)
+
+            # 优先使用预置测试音频（已验证可转写，避免容器内 gTTS 生成音频异常导致误诊）
+            preset_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "asr_test_hello.mp3")
+            if os.path.isfile(preset_path):
+                shutil.copyfile(preset_path, speech_path)
+            else:
+                from gtts import gTTS
+                tts = gTTS(text=speech_test_phrase, lang="en", slow=False)
+                tts.save(speech_path)
 
             if os.path.isfile(speech_path) and os.path.getsize(speech_path) > 500:
                 speech_url = f"{backend_url}/uploads/audio/{speech_name}"
@@ -426,13 +433,9 @@ async def asr_diag(request: Request):
                     asr_pipeline_ok = "hello" in result.lower()
                 else:
                     errors.append("ASR 提交/查询成功但未返回转写（可能是网络或超时）")
-                # 测试文件保留 2 分钟后由系统定期清理，避免提前删除导致火山下载 404
-                # try:
-                #     os.remove(speech_path)
-                # except Exception:
-                #     pass
+                # 测试文件保留，避免提前删除导致火山异步下载 404
             else:
-                errors.append("gTTS 生成音频过小")
+                errors.append("gTTS/预置音频生成失败或过小")
         except ImportError:
             errors.append("gTTS 未安装")
         except Exception as e:
