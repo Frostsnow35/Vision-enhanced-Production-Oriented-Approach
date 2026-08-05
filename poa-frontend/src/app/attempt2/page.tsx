@@ -1425,9 +1425,11 @@ export default function Attempt2Page() {
                       <span className={`text-[10px] ${isUser ? "text-blue-500" : "text-muted-foreground"}`}>
                         {isUser ? "你" : "AI"}
                       </span>
-                      {isUser && fb && (
+                      {isUser && fb && (() => {
+                        const sc = fb.scores;
+                        return (
                         <div className="flex flex-col gap-0.5 max-w-[220px]">
-                          {fb.scores && (
+                          {sc && (
                             <div className="flex items-center gap-1.5">
                               {(["grammar", "vocabulary", "coherence"] as const).map((dim) => (
                                 <div key={dim} className="flex items-center gap-0.5">
@@ -1435,10 +1437,10 @@ export default function Attempt2Page() {
                                   <div className="w-6 h-1 rounded-full bg-muted overflow-hidden">
                                     <div
                                       className={`h-full rounded-full transition-all duration-500 ${dimColors[dim]}`}
-                                      style={{ width: `${fb.scores![dim]}%` }}
+                                      style={{ width: `${sc[dim]}%` }}
                                     />
                                   </div>
-                                  <span className="text-[8px] font-semibold text-muted-foreground tabular-nums w-4">{fb.scores[dim]}</span>
+                                  <span className="text-[8px] font-semibold text-muted-foreground tabular-nums w-4">{sc[dim]}</span>
                                 </div>
                               ))}
                             </div>
@@ -1447,7 +1449,8 @@ export default function Attempt2Page() {
                             <span className="text-[9px] text-muted-foreground/70 truncate">{fb.short_comment}</span>
                           )}
                         </div>
-                      )}
+                        );
+                      })()}
                     </div>
                   </div>
                 );
