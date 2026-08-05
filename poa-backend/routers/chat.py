@@ -122,6 +122,38 @@ def _build_public_audio_url(request: Request, audio_path: str) -> tuple:
         return "", ""
 
 
+def _ensure_local_audio(audio_path: str, raw_audio_url: str, request: Request) -> str:
+    """
+    确保音频文件存在于本地磁盘。
+    Railway 多实例部署时实例间文件系统不共享：上传的文件可能只在某个实例，
+    turn 请求落在其他实例时 os.path.isfile 为 False。此时从公网 URL
+    （CDN 缓存，一定可达）下载到本地兜底。
+    @param audio_path  本地绝对路径
+    @param raw_audio_url  请求中前端传入的原始音频 URL（/uploads/audio/xxx.webm）
+    @return  本地路径（无论是否下载成功都返回，调用方再检查 isfile）
+    """
+    if os.path.isfile(audio_path):
+        return audio_path
+    if not raw_audio_url:
+        return audio_path
+    base = _BACKEND_PUBLIC_URL if _BACKEND_PUBLIC_URL else str(request.base_url).rstrip("/")
+    if base.startswith("http://") and "localhost" not in base and "127.0.0.1" not in base:
+        base = base.replace("http://", "https://", 1)
+    public_url = raw_audio_url if raw_audio_url.startswith("http") else f"{base}{raw_audio_url}"
+    try:
+        import httpx
+        os.makedirs(os.path.dirname(audio_path), exist_ok=True)
+        with httpx.stream("GET", public_url, timeout=30) as r:
+            r.raise_for_status()
+            with open(audio_path, "wb") as f:
+                for chunk in r.iter_bytes(65536):
+                    f.write(chunk)
+        logger.info(f"[chat/turn] 本地文件缺失，已从公网下载: {public_url} → {audio_path}")
+    except Exception as e:
+        logger.warning(f"[chat/turn] 公网下载音频失败: {public_url} → {e}")
+    return audio_path
+
+
 def _serialize_history_for_log(conversation_history: list) -> str:
     """压缩 conversation_history，便于在日志中查看关键字段。"""
     preview = []
@@ -280,17 +312,24 @@ async def chat_turn(req: ChatTurnRequest, request: Request):
             audio_path = os.path.normpath(os.path.join(UPLOAD_DIR, audio_path))
 
         # 仅在前端未提供文本时才走火山ASR（前端浏览器ASR优先级更高）
-        if not user_text and os.path.isfile(audio_path):
-            public_url, audio_format = _build_public_audio_url(request, audio_path)
-            if public_url and audio_format:
-                user_text = transcribe_with_doubao_standard(public_url, audio_format=audio_format, max_wait_sec=45)
-                if user_text:
-                    user_text_source = "standard_asr"
-                    logger.info(f"[chat] ASR 结果: {user_text[:100]}")
+        if not user_text:
+            # 多实例场景下本地文件可能缺失（Railway 实例间文件系统不共享），
+            # 从公网 URL（CDN 缓存，一定可达）下载到本地兜底
+            audio_path = _ensure_local_audio(audio_path, req.audio_url, request)
+            if os.path.isfile(audio_path):
+                public_url, audio_format = _build_public_audio_url(request, audio_path)
+                if public_url and audio_format:
+                    user_text = transcribe_with_doubao_standard(public_url, audio_format=audio_format, max_wait_sec=45)
+                    if user_text:
+                        user_text_source = "standard_asr"
+                        logger.info(f"[chat] ASR 结果: {user_text[:100]}")
+                    else:
+                        asr_error = "standard_asr_no_result"
                 else:
-                    asr_error = "standard_asr_no_result"
+                    asr_error = "audio_conversion_failed"
             else:
-                asr_error = "audio_conversion_failed"
+                asr_error = "audio_file_missing"
+                logger.warning(f"[chat/turn] 音频文件本地缺失且公网下载失败: {audio_path}")
         elif not user_text:
             asr_error = "audio_file_missing" if os.path.isfile(audio_path) else "audio_file_missing"
             if os.path.isfile(audio_path):
