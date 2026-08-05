@@ -470,54 +470,58 @@ export default function Attempt2Page() {
       const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
       audioStreamRef.current = audioStream;
       setMicStatus("ready");
-      const ctx = new AudioContext();
-      audioContextRef.current = ctx;
-      const analyser = ctx.createAnalyser();
-      analyser.fftSize = 256;
-      const source = ctx.createMediaStreamSource(audioStream);
-      source.connect(analyser);
-      analyserRef.current = analyser;
-      const timeData = new Uint8Array(analyser.fftSize);
-      const freqData = new Uint8Array(analyser.frequencyBinCount);
-      const BARS = 12;
-      const smoothedBars = Array(BARS).fill(0);
-      const updateLevel = () => {
-        if (analyserRef.current) {
-          analyserRef.current.getByteTimeDomainData(timeData);
-          let sumSquares = 0;
-          for (let i = 0; i < timeData.length; i++) {
-            const v = (timeData[i] - 128) / 128;
-            sumSquares += v * v;
+      // 移动端不创建 AudioContext analyser（可能与 MediaRecorder 冲突导致录音无声）
+      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      if (!isMobile) {
+        const ctx = new AudioContext();
+        audioContextRef.current = ctx;
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 256;
+        const source = ctx.createMediaStreamSource(audioStream);
+        source.connect(analyser);
+        analyserRef.current = analyser;
+        const timeData = new Uint8Array(analyser.fftSize);
+        const freqData = new Uint8Array(analyser.frequencyBinCount);
+        const BARS = 12;
+        const smoothedBars = Array(BARS).fill(0);
+        const updateLevel = () => {
+          if (analyserRef.current) {
+            analyserRef.current.getByteTimeDomainData(timeData);
+            let sumSquares = 0;
+            for (let i = 0; i < timeData.length; i++) {
+              const v = (timeData[i] - 128) / 128;
+              sumSquares += v * v;
+            }
+            const rms = Math.sqrt(sumSquares / timeData.length);
+            const boosted = Math.min(rms * 2.5, 1);
+            setMicLevel((prev) => prev * 0.4 + boosted * 0.6);
+            analyserRef.current.getByteFrequencyData(freqData);
+            const binCount = freqData.length;
+            const buckets: number[] = [];
+            for (let b = 0; b < BARS; b++) {
+              const start = Math.floor((binCount * b) / BARS);
+              const end = Math.floor((binCount * (b + 1)) / BARS);
+              let sum = 0;
+              for (let i = start; i < end; i++) sum += freqData[i];
+              const avg = sum / Math.max(1, end - start);
+              buckets.push(avg / 255);
+            }
+            for (let b = 0; b < BARS; b++) {
+              smoothedBars[b] = smoothedBars[b] * 0.5 + buckets[b] * 0.5;
+            }
+            setMicSpectrum([...smoothedBars]);
           }
-          const rms = Math.sqrt(sumSquares / timeData.length);
-          const boosted = Math.min(rms * 2.5, 1);
-          setMicLevel((prev) => prev * 0.4 + boosted * 0.6);
-          analyserRef.current.getByteFrequencyData(freqData);
-          const binCount = freqData.length;
-          const buckets: number[] = [];
-          for (let b = 0; b < BARS; b++) {
-            const start = Math.floor((binCount * b) / BARS);
-            const end = Math.floor((binCount * (b + 1)) / BARS);
-            let sum = 0;
-            for (let i = start; i < end; i++) sum += freqData[i];
-            const avg = sum / Math.max(1, end - start);
-            buckets.push(avg / 255);
-          }
-          for (let b = 0; b < BARS; b++) {
-            smoothedBars[b] = smoothedBars[b] * 0.5 + buckets[b] * 0.5;
-          }
-          setMicSpectrum([...smoothedBars]);
-        }
-        requestAnimationFrame(updateLevel);
-      };
-      updateLevel();
+          requestAnimationFrame(updateLevel);
+        };
+        updateLevel();
+      } else {
+        console.log("[attempt2] 移动端跳过 AudioContext analyser，避免与 MediaRecorder 冲突");
+      }
     } catch (err) {
       console.error("麦克风获取失败:", err);
       setMicStatus("error");
-      if (cameraStreamRef.current) {
-        audioStreamRef.current = cameraStreamRef.current;
-        setMicStatus("ready");
-      }
+      // 不再伪装：摄像头流没有音频轨道，不能用它当音频源
+      setCurrentSubtitle("麦克风获取失败，请授予权限后刷新页面");
     }
   }, []);
 
@@ -878,6 +882,11 @@ export default function Attempt2Page() {
     setCurrentSubtitle("正在听你说话...");
 
     if (speechSupported) {
+      // 移动端禁用 SpeechRecognition（与 MediaRecorder 同时持有麦克风会导致录音无声）
+      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      if (isMobile) {
+        console.log("[attempt2] 移动端跳过 SpeechRecognition，避免与 MediaRecorder 冲突");
+      } else {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SpeechRecognition) return;
       const recognition = new SpeechRecognition();
@@ -927,6 +936,7 @@ export default function Attempt2Page() {
         console.warn("[attempt2] SpeechRecognition.start() 失败:", e.message || e);
         setCurrentSubtitle("语音识别启动失败，录音仍会进行");
       }
+      } // end else (desktop SpeechRecognition)
     }
   }, [recording, uploading, history, speechSupported, canRecord, scheduleSpeechProcessingStages]);
 
