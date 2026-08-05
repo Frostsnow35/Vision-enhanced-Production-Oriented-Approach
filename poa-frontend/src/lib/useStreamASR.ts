@@ -173,6 +173,8 @@ export function useStreamASR() {
       ws.binaryType = "blob"; // 接收端以 blob 处理（本 hook 只发二进制）
 
       ws.onopen = async () => {
+        console.log("[ASR-Stream] WebSocket 已连接 →", wsUrl("/api/chat/asr-stream"));
+
         // Chrome 自动播放策略：无手势时 context 可能 suspended，显式恢复
         if (audioCtx.state === "suspended") {
           try { await audioCtx.resume(); } catch { /* ignore */ }
@@ -236,17 +238,19 @@ export function useStreamASR() {
         try {
           data = JSON.parse(event.data);
         } catch {
+          console.warn("[ASR-Stream] 收到非 JSON 消息:", typeof event.data);
           return;
         }
         if (data.type === "interim") {
-          // 文本未变化时跳过 setState，避免页面高频重渲染
           if (data.text !== interimRef.current) {
             interimRef.current = data.text || "";
             setInterimText(data.text || "");
+            console.log("[ASR-Stream] interim:", data.text);
           }
         } else if (data.type === "final") {
           finalTextRef.current = data.text || "";
           gotFinalRef.current = true;
+          console.log("[ASR-Stream] final:", data.text);
           if (resolveStopRef.current) {
             resolveStopRef.current(finalTextRef.current);
             resolveStopRef.current = null;
@@ -256,11 +260,14 @@ export function useStreamASR() {
         }
       };
 
-      ws.onerror = () => {
-        setError("流式识别连接失败，请检查网络");
+      ws.onerror = (e) => {
+        const msg = "流式识别连接失败，请检查网络";
+        console.error("[ASR-Stream] WebSocket 连接错误:", msg, e);
+        setError(msg);
       };
 
-      ws.onclose = () => {
+      ws.onclose = (e) => {
+        console.log(`[ASR-Stream] WebSocket 关闭 code=${e.code} reason=${e.reason}`);
         setIsRecording(false);
         // 连接提前关闭且未收到 final：用当前 interim 兜底，避免 stop() 永久挂起
         if (resolveStopRef.current) {
@@ -311,11 +318,13 @@ export function useStreamASR() {
     if (ws && ws.readyState === WebSocket.OPEN) {
       try {
         ws.send(JSON.stringify({ action: "stop" }));
+        console.log("[ASR-Stream] stop() → 已发送 stop 指令");
       } catch {
         // ignore
       }
     } else {
       // 连接未建立成功（如无 ASR 配置 / 麦克风被拒），直接返回空
+      console.warn(`[ASR-Stream] stop() → WebSocket 未连接, state=${ws?.readyState}`);
       setIsRecording(false);
       setInterimText("");
       return interimRef.current || "";
@@ -323,11 +332,14 @@ export function useStreamASR() {
 
     // 等待 final 消息（onmessage 里 resolve），超时兜底
     if (!gotFinalRef.current) {
+      console.log("[ASR-Stream] stop() → 等待 final...");
       finalTextRef.current = await new Promise<string>((resolve) => {
         resolveStopRef.current = resolve;
         stopTimerRef.current = setTimeout(() => {
           if (resolveStopRef.current) {
-            resolveStopRef.current(interimRef.current || "");
+            const fallback = interimRef.current || "";
+            console.warn(`[ASR-Stream] stop() → 超时(${STOP_TIMEOUT_MS}ms)兜底, interim='${fallback}'`);
+            resolveStopRef.current(fallback);
             resolveStopRef.current = null;
           }
         }, STOP_TIMEOUT_MS);
@@ -335,6 +347,7 @@ export function useStreamASR() {
     }
 
     const text = finalTextRef.current || interimRef.current || "";
+    console.log(`[ASR-Stream] stop() → 最终文本='${text}'`);
     setIsRecording(false);
     setInterimText("");
     return text.trim();
