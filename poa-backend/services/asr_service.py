@@ -181,12 +181,31 @@ class VolcanoStreamASR:
             f"[ASR-Stream] 连接火山 WebSocket: {DOUBAO_ASR_STREAM_URL} "
             f"resource={DOUBAO_ASR_STREAM_RESOURCE_ID}"
         )
-        self._ws = await websockets.connect(
-            DOUBAO_ASR_STREAM_URL,
-            additional_headers=extra_headers,
-            close_timeout=5,
-            ping_interval=20,
-        )
+        try:
+            self._ws = await websockets.connect(
+                DOUBAO_ASR_STREAM_URL,
+                additional_headers=extra_headers,
+                close_timeout=5,
+                ping_interval=20,
+            )
+        except websockets.exceptions.InvalidStatus as e:
+            # 打印服务端返回的具体拒绝原因（body + X-Tt-Logid），便于生产排障
+            detail = ""
+            body = getattr(e.response, "body", None)
+            if body:
+                try:
+                    detail = body.decode("utf-8", errors="replace")
+                except Exception:
+                    detail = repr(body)
+            logid = ""
+            try:
+                logid = e.response.headers.get("X-Tt-Logid", "")
+            except Exception:
+                pass
+            raise RuntimeError(
+                f"火山拒绝 WebSocket 握手 HTTP {e.response.status_code} "
+                f"resource={DOUBAO_ASR_STREAM_RESOURCE_ID} body={detail} logid={logid}"
+            ) from e
         logger.info("[ASR-Stream] WebSocket 已连接")
 
     async def start(self) -> None:
