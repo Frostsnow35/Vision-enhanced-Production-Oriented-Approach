@@ -782,21 +782,48 @@ export default function Attempt2Page() {
 
     setReplayAvailable(false);
 
+    // 移动端检测（提前到此处，供 MIME 选择和 AudioContext 跳过使用）
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+    // 音频轨道健康检查：确保流仍有活跃音轨（移动端可能被系统回收）
+    const audioTracks = audioStreamRef.current.getAudioTracks();
+    const activeTracks = audioTracks.filter(t => t.readyState === "live");
+    console.log(`[attempt2] 音频轨道: total=${audioTracks.length}, live=${activeTracks.length}, isMobile=${isMobile}`);
+    if (activeTracks.length === 0) {
+      console.error("[attempt2] 没有活跃的音频轨道，无法录制");
+      isRecordingRef.current = false;
+      setCurrentSubtitle("麦克风未就绪，请刷新页面后重试");
+      return;
+    }
+
     // --- MediaRecorder ---
-    const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-      ? "audio/webm;codecs=opus"
-      : MediaRecorder.isTypeSupported("audio/webm")
-        ? "audio/webm"
-        : MediaRecorder.isTypeSupported("audio/mp4")
-          ? "audio/mp4"
-          : "";
+    // 移动端：Android Chrome 上 audio/webm;codecs=opus 虽然 isTypeSupported 返回 true
+    // 但实际录制出的音频是静音（已知 Chrome bug）。移动端改用纯 webm。
+    let mimeType: string;
+    if (isMobile) {
+      mimeType = MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "";
+      console.log("[attempt2] 移动端 MIME: " + (mimeType || "默认"));
+    } else {
+      mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus"
+        : MediaRecorder.isTypeSupported("audio/webm")
+          ? "audio/webm"
+          : MediaRecorder.isTypeSupported("audio/mp4")
+            ? "audio/mp4"
+            : "";
+    }
 
     let recorder: MediaRecorder;
     try {
-      recorder = mimeType
-        ? new MediaRecorder(audioStreamRef.current, { mimeType })
-        : new MediaRecorder(audioStreamRef.current);
+      const opts: MediaRecorderOptions = mimeType ? { mimeType } : {};
+      // 移动端设置比特率，确保录音质量
+      if (isMobile && mimeType.includes("webm")) {
+        opts.audioBitsPerSecond = 64000;
+      }
+      recorder = new MediaRecorder(audioStreamRef.current, opts);
     } catch (err: any) {
+      console.error("[attempt2] MediaRecorder 创建失败:", err.message || err);
+      isRecordingRef.current = false; // ← 关键修复：错误路径必须重置
       alert("无法启动录音，请检查麦克风权限: " + (err.message ?? ""));
       return;
     }
@@ -809,7 +836,8 @@ export default function Attempt2Page() {
     };
 
     recorder.onerror = () => {
-      alert("录音过程中出错，请重试");
+      console.error("[attempt2] MediaRecorder onerror");
+      isRecordingRef.current = false; // 错误时也重置
       setRecording(false);
       setSpeechStage("idle");
     };
@@ -883,7 +911,6 @@ export default function Attempt2Page() {
 
     if (speechSupported) {
       // 移动端禁用 SpeechRecognition（与 MediaRecorder 同时持有麦克风会导致录音无声）
-      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
       if (isMobile) {
         console.log("[attempt2] 移动端跳过 SpeechRecognition，避免与 MediaRecorder 冲突");
       } else {
@@ -941,14 +968,14 @@ export default function Attempt2Page() {
   }, [recording, uploading, history, speechSupported, canRecord, scheduleSpeechProcessingStages]);
 
   const endRecord = useCallback(() => {
-    if (!isRecordingRef.current) return; // 已经在结束中
+    if (!isRecordingRef.current) return; // 已经在结束中或从未开始
     isRecordingRef.current = false;
     setPressing(false);
     if (pressTimerRef.current) {
       clearTimeout(pressTimerRef.current);
       pressTimerRef.current = null;
     }
-    // 停止 Web Speech，onend 里会调 recorder.stop()，保证文本已 capture
+    // 停止 Web Speech，onend 里会调 recorder.stop()，保证文本已被 capture
     speechRecognitionRef.current?.stop();
     setRecording(false);
     setUploading(false); // 重置上传状态
@@ -957,8 +984,17 @@ export default function Attempt2Page() {
       timerRef.current = null;
     }
     // 强制停止录音器（不依赖 React 状态，防闭包过时）
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
-      mediaRecorderRef.current.stop();
+    // state !== "inactive" 而非 === "recording"：Android Chrome 上 state 可能卡在 "paused"
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      try {
+        mediaRecorderRef.current.stop();
+      } catch (e) {
+        console.warn("[attempt2] recorder.stop() 异常:", e);
+      }
+    } else if (!mediaRecorderRef.current) {
+      console.warn("[attempt2] endRecord: mediaRecorderRef 为空");
+    } else {
+      console.warn(`[attempt2] endRecord: recorder state=${mediaRecorderRef.current.state}，已跳过 stop`);
     }
   }, [recording]);
 
@@ -1880,6 +1916,7 @@ export default function Attempt2Page() {
             onMouseLeave={endRecord}
             onTouchStart={(e) => { e.preventDefault(); if (micReady && !uploading && !isFinal) beginRecord(); }}
             onTouchEnd={(e) => { e.preventDefault(); endRecord(); }}
+            onTouchCancel={(e) => { e.preventDefault(); endRecord(); }}
             disabled={!micReady || uploading || waitingForAiReply || isFinal || !canRecord}
             className={`
               shrink-0 select-none rounded-full px-8 py-3 text-sm font-semibold transition-all duration-150

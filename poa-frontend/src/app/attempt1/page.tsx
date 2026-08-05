@@ -438,6 +438,7 @@ export default function Attempt1Page() {
   const [uploading, setUploading] = useState(false);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  const isRecordingRef = useRef(false); // 防 beginRecord 重复触发
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -575,17 +576,65 @@ export default function Attempt1Page() {
   const beginRecord = useCallback(() => {
     // 客户端轮次兜底：达到上限或对话已结束时不进入录音
     if (!canRecord) return;
-    setReplayAvailable(false);
     if (!audioStreamRef.current || recording || uploading) return;
-    const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "audio/mp4";
+    // 防重复：用 ref 追踪真实录制状态，避免 onMouseDown/onTouchStart 竞态
+    if (isRecordingRef.current) return;
+    isRecordingRef.current = true;
+
+    setReplayAvailable(false);
+
+    // 移动端检测
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+    // 音频轨道健康检查
+    const audioTracks = audioStreamRef.current.getAudioTracks();
+    const activeTracks = audioTracks.filter(t => t.readyState === "live");
+    console.log(`[attempt1] 音频轨道: total=${audioTracks.length}, live=${activeTracks.length}, isMobile=${isMobile}`);
+    if (activeTracks.length === 0) {
+      console.error("[attempt1] 没有活跃的音频轨道，无法录制");
+      isRecordingRef.current = false;
+      setCurrentSubtitle("麦克风未就绪，请刷新页面后重试");
+      return;
+    }
+
+    // 移动端避免 codecs=opus（Android Chrome bug：静音录音）
+    let mimeType: string;
+    if (isMobile) {
+      mimeType = MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "";
+      console.log("[attempt1] 移动端 MIME: " + (mimeType || "默认"));
+    } else {
+      mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus"
+        : MediaRecorder.isTypeSupported("audio/webm")
+          ? "audio/webm"
+          : MediaRecorder.isTypeSupported("audio/mp4")
+            ? "audio/mp4"
+            : "";
+    }
+
     let recorder: MediaRecorder;
     try {
-      recorder = mimeType ? new MediaRecorder(audioStreamRef.current, { mimeType }) : new MediaRecorder(audioStreamRef.current);
-    } catch (err: unknown) { alert("无法启动录音: " + ((err as Error)?.message ?? "")); return; }
+      const opts: MediaRecorderOptions = mimeType ? { mimeType } : {};
+      if (isMobile && mimeType.includes("webm")) {
+        opts.audioBitsPerSecond = 64000;
+      }
+      recorder = new MediaRecorder(audioStreamRef.current, opts);
+    } catch (err: unknown) {
+      console.error("[attempt1] MediaRecorder 创建失败:", (err as Error)?.message);
+      isRecordingRef.current = false;
+      alert("无法启动录音: " + ((err as Error)?.message ?? ""));
+      return;
+    }
+
     recorderRef.current = recorder;
     chunksRef.current = [];
     recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
-    recorder.onerror = () => { alert("录音出错"); setRecording(false); setSpeechStage("idle"); };
+    recorder.onerror = () => {
+      console.error("[attempt1] MediaRecorder onerror");
+      isRecordingRef.current = false;
+      setRecording(false);
+      setSpeechStage("idle");
+    };
     recorder.onstop = async () => {
       if (chunksRef.current.length === 0) {
         setSpeechStage("idle");
@@ -727,6 +776,11 @@ export default function Attempt1Page() {
     setInterimTranscript("");
     setCurrentSubtitle("正在听你说话...");
     if (speechSupported) {
+      // 移动端禁用 SpeechRecognition（与 MediaRecorder 同时持有麦克风会导致录音无声）
+      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      if (isMobile) {
+        console.log("[attempt1] 移动端跳过 SpeechRecognition，避免与 MediaRecorder 冲突");
+      } else {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SpeechRecognition) return;
       const recognition = new SpeechRecognition();
@@ -745,34 +799,41 @@ export default function Attempt1Page() {
         const display = finalTranscriptRef.current + (interim ? (finalTranscriptRef.current ? " " : "") + interim : "");
         setCurrentSubtitle(display || "正在听你说话...");
       };
-      recognition.onerror = (e: Event) => { const err = (e as unknown as { error: string }).error; if (err !== "aborted" && err !== "no-speech") console.warn("语音识别错误:", err); };
+      recognition.onerror = (e: Event) => { const err = (e as unknown as { error: string }).error; if (err !== "aborted" && err !== "no-speech") console.warn("[attempt1] 语音识别错误:", err); };
       recognition.onend = () => {
         // Web Speech 交付完所有结果后，停止录音器，保证文本已被 capture
-        if (recorderRef.current && recorderRef.current.state === "recording") {
+        if (recorderRef.current && recorderRef.current.state !== "inactive") {
           recorderRef.current.stop();
         }
         speechRecognitionRef.current = null;
       };
-      recognition.start();
-      speechRecognitionRef.current = recognition;
+      try {
+        recognition.start();
+        speechRecognitionRef.current = recognition;
+        console.log("[attempt1] SpeechRecognition 已启动, lang=en-US");
+      } catch (e: unknown) {
+        console.warn("[attempt1] SpeechRecognition.start() 失败:", (e as Error)?.message);
+      }
+      } // end else (desktop SpeechRecognition)
     }
   }, [recording, uploading, history, speechSupported, canRecord, clearSpeechStageTimers, scheduleSpeechProcessingStages, isFinal, turnLimitReached, wrappingUp, task]);
 
   const endRecord = useCallback(() => {
+    if (!isRecordingRef.current) return; // 已经在结束中或从未开始
+    isRecordingRef.current = false;
     if (pressTimerRef.current) { clearTimeout(pressTimerRef.current); pressTimerRef.current = null; }
-    if (!recording) return;
-    // 停止 Web Speech，onend 里会调 recorder.stop()，保证文本已 capture
+    // 停止 Web Speech，onend 里会调 recorder.stop()，保证文本已被 capture
     speechRecognitionRef.current?.stop();
     setRecording(false);
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
-    // 安全超时：如果 onend 3 秒内没触发，强制停录音器
-    const timeoutId = setTimeout(() => {
-      if (recorderRef.current && recorderRef.current.state === "recording") {
+    // 强制停止录音器（不依赖 React 状态，防闭包过时）
+    if (recorderRef.current && recorderRef.current.state !== "inactive") {
+      try {
         recorderRef.current.stop();
+      } catch (e) {
+        console.warn("[attempt1] recorder.stop() 异常:", e);
       }
-    }, 3000);
-    // 用闭包清理（onend 触发后不需要超时了，但不清理也不影响）
-    setTimeout(() => clearTimeout(timeoutId), 5000);
+    }
   }, [recording]);
 
   // ---- 空格键 ----
@@ -1208,6 +1269,7 @@ export default function Attempt1Page() {
             onMouseLeave={endRecord}
             onTouchStart={(e) => { e.preventDefault(); if (canRecord) beginRecord(); }}
             onTouchEnd={(e) => { e.preventDefault(); endRecord(); }}
+            onTouchCancel={(e) => { e.preventDefault(); endRecord(); }}
             disabled={!canRecord}
             title={recordDisabledReason || (recording ? "松开结束录音" : "按住说话")}
             className={`shrink-0 select-none rounded-full px-8 py-3 text-sm font-semibold transition-all duration-150 active:scale-95 touch-none ${
