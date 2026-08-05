@@ -131,8 +131,9 @@ DOUBAO_TTS_URL = "https://openspeech.bytedance.com/api/v3/tts/unidirectional"
 DOUBAO_ASR_APP_ID = os.getenv("DOUBAO_ASR_APP_ID", "")
 DOUBAO_ASR_TOKEN = os.getenv("DOUBAO_ASR_TOKEN", "")
 DOUBAO_ASR_API_KEY = os.getenv("DOUBAO_ASR_API_KEY", "")
-# 流式模型 resource_id（需带计费后缀）: volc.seedasr.sauc.duration(小时版) / volc.seedasr.sauc.concurrent(并发版)
-DOUBAO_ASR_STREAM_RESOURCE_ID = os.getenv("DOUBAO_ASR_STREAM_RESOURCE_ID", "volc.seedasr.sauc.duration")
+# 流式模型 resource_id（需带计费后缀）: volc.bigasr.sauc.duration(1.0小时版) / volc.bigasr.sauc.concurrent(1.0并发版)
+# 2.0 版为 volc.seedasr.sauc.duration，需先在火山控制台开通对应资源（实测当前账号未开通，会返回 400）
+DOUBAO_ASR_STREAM_RESOURCE_ID = os.getenv("DOUBAO_ASR_STREAM_RESOURCE_ID", "volc.bigasr.sauc.duration")
 # 火山流式 ASR WebSocket 地址
 DOUBAO_ASR_STREAM_URL = os.getenv("DOUBAO_ASR_STREAM_URL", "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel")
 # 流式 ASR 超时秒数

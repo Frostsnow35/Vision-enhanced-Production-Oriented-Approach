@@ -6,7 +6,8 @@ ASR 服务 — 火山引擎流式语音识别（WebSocket 双向流式，二进�
 
 协议要点（官方文档——豆包语音_流式语音识别WebSocket）：
 - 建连 header 鉴权：新版控制台 X-Api-Key；旧版 X-Api-App-Key + X-Api-Access-Key
-- resource_id 需带计费后缀：volc.seedasr.sauc.duration（2.0 小时版）/ .concurrent（2.0 并发版）
+- resource_id 需带计费后缀：volc.bigasr.sauc.duration（1.0 小时版）/ .concurrent（1.0 并发版）
+  2.0 版为 volc.seedasr.sauc.duration（需先开通资源）
 - 帧格式：4 字节 header + [4 字节 sequence] + 4 字节 payload_size + payload
   header[0] = (protocol_version << 4) | header_size        # 固定 0x11
   header[1] = (message_type << 4) | message_type_specific_flags
