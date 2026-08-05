@@ -36,6 +36,8 @@ export function useBrowserASR(lang: string = "en-US") {
   // 检测支持性（仅在首次渲染时执行，避免 SSR 崩溃）
   const supported = (() => {
     if (typeof window === "undefined") return false;
+    // iOS Safari 不支持 SpeechRecognition（需 >= 14.5 但体验极差，直接禁用）
+    if (/iPhone|iPad|iPod/i.test(navigator.userAgent)) return false;
     const Ctor = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     return !!Ctor;
   })();

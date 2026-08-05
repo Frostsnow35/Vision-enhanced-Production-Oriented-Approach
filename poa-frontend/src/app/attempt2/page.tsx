@@ -538,6 +538,11 @@ export default function Attempt2Page() {
     };
 
     recorder.onstop = async () => {
+      // 停止浏览器语音识别并等待最终结果落盘
+      try { browserASR.stop(); } catch { /* ignore */ }
+      await new Promise((r) => setTimeout(r, 200));
+      browserTextRef.current = browserASR.finalTranscript || "";
+
       if (chunksRef.current.length === 0) return;
       setUploading(true);
 
@@ -618,9 +623,6 @@ export default function Attempt2Page() {
       timerRef.current = null;
     }
 
-    // 停止浏览器语音识别，拿最终转录文本（同步返回）
-    browserTextRef.current = browserASR.stop();
-
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
       try {
         mediaRecorderRef.current.stop();
@@ -632,7 +634,7 @@ export default function Attempt2Page() {
     } else {
       console.warn(`[attempt2] endRecord: recorder state=${mediaRecorderRef.current.state}，已跳过 stop`);
     }
-  }, [browserASR]);
+  }, []);
 
   const callChatTurn = async (audio_url: string, user_text: string, currentHistory: ConversationTurn[]) => {
     const historyForBackend = currentHistory.length > 0 && currentHistory[currentHistory.length - 1].role === "user"

@@ -589,6 +589,11 @@ export default function Attempt1Page() {
       setSpeechStage("idle");
     };
     recorder.onstop = async () => {
+      // 停止浏览器语音识别并等待最终结果落盘（rec.stop() 是异步的，onresult 可能在 stop 之后才触发最后一句话）
+      try { browserASR.stop(); } catch { /* ignore */ }
+      await new Promise((r) => setTimeout(r, 200));
+      browserTextRef.current = browserASR.finalTranscript || "";
+
       if (chunksRef.current.length === 0) {
         setSpeechStage("idle");
         return;
@@ -746,13 +751,8 @@ export default function Attempt1Page() {
   const endRecord = useCallback(() => {
     if (!isRecordingRef.current) return; // 已经在结束中或从未开始
     isRecordingRef.current = false;
-    if (pressTimerRef.current) { clearTimeout(pressTimerRef.current); pressTimerRef.current = null; }
     setRecording(false);
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
-
-    // 停止浏览器语音识别，拿最终转录文本（同步返回）
-    browserTextRef.current = browserASR.stop();
-
     // 强制停止录音器（不依赖 React 状态，防闭包过时）
     if (recorderRef.current && recorderRef.current.state !== "inactive") {
       try {
@@ -761,7 +761,7 @@ export default function Attempt1Page() {
         console.warn("[attempt1] recorder.stop() 异常:", e);
       }
     }
-  }, [browserASR]);
+  }, []);
 
   // ---- 空格键（点击切换）----
   useEffect(() => {
