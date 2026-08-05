@@ -126,31 +126,41 @@ def _ensure_local_audio(audio_path: str, raw_audio_url: str, request: Request) -
     """
     确保音频文件存在于本地磁盘。
     Railway 多实例部署时实例间文件系统不共享：上传的文件可能只在某个实例，
-    turn 请求落在其他实例时 os.path.isfile 为 False。此时从公网 URL
-    （CDN 缓存，一定可达）下载到本地兜底。
+    turn 请求落在其他实例时 os.path.isfile 为 False。此时从 URL 下载到本地兜底。
+    注意：容器内自访问自身公网域名会走公网环路导致超时，因此优先用 localhost 内部地址。
     @param audio_path  本地绝对路径
-    @param raw_audio_url  请求中前端传入的原始音频 URL（/uploads/audio/xxx.webm）
+    @param raw_audio_url  请求中前端传入的原始音频 URL（完整URL或 /uploads/...）
     @return  本地路径（无论是否下载成功都返回，调用方再检查 isfile）
     """
     if os.path.isfile(audio_path):
         return audio_path
     if not raw_audio_url:
         return audio_path
+    # 提取 URL 路径部分（/uploads/audio/xxx.webm）
+    from urllib.parse import urlparse
+    parsed = urlparse(raw_audio_url if "://" in raw_audio_url else f"http://internal{raw_audio_url}")
+    path_only = parsed.path
+
+    # 候选下载地址：优先容器内部自访问（避免公网环路），回退公网 URL
+    candidates = [f"http://localhost:8000{path_only}"]
     base = _BACKEND_PUBLIC_URL if _BACKEND_PUBLIC_URL else str(request.base_url).rstrip("/")
     if base.startswith("http://") and "localhost" not in base and "127.0.0.1" not in base:
         base = base.replace("http://", "https://", 1)
-    public_url = raw_audio_url if raw_audio_url.startswith("http") else f"{base}{raw_audio_url}"
-    try:
-        import httpx
-        os.makedirs(os.path.dirname(audio_path), exist_ok=True)
-        with httpx.stream("GET", public_url, timeout=30) as r:
-            r.raise_for_status()
-            with open(audio_path, "wb") as f:
-                for chunk in r.iter_bytes(65536):
-                    f.write(chunk)
-        logger.info(f"[chat/turn] 本地文件缺失，已从公网下载: {public_url} → {audio_path}")
-    except Exception as e:
-        logger.warning(f"[chat/turn] 公网下载音频失败: {public_url} → {e}")
+    candidates.append(f"{base}{path_only}")
+
+    import httpx
+    os.makedirs(os.path.dirname(audio_path), exist_ok=True)
+    for url in candidates:
+        try:
+            with httpx.stream("GET", url, timeout=15) as r:
+                r.raise_for_status()
+                with open(audio_path, "wb") as f:
+                    for chunk in r.iter_bytes(65536):
+                        f.write(chunk)
+            logger.info(f"[chat/turn] 本地文件缺失，已下载: {url} → {audio_path}")
+            return audio_path
+        except Exception as e:
+            logger.warning(f"[chat/turn] 音频下载失败: {url} → {e}")
     return audio_path
 
 
@@ -302,7 +312,11 @@ async def chat_turn(req: ChatTurnRequest, request: Request):
 
     if req.audio_url:
         audio_path = req.audio_url
-        # 解析音频路径：将URL路径转换为本地绝对路径
+        # 解析音频路径：支持完整公网 URL（https://host/uploads/audio/xxx.webm）
+        # 和相对路径（/uploads/audio/xxx.webm）两种形式
+        if audio_path.startswith("http://") or audio_path.startswith("https://"):
+            from urllib.parse import urlparse
+            audio_path = urlparse(audio_path).path
         if audio_path.startswith("/uploads/"):
             rel = audio_path[len("/uploads/"):]
             audio_path = os.path.normpath(os.path.join(UPLOAD_DIR, rel))
