@@ -1,0 +1,6 @@
+- [x] `api.ts` 不再包含 `BASE_URL`，所有 fetch 使用相对路径 `/api/...`
+- [x] `config.py` 中 `ARK_MODEL_ID` 改为 `doubao-1.5-vision-pro-250328`
+- [x] `next.config.ts` 中 `BACKEND_URL` 从 `process.env.BACKEND_URL` 读取（非 NEXT_PUBLIC_）
+- [x] `poa-backend/railway.toml` 已创建，包含正确的 build/start 命令
+- [ ] Railway 部署后前端场景页面能正常调用 `/api/scenario/analyze`（需 Railway 实际部署验证）
+- [ ] Railway 部署后豆包 VLM 能正确识别图片并返回场景分析结果（需 Railway 实际部署验证）

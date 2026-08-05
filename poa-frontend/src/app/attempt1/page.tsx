@@ -444,7 +444,10 @@ export default function Attempt1Page() {
         feedback_collapsed: false,
       };
       setHistory((prev) => {
-        const resolvedUserText = data.user_text || user_text;
+        let resolvedUserText = data.user_text || "";
+        if (!resolvedUserText && data.asr_error) {
+          resolvedUserText = `[语音转写失败: ${data.asr_error}] 请重试或直接输入文字`;
+        }
         if (resolvedUserText) {
           console.log("[backfill] model user_text:", resolvedUserText);
           const lastUserIdx = [...prev].reverse().findIndex((h) => h.role === "user");

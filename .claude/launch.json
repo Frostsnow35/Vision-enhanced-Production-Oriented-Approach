@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "口语评估服务",
+      "runtimeExecutable": "/usr/bin/python3",
+      "runtimeArgs": ["/Users/mac/Documents/金种子/server.py"],
+      "autoPort": true
+    }
+  ]
+}

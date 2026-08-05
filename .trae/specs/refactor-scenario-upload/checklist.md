@@ -1,0 +1,12 @@
+- [x] 上传 JPG/PNG 图片返回 200，`image_url` 正确
+- [x] 上传不支持的格式返回 400
+- [x] 上传后立即调用 `/api/scenario/analyze` 返回 200，包含 6 个场景字段
+- [x] 上传后场景分析在 Railway 部署环境也能正确读取图片文件
+- [x] 场景页不显示"样例照片库"Tab
+- [x] 场景页不显示样例照片网格
+- [x] 场景页仅显示本地上传区域
+- [x] 拖拽上传和点击上传均正常工作
+- [x] 生成交际任务按钮在上传图片后可用
+- [x] 后端 `/samples` 路由已移除
+- [x] 前端 `/samples/:path*` rewrite 已移除
+- [x] 后端 `/api/upload/image` 和 `/api/scenario/analyze` 目录不存在时不会 500

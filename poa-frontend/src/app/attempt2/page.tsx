@@ -767,10 +767,11 @@ export default function Attempt2Page() {
           feedback_collapsed: false,
         };
         setHistory((prev) => {
-          const resolvedUserText = data.user_text || user_text;
-          const asrErrorText = data.asr_error && !resolvedUserText ? "[未能识别语音，请重试]" : "";
-          const finalUserText = resolvedUserText || asrErrorText;
-          if (finalUserText) {
+          let resolvedUserText = data.user_text || "";
+          if (!resolvedUserText && data.asr_error) {
+            resolvedUserText = `[语音转写失败: ${data.asr_error}] 请重试或直接输入文字`;
+          }
+          if (resolvedUserText) {
             const lastUserIdx = [...prev].reverse().findIndex(h => h.role === "user");
             if (lastUserIdx >= 0) {
               const idx = prev.length - 1 - lastUserIdx;
@@ -778,7 +779,7 @@ export default function Attempt2Page() {
                 ...prev.slice(0, idx),
                 {
                   ...prev[idx],
-                  text: finalUserText,
+                  text: resolvedUserText,
                   resolved_user_text: resolvedUserText,
                 },
                 ...prev.slice(idx + 1),

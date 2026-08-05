@@ -1,0 +1,6 @@
+- [ ] 后端 /debug 端点返回 200 状态码
+- [ ] 调试信息包含 cwd、upload_dir、routes 等关键信息
+- [ ] POST /api/upload/image 返回 200 和 `{"image_url": "..."}`
+- [ ] POST /api/scenario/analyze 返回 200 和场景分析结果
+- [ ] 上传失败时返回详细错误信息
+- [ ] 前端上传图片后能成功生成交际任务

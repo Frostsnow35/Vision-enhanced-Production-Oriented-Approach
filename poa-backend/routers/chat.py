@@ -160,23 +160,11 @@ async def chat_start(req: ChatStartRequest):
 
     ai_audio_url = ""
     if ai_text:
-        import hashlib
-        _tts_dir = os.path.join(UPLOAD_DIR, "tts")
-        text_hash = hashlib.md5(ai_text.encode()).hexdigest()[:12]
-        cached_path = os.path.join(_tts_dir, f"{text_hash}.mp3")
-        if os.path.isfile(cached_path):
-            ai_audio_url = f"/uploads/tts/{text_hash}.mp3"
-            logger.info(f"[chat/start] TTS 缓存命中 → 秒返: {cached_path}")
-        else:
-            # 缓存未命中，后台生成 TTS（首次加载场景时出现，后续瞬时命中）
-            import threading
-            def _warm_tts():
-                try:
-                    text_to_speech(ai_text)
-                except Exception as ex:
-                    logger.warning(f"[chat/start] 后台 TTS 预热失败: {ex}")
-            threading.Thread(target=_warm_tts, daemon=True).start()
-            logger.info(f"[chat/start] TTS 缓存未命中，后台生成，前端用浏览器语音")
+        # 同步生成 TTS（text_to_speech 内部有缓存，命中则秒返）
+        try:
+            ai_audio_url = text_to_speech(ai_text) or ""
+        except Exception as ex:
+            logger.warning(f"[chat/start] TTS 生成失败: {ex}")
 
     logger.info(f"[chat/start] 响应耗时: {(_time.time() - _t0)*1000:.0f}ms, has_audio={bool(ai_audio_url)}")
     return ChatStartResponse(ai_text=ai_text, ai_audio_url=ai_audio_url)

@@ -1,0 +1,13 @@
+- [x] `poa-frontend/next.config.ts` 中 `BACKEND_URL` 默认值改为 `http://localhost:8000`
+- [x] `poa-frontend/src/lib/api.ts` 中 `BASE_URL` 默认值改为 `http://localhost:8000`
+- [x] `poa-frontend/.env.local` 已创建，包含 `NEXT_PUBLIC_API_BASE=http://localhost:8000`
+- [x] `poa-backend/main.py` 中已注册 `facilitate_router`
+- [x] `poa-backend/main.py` 中已注册 `exercise_router`
+- [x] `poa-backend/main.py` 中已注册 `chat_router`
+- [x] `poa-backend/main.py` 中已创建 `uploads/tts` 目录
+- [x] `poa-backend/main.py` 中已挂载 `/uploads` 静态文件
+- [x] `poa-backend/routers/attempt.py` 中 `/generate-input-pack` 端点已移除
+- [x] `poa-backend/routers/attempt.py` 中 `/generate-exercises` 端点已移除
+- [x] `poa-backend/routers/attempt.py` 中未使用 import 已清理
+- [ ] 后端启动后 `/docs` 页面显示所有 API 端点（需本地环境手动验证）
+- [ ] 前端场景页面选择样例照片 → 点击"生成交际任务"能成功调用后端（需本地环境手动验证）

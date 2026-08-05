@@ -1,0 +1,22 @@
+# Checklist
+
+- [x] `_REPLY_PROMPT` 规则 #2 已追加 FORBIDDEN 条款，禁止仅用泛泛兜底话术作答
+- [x] `_REPLY_PROMPT` 规则 #2 已标记 HIGHEST PRIORITY，含 BAD/GOOD 示例
+- [x] attempt2 `callChatTurn` 已修复：conversation_history 不再包含末尾用户轮次（避免 LLM 收到重复消息）
+- [x] attempt2 Plan A 收尾路径同样使用剔除后的 historyForBackend
+- [x] attempt1 `callChatTurn` 已修复：conversation_history 不再包含末尾用户轮次
+- [x] attempt1 Plan A 收尾路径同样使用剔除后的 historyForPlanA
+- [x] 后端 `routers/translate.py` 已新建且已在 `main.py` 注册
+- [x] `POST /api/translate` 能对正常英文单词返回翻译和音标
+- [x] `POST /api/translate` 调用失败时返回 fallback 不含后端异常
+- [x] 前端 `translateWord` 不再读取 `NEXT_PUBLIC_DOUBAO_*` 环境变量，改为调后端 `/api/translate`
+- [x] 前端触词翻译点击英文单词能弹出中文释义和音标（不再显示"未配置 API Key"）
+- [x] attempt2 页面右栏有可滚动的对话气泡列表，用户靠右蓝底、AI 靠左灰底
+- [x] attempt2 气泡新消息自动滚动到底部
+- [x] attempt2 气泡内文本支持 ClickableEnglish 触词翻译
+- [x] attempt2 AI 气泡下方有 turn_feedback Mini 卡片（若有）
+- [x] attempt1 页面同样有可滚动对话气泡列表
+- [x] attempt2 AI 说完后字幕区旁出现重播按钮，点击可再次播放语音
+- [x] attempt2 用户开始新录音时重播按钮自动隐藏
+- [x] attempt2 无音频的 AI 消息不显示重播按钮
+- [x] attempt1 AI 说完后字幕区旁出现重播按钮
