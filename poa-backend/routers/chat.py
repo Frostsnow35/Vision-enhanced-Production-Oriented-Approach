@@ -97,8 +97,11 @@ def _build_public_audio_url(request: Request, audio_path: str) -> tuple:
     """
     try:
         # 优先使用环境变量 BACKEND_PUBLIC_URL（Railway 公网地址），
-        # 否则用 request.base_url（本地开发 localhost:8000 等）
+        # 否则用 request.base_url。Railway 反向代理终止 TLS，request.base_url 为 http://，
+        # 火山引擎拒收 HTTP URL，需强制转为 HTTPS。
         base_url = _BACKEND_PUBLIC_URL if _BACKEND_PUBLIC_URL else str(request.base_url).rstrip("/")
+        if base_url.startswith("http://") and "localhost" not in base_url and "127.0.0.1" not in base_url:
+            base_url = base_url.replace("http://", "https://", 1)
         logger.info(f"[chat] ASR 公网 base_url: {base_url}")
         ext = os.path.splitext(audio_path)[-1].lower()
 
