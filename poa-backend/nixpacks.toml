@@ -1,0 +1,5 @@
+# Nixpacks 构建配置（Railway 部署用）
+# 安装 ffmpeg 作为 ASR 音频转码的系统级兜底（主路径用 PyAV，无需系统 ffmpeg）
+
+[phases.setup]
+nixPkgs = ["ffmpeg"]

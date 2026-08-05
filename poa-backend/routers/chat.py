@@ -31,38 +31,84 @@ def _clip_text(text: str, limit: int = 160) -> str:
     return value[:limit] + "..."
 
 
+def _convert_audio_for_asr(audio_path: str) -> str:
+    """
+    将前端录制的 webm/opus 等转码为火山标准版 ASR 可识别的 wav（16kHz 单声道）。
+    优先使用 PyAV（Python 库自带 FFmpeg 动态库，Railway 容器无需系统安装 ffmpeg），
+    失败则回退系统 ffmpeg 命令行。
+    @param audio_path  源音频绝对路径（webm/m4a/ogg/mp4/aac）
+    @return  转码后 wav 的绝对路径，失败返回 ""
+    """
+    import uuid
+
+    wav_dir = os.path.join(UPLOAD_DIR, "audio")
+    os.makedirs(wav_dir, exist_ok=True)
+    wav_path = os.path.join(wav_dir, f"asr_{uuid.uuid4().hex}.wav")
+
+    # 方案 1：PyAV（跨平台，无系统依赖）
+    try:
+        import av
+        with av.open(audio_path) as inp:
+            stream = inp.streams.audio[0]
+            resampler = av.audio.resampler.AudioResampler(format="s16", layout="mono", rate=16000)
+            with av.open(wav_path, "w", format="wav") as outp:
+                ostream = outp.add_stream("pcm_s16le", rate=16000)
+                for frame in inp.decode(stream):
+                    for rframe in resampler.resample(frame):
+                        for packet in ostream.encode(rframe):
+                            outp.mux(packet)
+                for rframe in resampler.resample(None):
+                    for packet in ostream.encode(rframe):
+                        outp.mux(packet)
+                for packet in ostream.encode(None):
+                    outp.mux(packet)
+        if os.path.isfile(wav_path) and os.path.getsize(wav_path) > 100:
+            logger.info(f"[chat] PyAV 转码成功: {wav_path}")
+            return wav_path
+    except Exception as e:
+        logger.warning(f"[chat] PyAV 转码失败，回退 ffmpeg: {e}")
+
+    # 方案 2：系统 ffmpeg 命令行
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["ffmpeg", "-y", "-i", audio_path, "-ar", "16000", "-ac", "1", wav_path],
+            capture_output=True, timeout=30,
+        )
+        if result.returncode == 0 and os.path.isfile(wav_path) and os.path.getsize(wav_path) > 100:
+            logger.info(f"[chat] ffmpeg 转码成功: {wav_path}")
+            return wav_path
+        logger.warning(f"[chat] ffmpeg 转码失败: {result.stderr.decode()[:200]}")
+    except Exception as e:
+        logger.warning(f"[chat] ffmpeg 转码异常: {e}")
+
+    if os.path.isfile(wav_path):
+        os.remove(wav_path)
+    return ""
+
+
 def _build_public_audio_url(request: Request, audio_path: str) -> tuple:
     """
     构造音频的公网可访问 URL，供火山引擎标准版 ASR 下载。
-    标准版仅支持 wav/mp3/ogg，前端录制的是 webm/opus，需用 ffmpeg 转码为 mp3
+    标准版仅支持 wav/mp3/ogg，前端录制的是 webm/opus，需转码为 wav（PyAV/ffmpeg）
     并存放到 uploads 目录（静态挂载可访问）。
     @return (url, audio_format)：url 为公网 URL，audio_format 为实际容器格式（wav/mp3/ogg），
             失败返回 ("", "")
     """
     try:
-        import subprocess
-        import uuid
-
         # 优先使用环境变量 BACKEND_PUBLIC_URL（Railway 公网地址），
         # 否则用 request.base_url（本地开发 localhost:8000 等）
         base_url = _BACKEND_PUBLIC_URL if _BACKEND_PUBLIC_URL else str(request.base_url).rstrip("/")
         logger.info(f"[chat] ASR 公网 base_url: {base_url}")
         ext = os.path.splitext(audio_path)[-1].lower()
 
-        # webm/m4a/ogg/mp4/aac → 转码为 mp3（标准版仅支持 wav/mp3/ogg）
+        # webm/m4a/ogg/mp4/aac → 转码为 wav（标准版仅支持 wav/mp3/ogg）
         if ext in (".webm", ".m4a", ".ogg", ".mp4", ".aac"):
-            mp3_dir = os.path.join(UPLOAD_DIR, "audio")
-            os.makedirs(mp3_dir, exist_ok=True)
-            mp3_name = f"asr_{uuid.uuid4().hex}.mp3"
-            mp3_path = os.path.join(mp3_dir, mp3_name)
-            result = subprocess.run(
-                ["ffmpeg", "-y", "-i", audio_path, "-ar", "16000", "-ac", "1", "-b:a", "64k", mp3_path],
-                capture_output=True, timeout=30,
-            )
-            if result.returncode != 0 or not os.path.isfile(mp3_path):
-                logger.warning(f"[chat] ffmpeg 转码 ASR 音频失败: {result.stderr.decode()[:200]}")
+            wav_path = _convert_audio_for_asr(audio_path)
+            if not wav_path:
                 return "", ""
-            return f"{base_url}/uploads/audio/{mp3_name}", "mp3"
+            rel = os.path.relpath(wav_path, UPLOAD_DIR).replace("\\", "/")
+            return f"{base_url}/uploads/{rel}", "wav"
         # wav/mp3 直接使用原始文件，返回其真实格式
         rel = os.path.relpath(audio_path, UPLOAD_DIR).replace("\\", "/")
         real_format = ext.lstrip(".")  # wav → "wav", mp3 → "mp3", ogg → "ogg"
