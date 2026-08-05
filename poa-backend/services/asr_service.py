@@ -30,11 +30,12 @@ def _build_asr_headers(req_id: str) -> dict:
     """
     构造火山引擎录音文件识别标准版的鉴权 Header。
     优先新版控制台鉴权（仅 X-Api-Key），回退旧版（X-Api-App-Key + X-Api-Access-Key）。
-    标准版不需要 X-Api-Sequence（那是流式 ASR 用的）。
+    注意：X-Api-Sequence 固定为 -1，官方文档明确要求提交和查询都带此字段。
     """
     headers = {
         "X-Api-Resource-Id": DOUBAO_ASR_RESOURCE_ID,
         "X-Api-Request-Id": req_id,
+        "X-Api-Sequence": "-1",
         "Content-Type": "application/json",
     }
     if DOUBAO_ASR_API_KEY:
