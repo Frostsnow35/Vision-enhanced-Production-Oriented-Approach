@@ -89,8 +89,12 @@ def _build_start_frame(params: dict, seq: int) -> bytes:
 
 
 def _build_audio_frame(pcm: bytes, seq: int, last: bool = False) -> bytes:
-    """构建音频帧 AudioOnlyRequest。最后一包（last=True）sequence 取负。"""
-    payload = gzip.compress(pcm) if pcm else b""
+    """
+    构建音频帧 AudioOnlyRequest。最后一包（last=True）sequence 取负。
+    注意：空 pcm（finish 帧）也必须 gzip.compress，空 GZIP 流有合法 20 字节头尾，
+    否则火山解压报 "unable to ungzip payload: EOF"。
+    """
+    payload = gzip.compress(pcm)  # 始终压缩，空 bytes 也产生合法 20 字节 GZIP
     flags = NEG_WITH_SEQUENCE if last else POS_SEQUENCE
     seq_value = -seq if last else seq
     header = _generate_header(AUDIO_ONLY_REQUEST, flags, NO_SERIALIZATION, GZIP_COMPRESSION)
@@ -101,6 +105,11 @@ def _parse_response(msg: bytes) -> dict:
     """
     解析服务端响应帧。官方协议中最终结果由 frame flags=0b0011 标记
     （JSON body 中无 is_final 字段）。
+
+    火山二进制帧格式：
+      4B header + [4B sequence] + 4B payload_size + payload
+    sequence 可选：flags==0 时不带 sequence；flags!=0 时 header 后紧跟 4 字节 int32 sequence。
+
     @return {"message_type": int, "flags": int, "body": dict}
     """
     MAX_PAYLOAD_SIZE = 64 * 1024 * 1024  # 大模型最终结果可能很大（含音频/调试信息）
@@ -110,11 +119,20 @@ def _parse_response(msg: bytes) -> dict:
     flags = msg[1] & 0x0F
     compression = msg[2] & 0x0F
     serialization = msg[2] >> 4
-    payload_size = int.from_bytes(msg[4:8], "big")
+
+    # 协议关键：flags != NO_SEQUENCE(0) 时，header 后紧跟 4 字节 int32 sequence
+    seq_offset = 4 if flags != NO_SEQUENCE else 0
+    ps_start = 4 + seq_offset   # payload_size 起始偏移
+    payload_start = 8 + seq_offset
+
+    if len(msg) < payload_start:
+        return {"message_type": message_type, "flags": flags, "body": {}}
+
+    payload_size = int.from_bytes(msg[ps_start:ps_start + 4], "big")
     if payload_size > MAX_PAYLOAD_SIZE:
         logger.warning(f"[ASR] 响应 payload 异常过大: {payload_size}（max={MAX_PAYLOAD_SIZE}），丢弃")
         return {"message_type": message_type, "flags": flags, "body": {}}
-    payload = msg[8:8 + payload_size]
+    payload = msg[payload_start:payload_start + payload_size]
     decompressed = False
     if compression == GZIP_COMPRESSION and payload:
         try:
@@ -136,7 +154,7 @@ def _parse_response(msg: bytes) -> dict:
         # 完全无法解析，记录原始帧头
         logger.warning(f"[ASR] 响应无法解析 msg_type={message_type} flags={flags} "
                        f"compression={compression} serialization={serialization} "
-                       f"payload_size={payload_size} raw_header={list(msg[:12])}")
+                       f"payload_size={payload_size} raw_header={list(msg[:payload_start + min(payload_size, 8)])}")
     return {"message_type": message_type, "flags": flags, "body": body}
 
 
