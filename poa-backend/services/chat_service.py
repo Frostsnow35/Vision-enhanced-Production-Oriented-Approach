@@ -6,7 +6,6 @@ import hashlib
 import json
 import logging
 import os
-import random
 import re
 import uuid
 from typing import Any, Dict, List
@@ -290,7 +289,7 @@ def _generate_turn_feedback(user_text: str, ai_text: str, task_context: Dict[str
 def generate_opening(task_context: Dict[str, Any]) -> str:
     """
     根据任务场景生成 AI 开场白。
-    优先调用 LLM，失败时降级为 Mock。
+    调用 LLM，失败时抛出异常。
     """
     scene = task_context.get("scene_label", "")
     roles = task_context.get("roles", "")
@@ -327,92 +326,8 @@ def generate_opening(task_context: Dict[str, Any]) -> str:
         logger.info(f"[chat] LLM 开场白: {text[:80]}")
         return text
     except Exception as e:
-        logger.warning(f"[chat] LLM 开场白失败: {e}，降级 Mock")
-
-    # Mock 降级
-    return _mock_opening(scene, roles, variant)
-
-
-def _mock_opening(scene: str, roles: str, variant: str) -> str:
-    label = (scene + roles + variant).lower()
-
-    # 变体开场白（先检查，因为变体优先匹配）
-    if "做错" in variant or "mistake" in label or "wrong" in label:
-        return random.choice([
-            "I'm so sorry about that! Let me check what went wrong and fix it for you.",
-            "Oh, I see there's been a mistake. Let me sort this out right away.",
-            "I apologize for the mix-up. Could you tell me exactly what happened?",
-        ])
-    if "优惠" in variant or "discount" in label or "sale" in label or "promo" in label:
-        return random.choice([
-            "Welcome! Just so you know, we're running a special promotion today — 20% off on all items. How can I help?",
-            "Hello! Great timing — we have a flash sale right now. What are you looking for?",
-            "Hi there! Happy hour just started, so you're in luck. What would you like?",
-        ])
-    if "迟到" in variant or "delay" in label or "late" in label:
-        return random.choice([
-            "I'm afraid there's been a delay. Let me help you figure out an alternative.",
-            "Sorry about the wait. Let me take care of you right now.",
-            "Thanks for your patience. Let's get this sorted out as quickly as possible.",
-        ])
-    if "超重" in variant or "overweight" in label or "luggage" in label or "bag" in label:
-        return random.choice([
-            "I'm sorry, but your luggage seems to be over the weight limit. Let's discuss your options.",
-            "Excuse me — your bag is a bit over the allowance. Let me explain the options we have.",
-        ])
-
-    # ---- 按场景分类的丰富模板 ----
-    if "咖啡" in label or "cafe" in label or "coffee" in label:
-        return random.choice([
-            "Good morning! Our single-origin Ethiopian pour-over is fantastic today. What catches your eye?",
-            "Hi! Welcome to Brew & Co. Are you in the mood for something hot or iced today?",
-            "Hey there! Our seasonal special — a lavender honey latte — just launched. Want to try it?",
-            "Welcome in! First time here? Our espresso and cold brew are both very popular.",
-            "Hi! Can I start you off with a drink? We've got fresh pastries too if you're interested.",
-        ])
-    if "图书馆" in label or "library" in label:
-        return random.choice([
-            "Welcome to the library! Are you looking for anything specific today, or just browsing?",
-            "Good afternoon! Just to let you know, we have a new arrivals section near the front desk.",
-            "Hello! How can I help you find what you need? I can check our catalog for you.",
-            "Welcome! If you need help navigating the sections, I'm happy to point you in the right direction.",
-        ])
-    if "餐厅" in label or "restaurant" in label or "dining" in label:
-        return random.choice([
-            "Good evening! Do you have a reservation with us tonight?",
-            "Welcome to The Garden Table! Table for how many this evening?",
-            "Hi, welcome! Would you prefer to sit indoors or on the patio today?",
-            "Good evening! Our chef's special tonight is the pan-seared salmon — would you like to hear the full specials?",
-        ])
-    if "医院" in label or "hospital" in label or "clinic" in label or "medical" in label:
-        return random.choice([
-            "Hello, how can I help you today? Do you have an appointment?",
-            "Good morning. Are you here for a scheduled appointment, or do you need to see a doctor urgently?",
-            "Hi there. I'm Dr. Chen's nurse. Could you describe what brought you in today?",
-            "Hello. Before we start, could you tell me about any symptoms you've been experiencing?",
-        ])
-    if "机场" in label or "airport" in label or "flight" in label:
-        return random.choice([
-            "Good morning! May I see your passport and booking reference, please?",
-            "Hello! Are you checking in any bags today, or just carry-on?",
-            "Good morning! Where are you flying to today? I'll get you checked in.",
-            "Hi there! Window or aisle seat? And do you have any luggage to check in?",
-        ])
-    if "商场" in label or "mall" in label or "shop" in label or "store" in label:
-        return random.choice([
-            "Hello! Welcome! Are you looking for anything in particular today?",
-            "Hi there! Just to let you know, we have a buy-one-get-one sale on winter items. Can I help you find something?",
-            "Welcome! Feel free to look around, and let me know if you need any sizes or colors.",
-            "Good afternoon! Is there a specific style or brand you're interested in?",
-        ])
-
-    # 默认备用
-    defaults = [
-        "Hello! How can I assist you today?",
-        "Good day! What brings you here?",
-        "Hi! Let me know how I can help.",
-    ]
-    return random.choice(defaults)
+        logger.error(f"[chat] LLM 开场白失败: {e}")
+        raise
 
 
 # ============================================================
@@ -565,7 +480,7 @@ Keep it under 30 words. Stay in character."""
 def request_closing_line(task_context: Dict[str, Any]):
     """
     Plan A 收尾调用：构造 system 提示让 AI 自然告别并打 [CONVERSATION_COMPLETE] 标记。
-    返回 (ai_text, is_final)。失败时降级为通用告别 + is_final=True。
+    返回 (ai_text, is_final)。失败时直接 raise 异常。
     """
     scene = task_context.get("scene_label", "")
     roles = task_context.get("roles", "")
@@ -608,13 +523,8 @@ def request_closing_line(task_context: Dict[str, Any]):
             is_final = True
         return ai_text, is_final
     except Exception as e:
-        logger.warning(f"[chat] Plan A 收尾 LLM 失败: {e}，降级为通用告别")
-        # 降级：如果有预生成的 closing_line 就用它，否则用通用告别
-        fallback = closing_line.strip() if closing_line else "Thanks for chatting with me! Have a great day."
-        if not fallback.endswith("[CONVERSATION_COMPLETE]"):
-            fallback = fallback + " [CONVERSATION_COMPLETE]"
-        ai_text, is_final = _extract_completion_flag(fallback)
-        return ai_text, True
+        logger.error(f"[chat] Plan A 收尾 LLM 失败: {e}")
+        raise
 
 
 # ============================================================

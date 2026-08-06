@@ -10,8 +10,6 @@ from sqlalchemy.orm import Session
 
 from config import get_db
 from models import Attempt, Evaluation
-from schemas import EvaluateRequest, EvaluateResponse
-from services.ai_service import evaluate as mock_evaluate
 from services.evaluate_service import evaluate_single, evaluate_compare, evaluate_target_gaps
 
 logging.basicConfig(level=logging.INFO)
@@ -39,6 +37,7 @@ class EvaluateCompareRequest(BaseModel):
     audio2_paths: List[str] = []  # 二次产出音频路径列表
     gaps: list = []  # 可选：初次产出的诊断 gaps
     attempt1_scores: dict = {}  # 预计算的 attempt1 七维评分，传入后跳过重分析
+    evaluation_criteria: str = ""  # 任务的场景化评价标准（3-5条）
 
 
 class EvaluateCompareResponse(BaseModel):
@@ -48,17 +47,6 @@ class EvaluateCompareResponse(BaseModel):
     comparison: list
     target_evaluation: list = []  # 靶向评估结果（仅传入 gaps 时有值）
     audio_analysis: dict = {}  # 音频分析原始指标
-
-
-# ---- POST /api/evaluate（旧接口，保留兼容）----
-@router.post("/evaluate", response_model=EvaluateResponse)
-async def evaluate_attempts(req: EvaluateRequest):
-    """对比改进前后两次作答，返回七维度双轨评价。"""
-    result = mock_evaluate(
-        attempt1_text=req.attempt1_text,
-        attempt2_text=req.attempt2_text,
-    )
-    return result
 
 
 # ---- POST /api/evaluate-single ----
@@ -90,11 +78,13 @@ async def eval_compare(req: EvaluateCompareRequest, db: Session = Depends(get_db
 
     # 如果有预计算的 attempt1 评分，只评估 attempt2 然后合并
     pre_scores = req.attempt1_scores
+    eval_criteria = req.evaluation_criteria or ""
     if pre_scores and len(pre_scores) > 0:
         logger.info("[evaluate] 使用预计算 attempt1 评分，仅评估 attempt2")
         a2_result = evaluate_single(
             conversation_text=req.attempt2_text,
             audio_paths=audio2_paths,
+            evaluation_criteria=eval_criteria,
         )
         a2_scores = a2_result.get("dimension_scores", {})
 
@@ -131,6 +121,7 @@ async def eval_compare(req: EvaluateCompareRequest, db: Session = Depends(get_db
             attempt2_text=req.attempt2_text,
             audio1_paths=audio1_paths,
             audio2_paths=audio2_paths,
+            evaluation_criteria=eval_criteria,
         )
 
     # 靶向评估

@@ -11,7 +11,7 @@ from typing import List, Optional
 
 from config import get_db
 from models import Attempt, Gap as GapModel, InputPack
-from services.facilitate_service import generate_materials, _mock_result
+from services.facilitate_service import generate_materials
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("facilitate_router")
@@ -103,4 +103,4 @@ async def generate(req: GenerateMaterialsRequest, db: Session = Depends(get_db))
         return result
     except Exception as e:
         logger.error(f"生成材料失败: {e}")
-        return _mock_result()
+        return {"error": str(e), "phrases": [], "dialogue": {}, "exercises": []}

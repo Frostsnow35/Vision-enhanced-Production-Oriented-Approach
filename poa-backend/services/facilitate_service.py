@@ -292,8 +292,7 @@ def generate_materials(
     logger.info(f"[facilitate] 场景类型: {scene_type} (label={scene_label})")
 
     if not gaps:
-        logger.info("[facilitate] 没有 Gap 数据，使用场景相关 Mock")
-        return _mock_result(scene_type)
+        raise ValueError("没有 Gap 数据，无法生成促成学习材料")
 
     gap_descriptions = []
     for g in gaps:
@@ -395,18 +394,6 @@ JSON 结构:
         except Exception as e:
             logger.warning(f"[facilitate] 尝试 {attempt + 1} 失败: {e}")
 
-    logger.warning(f"LLM 生成失败（场景={scene_type}），使用场景相关 Mock 兜底")
-    return _mock_result(scene_type)
-
-
-def _mock_result(scene_type: str = "generic") -> Dict[str, Any]:
-    """根据场景类型返回对应的 Mock 数据，而非固定咖啡店"""
-    scene_lower = scene_type.lower()
-    phrases = SCENE_PHRASES.get(scene_lower, SCENE_PHRASES["generic"])
-    dialogue = SCENE_DIALOGUES.get(scene_lower, SCENE_DIALOGUES["generic"])
-    exercises = SCENE_EXERCISES.get(scene_lower, SCENE_EXERCISES["generic"])
-    return {
-        "phrases": phrases,
-        "dialogue": dialogue,
-        "exercises": exercises,
-    }
+    raise RuntimeError(
+        f"LLM 生成失败（场景={scene_type}），已重试2次仍无法获取有效结果"
+    )

@@ -507,8 +507,12 @@ export default function FacilitatePage() {
               if (dim in rawScores) filtered[dim] = Number(rawScores[dim]) || 0;
               if (typeof rawComments[dim] === "string" && rawComments[dim].trim()) filteredComments[dim] = rawComments[dim];
             }
-            setScores(Object.keys(filtered).length > 0 ? filtered : getMockScores());
-            setComments(Object.keys(filteredComments).length > 0 ? filteredComments : null);
+            if (Object.keys(filtered).length > 0) {
+              setScores(filtered);
+              setComments(Object.keys(filteredComments).length > 0 ? filteredComments : null);
+            } else {
+              throw new Error("empty filtered scores");
+            }
           } else {
             throw new Error("empty scores");
           }
@@ -516,7 +520,7 @@ export default function FacilitatePage() {
           throw new Error(`${res.status}`);
         }
       } catch {
-        setScores(getMockScores());
+        // API 错误时 scores 保持 null，由 AssessmentTab 展示"暂无评估数据"
       } finally {
         setScoresLoading(false);
       }
@@ -857,8 +861,8 @@ function AssessmentTab({
   const [showAllDetails, setShowAllDetails] = useState(false);
 
   useEffect(() => {
-    if (!chartRef.current) return;
-    const scoreMap = scores ?? getMockScores();
+    if (!chartRef.current || !scores) return;
+    const scoreMap = scores;
     const dims = DIM_ORDER.filter((d) => d in scoreMap);
     const values = dims.map((d) => scoreMap[d] ?? 0);
     const indicator = dims.map((name) => ({ name, min: 1, max: 5 }));
@@ -950,7 +954,7 @@ function AssessmentTab({
     );
   }
 
-  const scoreMap = scores ?? getMockScores();
+  const scoreMap = scores;
   const avgScore =
     Object.values(scoreMap).reduce((a, b) => a + b, 0) / Object.values(scoreMap).length;
 
@@ -1773,16 +1777,5 @@ function OralTab({
 }
 
 /* ============================================================
-   辅助函数
+   END
    ============================================================ */
-function getMockScores(): DimScores {
-  return {
-    "发音标准度": 2.5,
-    "语法规范性": 2.0,
-    "词汇适配性": 1.5,
-    "语言功能达成度": 3.0,
-    "语用策略得体性": 1.5,
-    "话语回合适配性": 2.0,
-    "副语言匹配度": 3.0,
-  };
-}

@@ -69,6 +69,10 @@ async def submit_attempt1(req: AttemptSubmitRequest, db: Session = Depends(get_d
 
     # ---- 查找 task 获取场景上下文 ----
     scene_context = ""
+    scene_label = ""
+    task_roles = ""
+    task_goal = ""
+    evaluation_criteria = ""
     task_id_to_save = req.task_id
     if not task_id_to_save and req.scenario_id:
         from models import POATask
@@ -82,7 +86,10 @@ async def submit_attempt1(req: AttemptSubmitRequest, db: Session = Depends(get_d
         if t:
             s = db.query(Scenario).filter(Scenario.id == t.scenario_id).first()
             scene_label = s.scene_label if s else "未知"
-            scene_context = f"场景：{scene_label}，角色：{t.roles or '未知'}，目标：{t.goal or '未知'}"
+            task_roles = t.roles or "未知"
+            task_goal = t.goal or "未知"
+            evaluation_criteria = t.evaluation_criteria or ""
+            scene_context = f"场景：{scene_label}，角色：{task_roles}，目标：{task_goal}"
 
     result = diagnose_attempt(attempt_text=diagnosis_text, scene_context=scene_context)
     high_freq = _extract_high_freq_errors(diagnosis_text)
@@ -110,7 +117,18 @@ async def submit_attempt1(req: AttemptSubmitRequest, db: Session = Depends(get_d
     dimension_scores = {}
     try:
         from services.evaluate_service import evaluate_single
-        eval_result = evaluate_single(conversation_text=diagnosis_text, task_context={"scene_label": scene_context}, audio_paths=audio_paths)
+        task_context = {
+            "scene_label": scene_label,
+            "roles": task_roles,
+            "goal": task_goal,
+            "evaluation_criteria": evaluation_criteria,
+        }
+        eval_result = evaluate_single(
+            conversation_text=diagnosis_text,
+            task_context=task_context,
+            audio_paths=audio_paths,
+            evaluation_criteria=evaluation_criteria,
+        )
         dimension_scores = eval_result.get("dimension_scores", {})
         logger.info(f"[attempt1] 七维评分完成: {list(dimension_scores.keys())}")
     except Exception as e:
@@ -160,6 +178,10 @@ async def submit_attempt2(req: AttemptSubmitRequest, db: Session = Depends(get_d
 
     # ---- 查找 task 获取场景上下文 ----
     scene_context = ""
+    scene_label = ""
+    task_roles = ""
+    task_goal = ""
+    evaluation_criteria = ""
     task_id_to_save = req.task_id
     if not task_id_to_save and req.scenario_id:
         from models import POATask
@@ -173,11 +195,32 @@ async def submit_attempt2(req: AttemptSubmitRequest, db: Session = Depends(get_d
         if t:
             s = db.query(Scenario).filter(Scenario.id == t.scenario_id).first()
             scene_label = s.scene_label if s else "未知"
-            scene_context = f"场景：{scene_label}，角色：{t.roles or '未知'}，目标：{t.goal or '未知'}"
+            task_roles = t.roles or "未知"
+            task_goal = t.goal or "未知"
+            evaluation_criteria = t.evaluation_criteria or ""
+            scene_context = f"场景：{scene_label}，角色：{task_roles}，目标：{task_goal}"
 
     result = diagnose_attempt(attempt_text=diagnosis_text, scene_context=scene_context)
     high_freq = _extract_high_freq_errors(diagnosis_text)
     gaps = result.get("gaps", [])
+
+    # ---- 音频 URL → 本地路径（供发音/副语言分析）----
+    audio_paths: List[str] = []
+    if req.audio_urls:
+        for url in req.audio_urls:
+            if not url:
+                continue
+            if url.startswith("/uploads/"):
+                rel = url[len("/uploads/"):]
+                path = os.path.normpath(os.path.join(UPLOAD_DIR, rel))
+                if os.path.isfile(path):
+                    audio_paths.append(path)
+            elif url.startswith("/"):
+                path = os.path.normpath(os.path.join(UPLOAD_DIR, url[1:]))
+                if os.path.isfile(path):
+                    audio_paths.append(path)
+    if audio_paths:
+        logger.info(f"[attempt2] 收到 {len(audio_paths)} 个音频文件用于发音分析")
 
     # ---- 保存到数据库 ----
     if task_id_to_save and task_id_to_save > 0:
@@ -215,7 +258,18 @@ async def submit_attempt2(req: AttemptSubmitRequest, db: Session = Depends(get_d
                     if not existing:
                         # 读取 attempt1 时预计算的维度评分
                         from services.evaluate_service import evaluate_single as es_single
-                        a2_eval = es_single(conversation_text=diagnosis_text)
+                        task_context = {
+                            "scene_label": scene_label,
+                            "roles": task_roles,
+                            "goal": task_goal,
+                            "evaluation_criteria": evaluation_criteria,
+                        }
+                        a2_eval = es_single(
+                            conversation_text=diagnosis_text,
+                            task_context=task_context,
+                            audio_paths=audio_paths,
+                            evaluation_criteria=evaluation_criteria,
+                        )
                         a2_scores = a2_eval.get("dimension_scores", {})
 
                         # 从 attempt1 的 gaps 中无法获取原始评分，用固定基准

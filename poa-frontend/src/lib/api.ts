@@ -6,6 +6,22 @@
 export const BASE_URL = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
 
 /**
+ * 通用 POST 请求封装（JSON 请求体 → JSON 响应）
+ */
+async function request<T>(path: string, body: Record<string, unknown>): Promise<T> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "Unknown error");
+    throw new Error(`API error ${res.status}: ${errText}`);
+  }
+  return res.json();
+}
+
+/**
  * 构建图片 URL
  * 后端静态文件：/uploads/ → uploads/ 目录
  *            /samples/ → sample_images/ 目录
@@ -28,20 +44,6 @@ export function buildImageUrl(imagePath: string): string {
   return `${BASE_URL}/${imagePath}`;
 }
 
-async function request<T>(path: string, body: Record<string, unknown>): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const detail = await res.text().catch(() => "Unknown error");
-    throw new Error(`API ${path} 返回 ${res.status}: ${detail}`);
-  }
-  return res.json();
-}
-
-// ---- 场景分析 ----
 export interface ScenarioResult {
   scenario_id?: number;
   task_id?: number;
@@ -128,7 +130,7 @@ export async function generateExercises(gaps: GapItem[]): Promise<ExercisesResul
   return request<ExercisesResult>("/api/generate-exercises", { gaps });
 }
 
-// ---- 双轨评价 ----
+// ---- 双轨评价（类型定义，供 store 使用）----
 export interface DimensionScore {
   attempt1: number;
   attempt2: number;
@@ -138,13 +140,6 @@ export interface EvaluateResult {
   dimension_scores: Record<string, DimensionScore>;
   problem_improved: string;
   full_report: string;
-}
-
-export async function evaluateAttempts(
-  attempt1_text: string,
-  attempt2_text: string
-): Promise<EvaluateResult> {
-  return request<EvaluateResult>("/api/evaluate", { attempt1_text, attempt2_text });
 }
 
 // ---- 对话 API ----

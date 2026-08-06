@@ -53,19 +53,6 @@ const DIM_LABELS: Record<string, string> = {
   "副语言匹配度": "副语言匹配度",
 };
 
-const MOCK_EVALUATE: EvaluateData = {
-  dimension_scores: {
-    "发音标准度":     { attempt1: 2.5, attempt2: 3.5, change: 1.0, weight: 0.20, explanation: "初次产出句式较短，元音区分不明显；二次产出句式完整、词汇丰富，推断发音清晰度和语调均有提升。" },
-    "语法规范性":     { attempt1: 2.0, attempt2: 3.8, change: 1.8, weight: 0.15, explanation: "时态错误从 5 处降至 1 处，主谓一致基本正确。" },
-    "词汇适配性":     { attempt1: 2.0, attempt2: 3.5, change: 1.5, weight: 0.10, explanation: "从 'big cup' 转变为 'large'/'oat milk' 等场景词汇。" },
-    "语言功能达成度": { attempt1: 3.0, attempt2: 4.0, change: 1.0, weight: 0.10, explanation: "第二次完成了全部交际要点，无关键信息缺失。" },
-    "语用策略得体性": { attempt1: 1.5, attempt2: 4.0, change: 2.5, weight: 0.10, explanation: "从祈使句转变为 'I'd like'/'Could I have'，礼貌意识显著提升。" },
-    "话语回合适配性": { attempt1: 2.5, attempt2: 3.5, change: 1.0, weight: 0.15, explanation: "话轮长度从单方面长发言转换为 30-70% 合理占比，能使用 'What about you?' 转换话轮。" },
-    "副语言匹配度":   { attempt1: 3.0, attempt2: 3.5, change: 0.5, weight: 0.20, explanation: "二次产出衔接词使用增加，话轮闭合自然，由此推断节奏感和流利度有所提升。" },
-  },
-  overall_improvement: "七个维度均有提升，语用策略得体性进步最大（+2.5）。",
-};
-
 /* ============================================================
    将后端返回的 comparison 数组转换为 dimension_scores 格式
    ============================================================ */
@@ -133,6 +120,7 @@ export default function EvaluatePage() {
   const [targetEval, setTargetEval] = useState<TargetEvalItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [scenarioId, setScenarioId] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     // 如果 sessionStorage 有标记（正常导航），直接加载评价数据
@@ -183,6 +171,7 @@ export default function EvaluatePage() {
       const taskId = currentTaskParsed.task_id || 0;
       const scenarioIdFromStorage: number | null = currentTaskParsed.scenarioId ?? null;
       if (scenarioIdFromStorage) setScenarioId(scenarioIdFromStorage);
+      const evaluationCriteria: string = currentTaskParsed.evaluation_criteria || "";
       const res = await fetch(`${BASE_URL}/api/evaluate-compare`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -194,6 +183,7 @@ export default function EvaluatePage() {
           audio2_paths: JSON.parse(localStorage.getItem("attempt2_audio_urls") || "[]"),
           gaps,
           attempt1_scores,
+          evaluation_criteria: evaluationCriteria,
         }),
       });
 
@@ -252,16 +242,16 @@ export default function EvaluatePage() {
             });
           } catch (e) { console.warn("[evaluate] 写入 journey 失败:", e); }
         } else {
-          setData(MOCK_EVALUATE);
+          setError("评价数据为空，请稍后重试");
         }
         if (Array.isArray(raw.target_evaluation) && raw.target_evaluation.length > 0) {
           setTargetEval(raw.target_evaluation);
         }
       } else {
-        setData(MOCK_EVALUATE);
+        setError("评价服务暂时不可用，请稍后重试");
       }
     } catch {
-      setData(MOCK_EVALUATE);
+      setError("网络请求失败，请检查网络后重试");
     } finally {
       setLoading(false);
       setInitDone(true);
@@ -316,6 +306,21 @@ export default function EvaluatePage() {
       <div className="space-y-4 py-12">
         <InlineLoadingHint show message="AI 正在对比两轮产出并生成评价..." height="h-48" />
         <InlineLoadingHint show message="正在分析你的提升表现..." height="h-32" />
+      </div>
+    );
+  }
+
+  // ---- 错误 ----
+  if (error) {
+    return (
+      <div className="mx-auto max-w-2xl py-8">
+        <div className="card p-8 text-center space-y-4">
+          <h2 className="text-lg font-semibold text-destructive">评价生成失败</h2>
+          <p className="text-sm text-muted-foreground">{error}</p>
+          <Button variant="outline" onClick={() => { setError(null); setLoading(true); loadEvaluationData(); }}>
+            重新尝试
+          </Button>
+        </div>
       </div>
     );
   }

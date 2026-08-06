@@ -6,7 +6,7 @@ import hashlib
 import json
 import logging
 import os
-import random
+
 import time
 import base64
 from typing import Any, Dict, List
@@ -300,51 +300,6 @@ _INPUTPACK_PROMPT = """你是英语教学材料设计师。根据学生的不足
  "demo_dialogue":"示范对话(英文,标注说话人)",
  "strategy_tip":"学习策略提示(中文)"}"""
 
-_MOCK_DIAGNOSIS = {
-    "gaps": [
-        {"label": "请求句式-过于直接",
-         "evidence_sentence": "(使用祈使句或直接表达)",
-         "explanation": "在服务场景中应使用委婉请求句式如 'I'd like...'、'Could I...' 代替直接的 'I want...' 或 'Give me...'。"},
-        {"label": "场景词汇-不够准确",
-         "evidence_sentence": "(使用通用词汇代替场景专有表达)",
-         "explanation": "每个场景有其核心词汇，应使用场景专有术语而非泛化表达，使沟通更精准地​道。"},
-        {"label": "互动确认-话轮衔接不足",
-         "evidence_sentence": "(回应简短，缺乏确认)",
-         "explanation": "对话中应对对方提问做简短确认再用完整句式回应，使用 please/thank you 等礼貌标记。"},
-    ]
-}
-
-_MOCK_SINGLE = {
-    "scores": {"发音标准度": 3.0, "语法规范性": 2.5, "词汇适配性": 2.5,
-               "语言功能达成度": 2.5, "语用策略得体性": 2.5, "话语回合适配性": 2.5, "副语言匹配度": 3.0},
-    "comments": {"发音标准度": "句式基本完整，可推断发音清晰度尚可。", "语法规范性": "Mock降级数据，请重试。",
-                 "词汇适配性": "Mock降级数据，请重试。", "语言功能达成度": "Mock降级数据，请重试。",
-                 "语用策略得体性": "Mock降级数据，请重试。", "话语回合适配性": "Mock降级数据，请重试。",
-                 "副语言匹配度": "对话有一定衔接，节奏感基本自然。"}
-}
-
-_MOCK_INPUTPACK = {
-    "scene_chunks": [
-        {"chunk": "I'd like a ...", "meaning": "我想要一杯...", "usage": "点单开头"},
-        {"chunk": "with oat milk", "meaning": "加燕麦奶", "usage": "乳制品替代"},
-        {"chunk": "for here / to go", "meaning": "堂食/带走", "usage": "回应咖啡师"},
-    ],
-    "functional_sentences": [
-        {"function": "礼貌点单", "sentence": "Hi, I'd like a large iced latte, please."},
-        {"function": "特殊需求", "sentence": "Could I have that with oat milk? I'm lactose intolerant."},
-        {"function": "确认回应", "sentence": "For here, please. Thank you!"},
-    ],
-    "demo_dialogue": (
-        "Barista: Hi! What can I get for you?\n"
-        "Customer: I'd like a medium iced latte, please.\n"
-        "Barista: For here or to go?\n"
-        "Customer: For here, thanks. And could I have that with oat milk?\n"
-        "Barista: Of course! That'll be $5.50.\n"
-        "Customer: Here's my card. Thank you!"
-    ),
-    "strategy_tip": "公式: 问候 + I'd like + 大小 + 温度 + 品类 + 定制 + please。没听清用 'Sorry, could you repeat that?'。",
-}
-
 
 # ============================================================
 # 1. 场景分析
@@ -495,72 +450,10 @@ _DIAGNOSIS_PROMPT = """\
 - 音频维度解释不能提"无音频分析"或"由文本推断"，直接用自然措辞
 - high_freq_errors 至少 1 条，最多 3 条，phrase 必须来自原文
 """
-
-
-def get_diagnosis_fallback() -> Dict[str, Any]:
-    """
-    返回固定的 Top 3 不足（含文本+音频维度，通用版）。
-    当真实 LLM 调用失败或未启用时使用。
-    """
-    return {
-        "gaps": [
-            {
-                "label": "话轮衔接-缺乏互动确认",
-                "evidence_sentence": "(对方提问后直接作答，缺少衔接词)",
-                "reference_expression": "Sure, I'd like a cappuccino, please.",
-                "explanation": (
-                    "在真实对话中，回应对方提问前应先做简短确认（acknowledgement），"
-                    "例如 'Sure', 'Of course', 'Let me see' 等，再展开回答。"
-                    "这样能让对话更自然，也给对方一个你理解了问题的信号。"
-                    "建议：在回答前加一句衔接语，如 'Sure, I'd like...' "
-                    "而不是直接给出答案。"
-                ),
-            },
-            {
-                "label": "请求句式-过于直接",
-                "evidence_sentence": "(使用 'I want...' / 'Give me...' 等直接表达)",
-                "reference_expression": "Could I have a large latte with oat milk, please?",
-                "explanation": (
-                    "在英语服务场景中，使用 'I want...' 或祈使句 'Give me...' "
-                    "会显得生硬甚至不礼貌。母语者通常使用 'I'd like...'、"
-                    "'Could I have...'、'May I...' 等委婉句式。"
-                    "建议：用 'I'd like...' 替代 'I want...'，"
-                    "用 'Could I get...' 替代 'Give me...'。"
-                ),
-            },
-            {
-                "label": "场景词汇-不够丰富或不够准确",
-                "evidence_sentence": "(使用了过于泛化的词汇，缺少场景专有表达)",
-                "reference_expression": "Could I switch to almond milk instead?",
-                "explanation": (
-                    "每个交际场景都有其核心词汇和固定搭配。使用过于泛化的词汇"
-                    "（如 'thing', 'stuff', 'big', 'get'）会让表达显得不够地道。"
-                    "建议：积累场景特定的词汇，例如咖啡店的 'latte/cappuccino/oat milk'，"
-                    "图书馆的 'check out/renew/overdue'，餐厅的 'appetizer/main course/bill'。"
-                ),
-            },
-            {
-                "label": "发音清晰度-语流不够连贯",
-                "evidence_sentence": "(句式简短且缺少连接词)",
-                "reference_expression": "I think I'll go with the vanilla latte, and could I also get a blueberry muffin?",
-                "explanation": (
-                    "你的句子较短且缺乏连接词（and/but/so），由此可以判断说出这些句子时"
-                    "语流可能不够连贯，词与词之间停顿偏多。建议练习使用连接词将短句"
-                    "合并为流畅的复合句，这样发音时的语流自然会更加连贯。"
-                ),
-            },
-        ],
-        "high_freq_errors": [],
-    }
-
-
 def diagnose_attempt(attempt_text: str, scene_context: str = "") -> Dict[str, Any]:
     """
     对学生的一次作答文本进行诊断，返回发现的语言/语用不足（Gap 格式）。
-
-    策略：
-      1. 优先尝试调用真实 LLM（豆包 REST API）
-      2. 如果 LLM 调用失败或未启用，降级使用 get_diagnosis_fallback()
+    直接调用真实 LLM，失败时抛出异常。
     """
     logger.info(f"[diagnose_attempt] text={attempt_text[:100]}... context={scene_context[:50]}")
 
@@ -611,10 +504,8 @@ def diagnose_attempt(attempt_text: str, scene_context: str = "") -> Dict[str, An
         return parsed
 
     except Exception as e:
-        logger.warning(f"[diagnose_attempt] LLM 调用失败: {e}，降级使用 fallback")
-
-    # 2. 降级 → fallback
-    return get_diagnosis_fallback()
+        logger.error(f"[diagnose_attempt] LLM 调用失败: {e}")
+        raise
 
 
 # ============================================================
@@ -716,8 +607,8 @@ def generate_input_pack(gaps: List[Dict[str, Any]]) -> Dict[str, Any]:
         logger.info(f"  chunks={len(result.get('scene_chunks',[]))}")
         return result
     except Exception as e:
-        logger.warning(f"  LLM failed: {e}, using Mock")
-        return dict(_MOCK_INPUTPACK)
+        logger.error(f"  LLM failed: {e}")
+        raise
 
 
 # ============================================================
@@ -735,113 +626,5 @@ def generate_exercises(gaps: List[Dict[str, Any]]) -> Dict[str, Any]:
         logger.info(f"  exercises={len(result.get('exercises',[]))}")
         return result
     except Exception as e:
-        logger.warning(f"  LLM failed: {e}, using fallback")
-        return {"exercises": [
-            {"id": 1, "type": "multiple_choice", "gap_target": gaps[0].get("label","") if gaps else "通用",
-             "question": "请根据学习材料中的示范对话，选择最合适的回应方式。",
-             "options": [{"key":"A","text":"I want this."},{"key":"B","text":"I'd like this, please."},{"key":"C","text":"Give me this."}],
-             "answer": "B", "feedback": "礼貌请求应使用 'I'd like...' + 'please'。"},
-        ]}
-
-
-# ============================================================
-# 5. 单次七维评估
-# ============================================================
-def evaluate_single(conversation_text: str) -> Dict[str, Any]:
-    logger.info(f"[evaluate_single] text_len={len(conversation_text)}")
-    if _is_empty_or_placeholder(conversation_text):
-        return dict(_NO_VALID_INPUT)
-    try:
-        raw = _call_doubao([
-            {"role": "system", "content": _SINGLE_PROMPT},
-            {"role": "user", "content": conversation_text[:2000]},
-        ])
-        result = _parse_json(raw)
-        logger.info(f"  scores={len(result.get('scores',{}))} dims")
-        return result
-    except Exception as e:
-        logger.warning(f"  LLM failed: {e}, using Mock")
-        scores = {}
-        comments = {}
-        for dim in ["发音标准度", "语法规范性", "词汇适配性", "语言功能达成度", "语用策略得体性", "话语回合适配性", "副语言匹配度"]:
-            scores[dim] = round(2.0 + random.uniform(0, 1.5), 1)
-            comments[dim] = "LLM 调用失败，当前为 Mock 降级数据。"
-        scores["发音标准度"] = 2.5
-        scores["副语言匹配度"] = 2.5
-        return {"scores": scores, "comments": comments}
-
-
-# ============================================================
-# 6. 双轨对比评估
-# ============================================================
-def evaluate_compare(attempt1_text: str, attempt2_text: str) -> Dict[str, Any]:
-    logger.info(f"[evaluate_compare] len1={len(attempt1_text)} len2={len(attempt2_text)}")
-    if _is_empty_or_placeholder(attempt1_text) or _is_empty_or_placeholder(attempt2_text):
-        return dict(_NO_VALID_INPUT)
-    try:
-        raw = _call_doubao([
-            {"role": "system", "content": _COMPARE_PROMPT},
-            {"role": "user", "content": f"【初次产出】\n{attempt1_text[:1500]}\n\n【二次产出】\n{attempt2_text[:1500]}"},
-        ])
-        data = _parse_json(raw)
-        comparison = data.get("comparison", [])
-        a1, a2 = {}, {}
-        for c in comparison:
-            a1[c["dimension"]] = c["attempt1_score"]
-            a2[c["dimension"]] = c["attempt2_score"]
-        logger.info(f"  comparison={len(comparison)} dims")
-        return {"attempt1_scores": a1, "attempt2_scores": a2, "comparison": comparison}
-    except Exception as e:
-        logger.warning(f"  LLM failed: {e}, using Mock")
-        dims_list = ["发音标准度", "语法规范性", "词汇适配性", "语言功能达成度", "语用策略得体性", "话语回合适配性", "副语言匹配度"]
-        comments_pool = ["从初级表达到更丰富句式，进步明显。", "语法错误减少，表达更规范。",
-                         "场景词汇使用更准确。", "任务完成度提高。", "礼貌表达更自然。", "话轮衔接更流畅。", "语音语调有改善。"]
-        a1, a2, comp = {}, {}, []
-        for i, dim in enumerate(dims_list):
-            s1 = round(1.5 + random.uniform(0, 2.0), 1)
-            s2 = round(min(5.0, s1 + 0.5 + random.uniform(0, 1.0)), 1)
-            ch = round(s2 - s1, 1)
-            a1[dim], a2[dim] = s1, s2
-            comp.append({"dimension": dim, "attempt1_score": s1, "attempt2_score": s2,
-                         "change": f"+{ch}" if ch >= 0 else str(ch), "comment": random.choice(comments_pool)})
-        return {"attempt1_scores": a1, "attempt2_scores": a2, "comparison": comp}
-
-
-# ============================================================
-# 7. 靶向 Gap 改善评估
-# ============================================================
-def evaluate_target_gaps(attempt1_text: str, attempt2_text: str, gaps: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    logger.info(f"[target_gaps] gaps={len(gaps)}")
-    if not gaps:
-        return []
-    if not attempt2_text.strip():
-        return [{"gap_label": g.get("label", "?"), "improved": False,
-                 "evidence": "二次产出文本为空", "suggestion": "请完成二次产出后再评估"} for g in gaps]
-    try:
-        gap_lines = "\n".join(f"- [{g.get('label','')}] {g.get('explanation','')}" for g in gaps)
-        raw = _call_doubao([
-            {"role": "system", "content": "判断以下不足在二次产出中是否改善。返回 JSON 数组: [{\"gap_label\":\"...\",\"improved\":true,\"evidence\":\"二次产出原文证据\",\"suggestion\":\"建议\"}]"},
-            {"role": "user", "content": f"不足列表:\n{gap_lines}\n\n二次产出:\n{attempt2_text[:1500]}"},
-        ])
-        result = _parse_json(raw)
-        logger.info(f"  {len(result) if isinstance(result, list) else 0} items")
-        return result if isinstance(result, list) else []
-    except Exception as e:
-        logger.warning(f"  LLM failed: {e}, using Mock")
-        return [{"gap_label": g.get("label", "?"), "improved": random.choice([True, True, False]),
-                 "evidence": "Mock 降级评估，实际评估需 LLM。", "suggestion": "建议查看逐维度分析了解更多。"} for g in gaps]
-
-
-# ============================================================
-# 旧接口兼容 (evaluate 别名)
-# ============================================================
-def evaluate(attempt1_text: str, attempt2_text: str) -> Dict[str, Any]:
-    """兼容旧调用方的 evaluate 函数，内部调用 evaluate_compare。"""
-    comp = evaluate_compare(attempt1_text, attempt2_text)
-    dims = comp["comparison"]
-    scores = {}
-    for c in dims:
-        scores[c["dimension"]] = {"attempt1": c["attempt1_score"], "attempt2": c["attempt2_score"]}
-    return {"dimension_scores": scores,
-            "problem_improved": "\n".join(f"{c['dimension']}: {c['comment']}" for c in dims),
-            "full_report": "双轨评价报告\n" + "\n".join(f"[{c['dimension']}] {c['change']}: {c['comment']}" for c in dims)}
+        logger.error(f"  LLM failed: {e}")
+        raise
