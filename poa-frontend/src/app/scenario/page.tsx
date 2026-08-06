@@ -104,7 +104,7 @@ export default function ScenarioPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ image_path: image_url }),
-        signal: AbortSignal.timeout(60000),
+        signal: AbortSignal.timeout(200000),
       });
       if (!res.ok) {
         let msg = `服务器错误 (${res.status})`;
@@ -170,7 +170,7 @@ export default function ScenarioPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ image_path: item.imageUrl }),
-        signal: AbortSignal.timeout(60000),
+        signal: AbortSignal.timeout(200000),
       });
       if (!res.ok) {
         let msg = `服务器错误 (${res.status})`;

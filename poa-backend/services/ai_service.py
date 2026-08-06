@@ -22,46 +22,77 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelna
 logger = logging.getLogger("ai_service")
 
 CHAT_URL = f"{DOUBAO_BASE_URL}/chat/completions"
-_TIMEOUT = 120
+_TIMEOUT = 120  # 文本模型默认超时
+_VISION_TIMEOUT = 180  # 视觉模型超时（推理较慢）
+_RETRY_COUNT = 2  # 指数退避重试次数
+_RETRY_BACKOFF = 2.0  # 首次退避秒数
 _MAX_TOKENS = 1000
 
 # ============================================================
 # 通用 LLM 调用
 # ============================================================
-def _call_doubao(messages: List[Dict[str, Any]], max_tokens: int = _MAX_TOKENS, model: str = "") -> str:
+def _call_doubao(messages: List[Dict[str, Any]], max_tokens: int = _MAX_TOKENS, model: str = "",
+                 timeout: float = _TIMEOUT) -> str:
     """调用豆包 API，返回 content。model 为空时使用默认模型。失败抛 RuntimeError。"""
     body = {"model": model or DOUBAO_MODEL_ID, "messages": messages, "max_tokens": max_tokens}
-    t0 = time.time()
-    resp = requests.post(
-        CHAT_URL,
-        headers={"Authorization": f"Bearer {DOUBAO_API_KEY}", "Content-Type": "application/json"},
-        json=body,
-        timeout=_TIMEOUT,
-    )
-    resp.raise_for_status()
-    msg = resp.json()["choices"][0]["message"]
-    content = (msg.get("content") or "").strip()
-    reasoning = (msg.get("reasoning_content") or "").strip()
+    headers = {"Authorization": f"Bearer {DOUBAO_API_KEY}", "Content-Type": "application/json"}
 
-    # 修复 thinking 模型输出的 content 为残片（如仅 "}"）的问题
-    if len(content) < 20 and reasoning and len(reasoning) > len(content):
-        # 从 reasoning 末尾提取 JSON（内容通常在最后）
-        import re as _re
-        m = _re.search(r'\{[^{}]*"gaps"|\{[^{}]*"scores"|\{[^{}]*"comparison"|\{[^{}]*"scene_label"|\{[^{}]*"label"', reasoning)
-        if m:
-            # 从匹配位置截取到 reasoning 末尾，再提取完整 JSON
-            tail = reasoning[m.start():]
-            try:
-                _parse_json(tail)
-                content = tail
-            except Exception:
-                pass
+    # 指数退避重试：处理超时、429 限流、5xx 服务端错误
+    last_error = ""
+    for attempt in range(1 + _RETRY_COUNT):
+        t0 = time.time()
+        try:
+            resp = requests.post(CHAT_URL, headers=headers, json=body, timeout=timeout)
+            status = resp.status_code
+            elapsed = time.time() - t0
 
-    # 清理泄露的 thinking 标签
-    import re as _re
-    content = _re.sub(r'</?think[^>]*>', '', content)
-    logger.info(f"  [LLM] {resp.status_code} {time.time()-t0:.1f}s")
-    return content
+            if status == 200:
+                msg = resp.json()["choices"][0]["message"]
+                content = (msg.get("content") or "").strip()
+                reasoning = (msg.get("reasoning_content") or "").strip()
+
+                # 修复 thinking 模型输出的 content 为残片（如仅 "}"）的问题
+                if len(content) < 20 and reasoning and len(reasoning) > len(content):
+                    import re as _re
+                    m = _re.search(r'\{[^{}]*"gaps"|\{[^{}]*"scores"|\{[^{}]*"comparison"|\{[^{}]*"scene_label"|\{[^{}]*"label"', reasoning)
+                    if m:
+                        tail = reasoning[m.start():]
+                        try:
+                            _parse_json(tail)
+                            content = tail
+                        except Exception:
+                            pass
+
+                import re as _re
+                content = _re.sub(r'</?think[^>]*>', '', content)
+                logger.info(f"  [LLM] {status} {elapsed:.1f}s model={body['model'][:30]}")
+                return content
+
+            # 429 限流 / 5xx 服务端错误 → 可重试
+            if status in (429, 500, 502, 503, 504):
+                last_error = f"HTTP {status}: {resp.text[:200]}"
+                logger.warning(f"  [LLM] attempt {attempt+1}/{1+_RETRY_COUNT} {last_error} ({elapsed:.1f}s)")
+                if attempt < _RETRY_COUNT:
+                    wait = _RETRY_BACKOFF * (2 ** attempt)
+                    logger.info(f"  [LLM] 等待 {wait:.0f}s 后重试...")
+                    time.sleep(wait)
+                    continue
+                resp.raise_for_status()
+            else:
+                resp.raise_for_status()
+
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+            elapsed = time.time() - t0
+            last_error = str(e)
+            logger.warning(f"  [LLM] attempt {attempt+1}/{1+_RETRY_COUNT} {last_error} ({elapsed:.1f}s)")
+            if attempt < _RETRY_COUNT:
+                wait = _RETRY_BACKOFF * (2 ** attempt)
+                logger.info(f"  [LLM] 等待 {wait:.0f}s 后重试...")
+                time.sleep(wait)
+                continue
+            raise RuntimeError(f"API 调用超时/连接失败（已重试{_RETRY_COUNT}次）: {last_error}")
+
+    raise RuntimeError(f"API 调用失败（已重试{_RETRY_COUNT}次）: {last_error}")
 
 
 def _parse_json(raw: str) -> Any:
@@ -322,7 +353,7 @@ def analyze_scenario(image_path: str) -> Dict[str, Any]:
         raw = _call_doubao([{"role": "user", "content": [
             {"type": "text", "text": _SCENE_PROMPT},
             {"type": "image_url", "image_url": {"url": data_url}},
-        ]}], model=ARK_MODEL_ID)
+        ]}], model=ARK_MODEL_ID, timeout=_VISION_TIMEOUT)
     except Exception as e:
         raise RuntimeError(f"视觉模型调用失败: API请求失败 {e}")
 
