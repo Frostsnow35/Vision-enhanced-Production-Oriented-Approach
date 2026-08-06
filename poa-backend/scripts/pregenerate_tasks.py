@@ -56,6 +56,18 @@ def _validate_result(result: dict, fname: str) -> list[str]:
         issues.append("roles 为空")
     elif ":" not in roles and ";" not in roles:
         issues.append(f"roles 格式可能不完整: '{roles[:50]}'")
+    else:
+        # 检查A角色是否为专业角色（违反"普通人原则"）
+        _professional_keywords = [
+            "导览", "经理", "医生", "药剂", "律师", "工程师", "技术员",
+            "guide", "manager", "doctor", "pharmacist", "lawyer", "engineer",
+            "specialist", "expert", "staff", "technician", "nurse", "surgeon",
+        ]
+        a_role = roles.split(";")[0].split("：")[-1].split(":")[-1].strip().lower()
+        for kw in _professional_keywords:
+            if kw.lower() in a_role:
+                issues.append(f"A角色可能过于专业（含'{kw}'，建议角色: 顾客/访客/乘客/病人/市民等）: '{roles[:60]}'")
+                break
     if not goal:
         issues.append("goal 为空")
     if not criteria:
