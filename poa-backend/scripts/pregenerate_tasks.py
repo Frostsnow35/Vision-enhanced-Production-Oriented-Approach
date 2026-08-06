@@ -121,9 +121,11 @@ def main():
         logger.info(f"[{i}/{total}] 处理: {fname}")
 
         if args.force:
-            from models import Scenario
+            from models import Scenario, POATask
             existing = db.query(Scenario).filter(Scenario.image_path == image_path).all()
             for s in existing:
+                # 先删关联的 POATask（外键约束）
+                db.query(POATask).filter(POATask.scenario_id == s.id).delete()
                 db.delete(s)
             db.commit()
             invalidate_report_cache()
