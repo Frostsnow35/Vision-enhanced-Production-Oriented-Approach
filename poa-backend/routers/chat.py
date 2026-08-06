@@ -272,7 +272,15 @@ async def chat_start(req: ChatStartRequest):
     ai_audio_url = ""
     if ai_text:
         try:
-            ai_audio_url = text_to_speech(ai_text) or ""
+            # TTS 可能因豆包降级 gTTS 而长时间阻塞（gTTS 内部 HTTP 无超时）
+            # 用线程池 + 8 秒超时，超时后返回空 URL，前端自动降级浏览器语音
+            from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
+            with ThreadPoolExecutor(max_workers=1) as tts_pool:
+                future = tts_pool.submit(text_to_speech, ai_text)
+                try:
+                    ai_audio_url = future.result(timeout=8.0) or ""
+                except FutureTimeout:
+                    logger.warning(f"[chat/start] TTS 超时（>8s），返回文字不等待音频")
         except Exception as ex:
             logger.warning(f"[chat/start] TTS 生成失败: {ex}")
 

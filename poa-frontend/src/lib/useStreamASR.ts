@@ -169,14 +169,54 @@ export function useStreamASR() {
       }
       const actualRate = audioCtx.sampleRate || TARGET_RATE;
 
-      // 3. 建立 WebSocket 连接
-      const ws = new WebSocket(wsUrl("/api/chat/asr-stream"));
+      // 3. 建立 WebSocket 连接（带超时 + 1 次自动重试）
+      const wsUrlStr = wsUrl("/api/chat/asr-stream");
+      let ws: WebSocket | null = null;
+      let wsConnected = false;
+
+      const connectWs = (): Promise<WebSocket> =>
+        new Promise((resolve, reject) => {
+          const socket = new WebSocket(wsUrlStr);
+          socket.binaryType = "blob";
+          const timeout = setTimeout(() => {
+            if (!wsConnected) {
+              try { socket.close(); } catch {}
+              reject(new Error(`WebSocket 连接超时（>8s）: ${wsUrlStr}`));
+            }
+          }, 8000);
+          socket.onopen = () => {
+            clearTimeout(timeout);
+            wsConnected = true;
+            resolve(socket);
+          };
+          socket.onerror = () => {
+            clearTimeout(timeout);
+            reject(new Error(`WebSocket 连接失败: ${wsUrlStr}`));
+          };
+        });
+
+      // 首次尝试，失败后自动重试一次
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          ws = await connectWs();
+          break;
+        } catch (connErr: any) {
+          if (attempt === 0) {
+            console.warn(`[ASR-Stream] 第1次连接失败，1秒后重试...`, connErr?.message);
+            await new Promise(r => setTimeout(r, 1000));
+          } else {
+            setError(`语音识别连接失败，请检查网络或开启代理后刷新页面重试`);
+            return;
+          }
+        }
+      }
+
+      if (!ws) return;
       wsRef.current = ws;
-      ws.binaryType = "blob"; // 接收端以 blob 处理（本 hook 只发二进制）
 
-      ws.onopen = async () => {
-        console.log("[ASR-Stream] WebSocket 已连接 →", wsUrl("/api/chat/asr-stream"));
-
+      // 连接成功：启动音频处理管线（原 ws.onopen 逻辑，因重试后 ws 已 open 故直接执行）
+      console.log("[ASR-Stream] WebSocket 已连接 →", wsUrlStr);
+      {
         // Chrome 自动播放策略：无手势时 context 可能 suspended，显式恢复
         if (audioCtx.state === "suspended") {
           try { await audioCtx.resume(); } catch { /* ignore */ }
@@ -184,11 +224,9 @@ export function useStreamASR() {
 
         const source = audioCtx.createMediaStreamSource(stream);
 
-        // ScriptProcessorNode: 缓冲 2048 样本（@16k ≈ 128ms）
         const processor = audioCtx.createScriptProcessor(2048, 1, 1);
         processorRef.current = processor;
 
-        // 静音增益节点：避免把麦克风输入回放到扬声器（回声）
         const silentGain = audioCtx.createGain();
         silentGain.gain.value = 0;
         silentGainRef.current = silentGain;
@@ -250,7 +288,7 @@ export function useStreamASR() {
         processor.connect(silentGain);
         silentGain.connect(audioCtx.destination);
         setIsRecording(true);
-      };
+      }
 
       ws.onmessage = (event) => {
         let data: any;
