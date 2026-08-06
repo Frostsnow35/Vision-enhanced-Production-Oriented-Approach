@@ -72,6 +72,18 @@ def _extract_ai_role(roles: str) -> str:
             return part[2:].strip()
     return roles  # 兜底：直接返回原始字符串
 
+
+def _extract_student_role(roles: str) -> str:
+    """从 'A:顾客; B:咖啡师 Emma' 中提取 A 的角色部分。"""
+    if not roles:
+        return ""
+    parts = roles.replace("；", ";").split(";")
+    for part in parts:
+        part = part.strip()
+        if part.startswith("A:") or part.startswith("A："):
+            return part[2:].strip()
+    return ""
+
 # ---- 开场白 Prompt ----
 _OPENING_PROMPT = """\
 You are an AI conversation partner in a task-based English learning scenario.
@@ -312,6 +324,7 @@ def generate_opening(task_context: Dict[str, Any]) -> str:
     try:
         prompt = (
             f"Scenario: {scene}. Your role: {_extract_ai_role(roles)}. "
+            + (f"The student is: {_extract_student_role(roles)}. " if _extract_student_role(roles) else "")
             + (f"Communicative goal: {goal}. " if goal else "")
             + (f"Variant context: {variant}. " if variant else "")
             + ("This is the student's SECOND attempt at this scenario — they have been practicing and should show improvement. Note: do NOT explicitly mention 'second attempt' to the student — just engage naturally. " if variant else "")
@@ -362,6 +375,9 @@ def generate_reply(
 
     # 构建 system message
     system_content = _REPLY_PROMPT + "\n\n" + f"Scene: {scene}\nYour role: {_extract_ai_role(roles)}"
+    student_role = _extract_student_role(roles)
+    if student_role:
+        system_content += f"\nThe student is: {student_role}"
     if goal:
         system_content += f"\nCommunicative goal: {goal}"
     if evaluation_criteria:
@@ -504,6 +520,9 @@ def request_closing_line(task_context: Dict[str, Any]):
         system_content += f"\n\nScene: {scene}"
     if roles:
         system_content += f"\nYour role: {_extract_ai_role(roles)}"
+        student_role = _extract_student_role(roles)
+        if student_role:
+            system_content += f"\nThe student is: {student_role}"
     if closing_line:
         system_content += f"\nSuggested farewell (adapt to actual context): {closing_line}"
 

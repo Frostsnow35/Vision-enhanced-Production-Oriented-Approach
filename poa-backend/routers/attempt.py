@@ -4,6 +4,7 @@
 import os
 import logging
 from typing import List
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
@@ -91,8 +92,20 @@ async def submit_attempt1(req: AttemptSubmitRequest, db: Session = Depends(get_d
             evaluation_criteria = t.evaluation_criteria or ""
             scene_context = f"场景：{scene_label}，角色：{task_roles}，目标：{task_goal}"
 
-    result = diagnose_attempt(attempt_text=diagnosis_text, scene_context=scene_context)
-    high_freq = _extract_high_freq_errors(diagnosis_text)
+    # 并行执行诊断 + 高频错误提取
+    result = {"gaps": []}
+    high_freq = []
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        future_diag = executor.submit(diagnose_attempt, diagnosis_text, scene_context)
+        future_hf = executor.submit(_extract_high_freq_errors, diagnosis_text)
+        for future in as_completed([future_diag, future_hf]):
+            try:
+                if future == future_diag:
+                    result = future.result()
+                else:
+                    high_freq = future.result() or []
+            except Exception as e:
+                logger.warning(f"[attempt1] 并行任务失败: {e}")
     gaps = result.get("gaps", [])
 
     # ---- 音频 URL → 本地路径（供发音/副语言分析）----
@@ -113,26 +126,7 @@ async def submit_attempt1(req: AttemptSubmitRequest, db: Session = Depends(get_d
     if audio_paths:
         logger.info(f"[attempt1] 收到 {len(audio_paths)} 个音频文件用于发音分析")
 
-    # ---- 七维评分（与诊断使用同一份对话文本，保证一致性）----
     dimension_scores = {}
-    try:
-        from services.evaluate_service import evaluate_single
-        task_context = {
-            "scene_label": scene_label,
-            "roles": task_roles,
-            "goal": task_goal,
-            "evaluation_criteria": evaluation_criteria,
-        }
-        eval_result = evaluate_single(
-            conversation_text=diagnosis_text,
-            task_context=task_context,
-            audio_paths=audio_paths,
-            evaluation_criteria=evaluation_criteria,
-        )
-        dimension_scores = eval_result.get("dimension_scores", {})
-        logger.info(f"[attempt1] 七维评分完成: {list(dimension_scores.keys())}")
-    except Exception as e:
-        logger.warning(f"[attempt1] 七维评分失败: {e}")
 
     # ---- 保存到数据库 ----
     if task_id_to_save and task_id_to_save > 0:
@@ -300,3 +294,51 @@ async def submit_attempt2(req: AttemptSubmitRequest, db: Session = Depends(get_d
             logger.error(f"[attempt2] DB 保存失败: {e}")
 
     return AttemptSubmitResponse(gaps=gaps, high_freq_errors=high_freq)
+
+
+# === POST /api/attempt1/evaluate ===
+@router.post("/attempt1/evaluate")
+async def get_evaluation(req: AttemptSubmitRequest, db: Session = Depends(get_db)):
+    """
+    异步获取七维评分（不阻塞诊断返回）。
+    """
+    diagnosis_text = _build_diagnosis_text(req)
+    if not diagnosis_text:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=400, content={"error": "empty_text"})
+
+    scene_label = "未知"
+    task_roles = "未知"
+    task_goal = "未知"
+    evaluation_criteria = ""
+    if req.task_id:
+        from models import POATask, Scenario
+        t = db.query(POATask).filter(POATask.id == req.task_id).first()
+        if t:
+            s = db.query(Scenario).filter(Scenario.id == t.scenario_id).first()
+            scene_label = s.scene_label if s else "未知"
+            task_roles = t.roles or "未知"
+            task_goal = t.goal or "未知"
+            evaluation_criteria = t.evaluation_criteria or ""
+
+    try:
+        from services.evaluate_service import evaluate_single
+        task_context = {
+            "scene_label": scene_label,
+            "roles": task_roles,
+            "goal": task_goal,
+            "evaluation_criteria": evaluation_criteria,
+        }
+        eval_result = evaluate_single(
+            conversation_text=diagnosis_text,
+            task_context=task_context,
+            audio_paths=[],
+            evaluation_criteria=evaluation_criteria,
+        )
+        dimension_scores = eval_result.get("dimension_scores", {})
+        logger.info(f"[attempt1/evaluate] 七维评分完成: {list(dimension_scores.keys())}")
+        return {"dimension_scores": dimension_scores}
+    except Exception as e:
+        logger.warning(f"[attempt1/evaluate] 七维评分失败: {e}")
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=500, content={"error": "evaluation_failed", "message": str(e)})

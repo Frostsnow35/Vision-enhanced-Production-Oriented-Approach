@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import HistoryTaskSelector from "@/components/HistoryTaskSelector";
@@ -12,6 +12,18 @@ import {
   markTaskSelectedInSession,
   type ScenarioHistoryItem,
 } from "@/lib/store";
+import { BASE_URL } from "@/lib/api";
+
+/* ============================================================
+   常量
+   ============================================================ */
+const LOADING_TIPS = [
+  "AI 正在仔细分析你的表达...",
+  "正在对比标准英语表达...",
+  "识别你的语言提升空间...",
+  "准备个性化的促成材料...",
+  "分析你的对话策略...",
+];
 
 /* ============================================================
    类型定义
@@ -29,6 +41,30 @@ interface HighFreqError {
   suggestion: string;
 }
 
+interface DimensionScore {
+  score: number;
+  label: string;
+}
+
+/* ============================================================
+   骨架屏组件
+   ============================================================ */
+function SkeletonCard({ className = "" }: { className?: string }) {
+  return (
+    <div className={`rounded-xl border border-border bg-card p-6 shadow-sm animate-pulse ${className}`}>
+      <div className="flex items-center gap-3">
+        <div className="size-8 rounded-full bg-muted" />
+        <div className="h-5 w-3/4 rounded bg-muted" />
+      </div>
+      <div className="mt-4 space-y-2">
+        <div className="h-4 w-full rounded bg-muted/60" />
+        <div className="h-4 w-5/6 rounded bg-muted/60" />
+      </div>
+      <div className="mt-3 h-3 w-1/2 rounded bg-muted/40" />
+    </div>
+  );
+}
+
 /* ============================================================
    页面组件
    ============================================================ */
@@ -39,7 +75,16 @@ export default function DiagnosisPage() {
   const [gaps, setGaps] = useState<GapItem[] | null>(null);
   const [highFreqErrors, setHighFreqErrors] = useState<HighFreqError[]>([]);
   const [localDiagnosis, setLocalDiagnosis] = useState<ScenarioHistoryItem | null>(null);
+  const [dimensionScores, setDimensionScores] = useState<Record<string, number> | null>(null);
+  const [scoresLoading, setScoresLoading] = useState(false);
+  const [tipIndex, setTipIndex] = useState(0);
   const taskRef = useRef<ScenarioHistoryItem | null>(null);
+
+  // 轮换提示词
+  useEffect(() => {
+    const t = setInterval(() => setTipIndex((i) => (i + 1) % LOADING_TIPS.length), 2000);
+    return () => clearInterval(t);
+  }, []);
 
   useEffect(() => {
     let hasData = false;
@@ -75,11 +120,56 @@ export default function DiagnosisPage() {
     setInitDone(true);
   }, []);
 
-  // ---- 加载中 ----
+  // 七维评分异步加载
+  const fetchDimensionScores = useCallback(async (attemptId: number) => {
+    setScoresLoading(true);
+    try {
+      const body = { attempt_id: attemptId };
+      const rawBody = localStorage.getItem("attempt1_submit_body");
+      if (rawBody) {
+        const parsed = JSON.parse(rawBody);
+        Object.assign(body, parsed);
+      }
+      const res = await fetch(`${BASE_URL}/api/attempt1/evaluate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.dimension_scores) {
+          setDimensionScores(data.dimension_scores);
+        }
+      }
+    } catch { /* ignore */ }
+    finally { setScoresLoading(false); }
+  }, []);
+
+  // 诊断数据就绪后自动触发评分加载
+  useEffect(() => {
+    if (gaps && gaps.length > 0 && initDone && !hasHistory) {
+      const attemptIdStr = localStorage.getItem("attempt1_id");
+      if (attemptIdStr) {
+        fetchDimensionScores(Number(attemptIdStr));
+      }
+    }
+  }, [gaps, initDone, hasHistory, fetchDimensionScores]);
+
+  // ---- 加载中（骨架屏 + 轮换提示词）----
   if (!initDone) {
     return (
-      <div className="flex h-[calc(100vh-100px)] items-center justify-center">
-        <div className="text-center text-muted-foreground">加载中...</div>
+      <div className="mx-auto max-w-2xl space-y-6 px-4 py-12">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold tracking-tight text-card-foreground sm:text-3xl">
+            诊断中...
+          </h1>
+          <p className="mt-2 text-sm text-muted-foreground transition-opacity duration-500">
+            {LOADING_TIPS[tipIndex]}
+          </p>
+        </div>
+        <SkeletonCard />
+        <SkeletonCard />
+        <SkeletonCard />
       </div>
     );
   }
@@ -258,6 +348,38 @@ export default function DiagnosisPage() {
           </div>
           );
         })}
+
+      {/* ---- 七维评分（异步加载）---- */}
+      {scoresLoading && (
+        <div className="rounded-xl border border-border bg-card p-6 shadow-sm animate-pulse">
+          <div className="h-5 w-48 rounded bg-muted mb-3" />
+          <div className="grid grid-cols-2 gap-3">
+            {[...Array(6)].map((_, i) => (
+              <div key={i} className="h-4 w-full rounded bg-muted/60" />
+            ))}
+          </div>
+        </div>
+      )}
+      {dimensionScores && Object.keys(dimensionScores).length > 0 && (
+        <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
+          <h2 className="text-lg font-semibold text-card-foreground mb-4">
+            七维综合评价
+          </h2>
+          <div className="grid grid-cols-2 gap-3">
+            {Object.entries(dimensionScores).map(([key, score]) => (
+              <div
+                key={key}
+                className="flex items-center justify-between rounded-lg bg-muted/30 px-4 py-2.5"
+              >
+                <span className="text-sm text-card-foreground">{key}</span>
+                <span className="text-sm font-semibold text-primary">
+                  {typeof score === "number" ? score.toFixed(1) : score}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ---- 底部按钮 ---- */}
       <div className="card flex items-center justify-between rounded-xl border border-border bg-card px-6 py-4 shadow-sm">

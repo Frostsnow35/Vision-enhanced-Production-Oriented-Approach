@@ -825,6 +825,11 @@ export default function Attempt1Page() {
       }
       const data = await res.json();
       localStorage.setItem("diagnosis", JSON.stringify(data));
+      // 保存 attempt_id 和请求体，供诊断页异步加载七维评分
+      if (data.attempt_id) {
+        localStorage.setItem("attempt1_id", String(data.attempt_id));
+      }
+      localStorage.setItem("attempt1_submit_body", JSON.stringify({ task_id: taskId ?? 0, attempt_text: conversationText || "[no speech]", attempt_number: 1, audio_urls: audioUrls }));
       router.push("/diagnosis");
     } catch (err: any) {
       const msg = err?.message || String(err);
