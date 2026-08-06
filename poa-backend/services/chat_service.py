@@ -60,6 +60,18 @@ TTS_DIR = os.path.join(UPLOAD_DIR, "tts")
 
 _CLOSING_LINE_MATCH_THRESHOLD = 0.65
 
+
+def _extract_ai_role(roles: str) -> str:
+    """从 'A:顾客; B:咖啡师 Emma' 中提取 B 的角色部分，避免 LLM 同时看到两个角色而混淆。"""
+    if not roles:
+        return ""
+    parts = roles.replace("；", ";").split(";")
+    for part in parts:
+        part = part.strip()
+        if part.startswith("B:") or part.startswith("B："):
+            return part[2:].strip()
+    return roles  # 兜底：直接返回原始字符串
+
 # ---- 开场白 Prompt ----
 _OPENING_PROMPT = """\
 You are an AI conversation partner in a task-based English learning scenario.
@@ -299,7 +311,7 @@ def generate_opening(task_context: Dict[str, Any]) -> str:
     # 尝试 LLM
     try:
         prompt = (
-            f"Scenario: {scene}. Your role: {roles}. "
+            f"Scenario: {scene}. Your role: {_extract_ai_role(roles)}. "
             + (f"Communicative goal: {goal}. " if goal else "")
             + (f"Variant context: {variant}. " if variant else "")
             + ("This is the student's SECOND attempt at this scenario — they have been practicing and should show improvement. Note: do NOT explicitly mention 'second attempt' to the student — just engage naturally. " if variant else "")
@@ -349,7 +361,7 @@ def generate_reply(
     evaluation_criteria = task_context.get("evaluation_criteria", "")
 
     # 构建 system message
-    system_content = _REPLY_PROMPT + "\n\n" + f"Scene: {scene}\nYour role: {roles}"
+    system_content = _REPLY_PROMPT + "\n\n" + f"Scene: {scene}\nYour role: {_extract_ai_role(roles)}"
     if goal:
         system_content += f"\nCommunicative goal: {goal}"
     if evaluation_criteria:
@@ -491,7 +503,7 @@ def request_closing_line(task_context: Dict[str, Any]):
     if scene:
         system_content += f"\n\nScene: {scene}"
     if roles:
-        system_content += f"\nYour role: {roles}"
+        system_content += f"\nYour role: {_extract_ai_role(roles)}"
     if closing_line:
         system_content += f"\nSuggested farewell (adapt to actual context): {closing_line}"
 
