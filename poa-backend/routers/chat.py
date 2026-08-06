@@ -5,15 +5,18 @@
   /api/chat/start       — AI 开场白 + TTS
   /api/chat/asr-stream  — WebSocket 流式 ASR（前端 PCM → 后端代理 → 火山流式 ASR）
   /api/chat/turn        — 用户文本 → LLM 回复 → TTS（不再含音频→ASR）
+  /api/asr/token        — 获取火山 ASR 直连鉴权 Token（前端直连火山，绕过 Railway 跨境 WS）
 """
 import asyncio
 import json
 import logging
 
+import httpx
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from services.chat_service import generate_opening, generate_reply, text_to_speech, _generate_turn_feedback
 from services.asr_service import VolcanoStreamASR
+from config import DOUBAO_ASR_APP_ID, DOUBAO_ASR_TOKEN, DOUBAO_ASR_STREAM_RESOURCE_ID, DOUBAO_ASR_STREAM_URL
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("chat_router")
@@ -83,6 +86,89 @@ class ChatTurnResponse(BaseModel):
     user_text: str = ""
     llm_error: str = ""
     asr_error: str = ""
+
+
+# ---- GET /api/asr/token —— 火山 ASR 直连鉴权 Token ----
+
+@router.get("/asr/token")
+async def get_asr_token():
+    """
+    为前端提供火山引擎流式 ASR 直连所需的临时鉴权 Token。
+    
+    前端浏览器直连 wss://openspeech.bytedance.com/api/v3/sauc/bigmodel
+    （绕过 Railway 跨境 WebSocket，避免被国内 ISP 阻断），
+    鉴权信息通过 URL query 参数传递。
+    
+    返回:
+        {
+            "token": "eyJ...",          // STS 临时 JWT，有效期 5 分钟
+            "appid": "...",             // 火山应用 ID
+            "resource_id": "volc.bigasr.sauc.duration",
+            "stream_url": "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel"
+        }
+    
+    若无 ASR 凭据（appid + token），返回 503。
+    """
+    if not DOUBAO_ASR_APP_ID or not DOUBAO_ASR_TOKEN:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=503,
+            content={
+                "detail": "ASR 直连模式未配置：缺少 DOUBAO_ASR_APP_ID / DOUBAO_ASR_TOKEN",
+                "asr_configured": False,
+            },
+        )
+    
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                "https://openspeech.bytedance.com/api/v1/sts/token",
+                headers={
+                    "Authorization": f"Bearer; {DOUBAO_ASR_TOKEN}",
+                    "Content-Type": "application/json",
+                },
+                json={"appid": DOUBAO_ASR_APP_ID, "duration": 300},
+            )
+            if resp.status_code != 200:
+                logger.warning(
+                    f"[ASR/Token] STS API 返回 {resp.status_code}: "
+                    f"{resp.text[:300]}"
+                )
+                from fastapi.responses import JSONResponse
+                return JSONResponse(
+                    status_code=502,
+                    content={
+                        "detail": f"火山 STS Token 接口返回 {resp.status_code}",
+                        "asr_configured": True,
+                    },
+                )
+            data = resp.json()
+            jwt_token = data.get("jwt_token") or data.get("token") or data.get("access_token") or ""
+            if not jwt_token:
+                logger.warning(f"[ASR/Token] STS API 未返回 jwt_token: {json.dumps(data, ensure_ascii=False)[:300]}")
+                from fastapi.responses import JSONResponse
+                return JSONResponse(
+                    status_code=502,
+                    content={"detail": "火山 STS Token 接口未返回有效 token", "asr_configured": True},
+                )
+            logger.info(f"[ASR/Token] 已获取 STS Token (len={len(jwt_token)})")
+            return {
+                "token": jwt_token,
+                "appid": DOUBAO_ASR_APP_ID,
+                "resource_id": DOUBAO_ASR_STREAM_RESOURCE_ID,
+                "stream_url": DOUBAO_ASR_STREAM_URL,
+            }
+    except httpx.TimeoutException:
+        logger.error("[ASR/Token] STS API 超时")
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=504, content={"detail": "火山 STS Token 接口超时", "asr_configured": True})
+    except Exception as e:
+        logger.error(f"[ASR/Token] 异常: {e}")
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=500,
+            content={"detail": f"获取 ASR Token 失败: {e}", "asr_configured": True},
+        )
 
 
 # ---- WebSocket 流式 ASR 端点 ----
