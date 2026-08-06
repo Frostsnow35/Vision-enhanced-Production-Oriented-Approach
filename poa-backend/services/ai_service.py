@@ -15,7 +15,7 @@ import requests
 import httpx
 from sqlalchemy.orm import Session
 
-from config import DOUBAO_API_KEY, DOUBAO_BASE_URL, ARK_MODEL_ID, DOUBAO_MODEL_ID
+from config import DOUBAO_API_KEY, DOUBAO_BASE_URL, ARK_MODEL_ID, DOUBAO_MODEL_ID, DOUBAO_VISION_MODEL_ID
 from models import Scenario, POATask
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s", datefmt="%H:%M:%S")
@@ -23,7 +23,7 @@ logger = logging.getLogger("ai_service")
 
 CHAT_URL = f"{DOUBAO_BASE_URL}/chat/completions"
 _TIMEOUT = 120  # 文本模型默认超时
-_VISION_TIMEOUT = 180  # 视觉模型超时（推理较慢）
+_VISION_TIMEOUT = 120  # 视觉模型超时（Seed 2.0 Lite 推理快）
 _RETRY_COUNT = 2  # 指数退避重试次数
 _RETRY_BACKOFF = 2.0  # 首次退避秒数
 _MAX_TOKENS = 1000
@@ -237,24 +237,22 @@ _NO_VALID_INPUT = {"error": "no_valid_input", "message": "未检测到有效语�
 # ============================================================
 # Prompt 模板
 # ============================================================
-_SCENE_PROMPT = """你是一个英语教学场景分析专家。分析这张照片，为POA（产出导向法）英语学习任务设计场景。
+_SCENE_PROMPT = """根据照片内容，直接输出以下JSON（只输出JSON，禁止任何额外文字）：
 
-【关键要求】
-1. scene_label: 场景专有名称（如"Cafe Brew & Co."）
-2. roles: 两个角色身份，格式"A:具体角色; B:具体角色"
-   【A（学生）】无专业背景的普通人（顾客/访客/乘客等），信息请求方。禁止分配专家角色（导览员/药剂师/律师/医生等）
-   【B（AI）】场景专业服务方（如"咖啡师 Emma"），拥有专业知识
-3. goal: 1个主目标（含2+个产出标准）+ 至多1个选子目标
-4. context_constraints: 1~2条场景特有约束
-5. evaluation_criteria: 3~5条评价维度，从A的交际定位出发（表达清晰度/信息确认/礼貌策略/对B回应的反馈等），禁用通用维度（准确性/流利度），禁用超出A知识范围的标准
-6. variant_plot: 同场景同角色新情节变体（如点单→纠正订单），仅改变一个交际维度
-7. opening_line: B的开场白，含场景专有词+引导提问（?结尾），禁用泛化开场
-8. closing_line: B的场景化告别（≤30词），禁用泛化告别
+{
+  "scene_label": "具体场景名如Cafe Brew & Co.",
+  "poa_task": {
+    "roles": "A:普通顾客/访客/乘客等无专业背景角色; B:场景专业服务人员",
+    "goal": "1个交际主目标（含产出标准如'用委婉句式点单'）",
+    "context_constraints": "1~2条场景特定约束",
+    "evaluation_criteria": ["维度1如'请求句式多样性'", "维度2如'信息确认的准确性'", "维度3如'回应的恰当性'"]
+  },
+  "variant_plot": "同场景同角色的新情节（仅改一个交际维度，如点单→纠正订单）",
+  "opening_line": "B的开场白（含场景专有词+?结尾问句引导）",
+  "closing_line": "B的场景化告别（≤30词）"
+}
 
-【交际类型选择】请求服务/问题解决/信息询问/协商条件/表达需求/社交互动
-
-严格输出JSON（不要其他内容）：
-{"scene_label":"场景名","poa_task":{"roles":"A:角色; B:角色","goal":"主目标+产出标准","context_constraints":"约束","evaluation_criteria":["维度1","维度2","维度3"]},"variant_plot":"变体描述","opening_line":"B的开场白","closing_line":"B的告别"}"""
+规则: A必须是无专业背景的普通人，B是专业服务方。evaluation_criteria从A角度出发，禁用'准确性''流利度'等通用标签。禁用泛化开场白/告别。"""
 
 _DIAGNOSIS_PROMPT = """你是英语口语诊断专家。找出学生对话中的 Top 3 不足，返回 JSON:
 {"gaps":[{"label":"不足分类","evidence_sentence":"原文证据","explanation":"为什么需要改进及正确建议"}]}"""
@@ -325,7 +323,7 @@ def analyze_scenario(image_path: str) -> Dict[str, Any]:
         raw = _call_doubao([{"role": "user", "content": [
             {"type": "text", "text": _SCENE_PROMPT},
             {"type": "image_url", "image_url": {"url": data_url}},
-        ]}], model=ARK_MODEL_ID, timeout=_VISION_TIMEOUT, max_tokens=500)
+        ]}], model=DOUBAO_VISION_MODEL_ID, timeout=_VISION_TIMEOUT, max_tokens=500)
     except Exception as e:
         raise RuntimeError(f"视觉模型调用失败: API请求失败 {e}")
 
