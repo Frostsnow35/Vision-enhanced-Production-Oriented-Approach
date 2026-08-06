@@ -26,6 +26,7 @@ sample_images/
 # 密钥文件（含真实 API Key / Token，严禁提交）
 railway-backend-env.txt
 poa-backend/.env
+.trae/documents/*.txt
 
 # 临时调试脚本
 poa-backend/_*.py

@@ -21,7 +21,7 @@ from models import Scenario, POATask
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s", datefmt="%H:%M:%S")
 logger = logging.getLogger("ai_service")
 
-CHAT_URL = "https://ark.cn-beijing.volces.com/api/v3/chat/completions"
+CHAT_URL = f"{DOUBAO_BASE_URL}/chat/completions"
 _TIMEOUT = 120
 _MAX_TOKENS = 1000
 
@@ -322,7 +322,7 @@ def analyze_scenario(image_path: str) -> Dict[str, Any]:
         raw = _call_doubao([{"role": "user", "content": [
             {"type": "text", "text": _SCENE_PROMPT},
             {"type": "image_url", "image_url": {"url": data_url}},
-        ]}], model="doubao-seed-2-0-mini-260428")
+        ]}], model=ARK_MODEL_ID)
     except Exception as e:
         raise RuntimeError(f"视觉模型调用失败: API请求失败 {e}")
 
