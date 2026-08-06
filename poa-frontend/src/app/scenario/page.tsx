@@ -73,17 +73,51 @@ export default function ScenarioPage() {
   function validateFile(file: File): string | null {
     const allowed = ["image/jpeg", "image/png", "image/jpg"];
     if (!allowed.includes(file.type)) return "仅支持 JPG / PNG 格式的图片";
-    if (file.size > 5 * 1024 * 1024) return "图片大小不能超过 5MB";
+    if (file.size > 10 * 1024 * 1024) return "图片大小不能超过 10MB";
     return null;
   }
 
-  function handleFile(file: File) {
+  // ---- 图片压缩（Canvas API，上传前缩放以减少 VLM 推理时间）----
+  async function compressImage(file: File): Promise<File> {
+    const MAX_DIM = 1024;
+    const QUALITY = 0.8;
+    // 小文件不压缩
+    if (file.size < 200 * 1024) return file;
+
+    return new Promise((resolve) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const { naturalWidth: w, naturalHeight: h } = img;
+        if (w <= MAX_DIM && h <= MAX_DIM) { resolve(file); return; }
+        const ratio = Math.min(MAX_DIM / w, MAX_DIM / h);
+        const cw = Math.round(w * ratio);
+        const ch = Math.round(h * ratio);
+        const canvas = document.createElement("canvas");
+        canvas.width = cw;
+        canvas.height = ch;
+        const ctx = canvas.getContext("2d")!;
+        ctx.drawImage(img, 0, 0, cw, ch);
+        canvas.toBlob((blob) => {
+          if (!blob) { resolve(file); return; }
+          const compressed = new File([blob], file.name.replace(/\.[^.]+$/, ".jpg"), { type: "image/jpeg" });
+          resolve(compressed.size < file.size ? compressed : file);
+        }, "image/jpeg", QUALITY);
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+      img.src = url;
+    });
+  }
+
+  async function handleFile(file: File) {
     setUploadError("");
     const err = validateFile(file);
     if (err) { setUploadError(err); addToast(err, "error"); return; }
     if (previewUrl) URL.revokeObjectURL(previewUrl);
-    setUploadedFile(file);
-    setPreviewUrl(URL.createObjectURL(file));
+    const compressed = await compressImage(file);
+    setUploadedFile(compressed);
+    setPreviewUrl(URL.createObjectURL(compressed));
   }
 
   // ---- 拖拽 ----
@@ -304,7 +338,7 @@ export default function ScenarioPage() {
               <Upload className={`w-12 h-12 transition-colors ${isDragging ? "text-primary" : "text-muted-foreground/40"}`} />
               <div className="space-y-1">
                 <p className="text-sm text-muted-foreground">{isDragging ? "释放以上传图片" : "拖拽照片到此处 或 点击选择文件"}</p>
-                <p className="text-xs text-muted-foreground/60">支持 JPG / PNG 格式，单张 ≤ 5MB</p>
+                <p className="text-xs text-muted-foreground/60">支持 JPG / PNG 格式，单张 ≤ 10MB（上传后自动压缩加速识别）</p>
               </div>
               <input ref={fileInputRef} type="file" accept="image/jpeg,image/png" onChange={onFileInputChange} className="hidden" />
             </label>

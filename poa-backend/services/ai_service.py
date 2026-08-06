@@ -240,49 +240,21 @@ _NO_VALID_INPUT = {"error": "no_valid_input", "message": "未检测到有效语�
 _SCENE_PROMPT = """你是一个英语教学场景分析专家。分析这张照片，为POA（产出导向法）英语学习任务设计场景。
 
 【关键要求】
-1. scene_label: 使用场景专有名称（如"Cafe Brew & Co."而非泛化的"咖啡店"）
-2. roles: 明确两个角色及其身份特征，格式为"A:具体角色; B:具体角色"。
-   【A角色（学生扮演）—— 普通人原则】A必须是可以由任何无专业背景的成年人扮演的日常生活角色（顾客、访客、乘客、病人、市民等），其交际内容只需调用日常英语和生活常识。严格禁止为A分配需要专业知识/培训/认证的专家角色（如博物馆导览员、药剂师、银行经理、律师、医生、技术人员等）。A的交际定位是"信息的请求方、服务的接受方、问题的提出方"。
-   【B角色（AI扮演）—— 专业服务方】B承担场景相关的专业知识和服务职责（如店员、医生、前台、工作人员等），B拥有场景专有知识、产品信息、服务流程。B的角色身份要具体有真实感（如"咖啡师 Emma"而非"店员"）。
-   【知识不对称方向】场景中的专业知识、产品细节、服务规则等必须归属于B角色。A不需要了解这些内容来回答问题，A只需要用清晰的语言发起请求、回应追问、确认信息即可。
-3. goal: 写出1个明确的交际主目标（+ 至多1个可选子目标），主目标必须包含至少2个具体的产出标准（如"用委婉请求句式点单并确认特殊需求"）
-4. context_constraints: 1~2条场景特有的限制条件（时间压力/特殊顾客需求/意外情况等）
-5. evaluation_criteria: 3~5条评价维度，每条针对特定语言功能，且必须从A角色的交际定位出发设计（A作为请求方/接受方/提问方，评价应围绕其表达清晰度、信息确认能力、礼貌策略使用、对B回应的恰当反馈等维度）。禁止仅使用"准确性""流利度"等通用维度，禁止设计超出A角色知识范围的标准（如"讲解清晰度""历史准确性""产品知识掌握度"等）。每条标准应回答"学生在完成这个交际任务时，语言上应该做到什么"。
-6. variant_plot: 基于同一场景设计一个不同情节变体。核心约束：同一场景、同一角色身份，仅改变子任务类型或交际目标（如主任务为点单 → 变体为纠正错误订单或询问优惠），差异不超过一个交际维度。禁止更换场景（如咖啡店变餐厅）、禁止更换角色身份（如顾客变店员）、禁止同时改变多个维度。
-【变体设计示例】
-- 好变体（咖啡店）：主任务 = 点单买拿铁 → 变体 = 发现订单做错了，与店员交涉要求重做
-- 坏变体（咖啡店）：主任务 = 点单 → 变体 = 去图书馆借书（场景完全改变，禁止）
-- 好变体（机场）：主任务 = 值机托运行李 → 变体 = 发现行李超重，与地勤协商解决
-- 坏变体（机场）：主任务 = 值机 → 变体 = 自己在机场开店卖东西（角色身份改变，禁止）
-7. opening_line: B角色（AI角色）的第一句开场白，必须满足：
-   - 包含至少1个场景专有词（latte/espresso 用于咖啡店；boarding gate/luggage 用于机场；prescription/appointment 用于医院；dues/renewal 用于图书馆；order/menu 用于餐厅 等）
-   - 包含明确的引导提问（? 结尾的问句或具体选项），帮助学生快速进入角色
-   - 禁止泛化开场白（如 "Hello! How can I help you?" / "Hi there! What can I do for you?"）
-   - 例（咖啡店）: "Good morning! Our single-origin Ethiopian pour-over is fantastic today. What catches your eye?"
-   - 例（机场）: "Good morning! May I see your passport and booking reference, please?"
-8. closing_line: B角色在主目标达成后的自然告别句，必须满足：
-   - 使用场景特有的告别方式（咖啡店 "Enjoy your coffee!" / 机场 "Have a safe flight!" / 医院 "Take care and feel better soon!" / 餐厅 "Enjoy your meal!"）
-   - 禁止泛化告别（"Goodbye!" / "See you!" / "Have a good day!" 等单独使用）
-   - 长度 ≤ 30 词
-   - 能在对话自然收束时被学生识别为"任务完成"
-9. 【任务规模约束】整个对话设计为1个主目标 + 至多1个选子目标，3~5轮对话内可完成；不要设计复杂多目标/多层情节/多个突发事件；优先聚焦在生活化场景中的1个核心互动
+1. scene_label: 场景专有名称（如"Cafe Brew & Co."）
+2. roles: 两个角色身份，格式"A:具体角色; B:具体角色"
+   【A（学生）】无专业背景的普通人（顾客/访客/乘客等），信息请求方。禁止分配专家角色（导览员/药剂师/律师/医生等）
+   【B（AI）】场景专业服务方（如"咖啡师 Emma"），拥有专业知识
+3. goal: 1个主目标（含2+个产出标准）+ 至多1个选子目标
+4. context_constraints: 1~2条场景特有约束
+5. evaluation_criteria: 3~5条评价维度，从A的交际定位出发（表达清晰度/信息确认/礼貌策略/对B回应的反馈等），禁用通用维度（准确性/流利度），禁用超出A知识范围的标准
+6. variant_plot: 同场景同角色新情节变体（如点单→纠正订单），仅改变一个交际维度
+7. opening_line: B的开场白，含场景专有词+引导提问（?结尾），禁用泛化开场
+8. closing_line: B的场景化告别（≤30词），禁用泛化告别
 
-【场景化生活化要求】
-- 必须使用真实生活场景（咖啡店/医院/机场/图书馆/餐厅/酒店/银行/商店等），禁止抽象/虚构场景
-- 场景元素（产品/服务/地点）必须具体可感（如"燕麦奶拿铁"而非"饮品"、"登机口"而非"场所"）
-- B角色身份要具体有代入感（"咖啡师 Emma"而非"店员"），A角色保持日常普通人身份即可（"一位顾客""一位访客"）
+【交际类型选择】请求服务/问题解决/信息询问/协商条件/表达需求/社交互动
 
-【交际类型多样性】（从以下随机选一种，不要总选"请求服务"）
-- 请求服务型（ordering/booking/requesting）
-- 问题解决型（complaint/reschedule/correcting a mistake）
-- 信息询问型（asking for directions/recommendations/details）
-- 协商条件型（negotiating price/terms/alternatives）
-- 表达需求型（special needs/preferences/allergies）
-- 社交互动型（small talk + task purpose）
-
-【输出要求】
-严格输出如下 JSON（不要输出任何其他内容）：
-{"scene_label":"场景专有名称","poa_task":{"roles":"A:具体角色; B:具体角色","goal":"1个主目标（含1-2个产出标准）+至多1个选子目标","context_constraints":"1~2条场景特有的限制条件","evaluation_criteria":["具体维度1","具体维度2","具体维度3"]},"variant_plot":"不同情节变体描述","opening_line":"B角色的第一句开场白（场景化+引导提问）","closing_line":"B角色的场景化告别（≤30词）"}"""
+严格输出JSON（不要其他内容）：
+{"scene_label":"场景名","poa_task":{"roles":"A:角色; B:角色","goal":"主目标+产出标准","context_constraints":"约束","evaluation_criteria":["维度1","维度2","维度3"]},"variant_plot":"变体描述","opening_line":"B的开场白","closing_line":"B的告别"}"""
 
 _DIAGNOSIS_PROMPT = """你是英语口语诊断专家。找出学生对话中的 Top 3 不足，返回 JSON:
 {"gaps":[{"label":"不足分类","evidence_sentence":"原文证据","explanation":"为什么需要改进及正确建议"}]}"""
@@ -353,7 +325,7 @@ def analyze_scenario(image_path: str) -> Dict[str, Any]:
         raw = _call_doubao([{"role": "user", "content": [
             {"type": "text", "text": _SCENE_PROMPT},
             {"type": "image_url", "image_url": {"url": data_url}},
-        ]}], model=ARK_MODEL_ID, timeout=_VISION_TIMEOUT)
+        ]}], model=ARK_MODEL_ID, timeout=_VISION_TIMEOUT, max_tokens=500)
     except Exception as e:
         raise RuntimeError(f"视觉模型调用失败: API请求失败 {e}")
 
