@@ -68,7 +68,7 @@ function normalizeResult(input: Partial<DictResult> | null | undefined): DictRes
   const translation = String(input?.translation ?? "").trim().slice(0, 30);
   const phonetic = String(input?.phonetic ?? "").trim().slice(0, 50);
   return {
-    translation: translation || "（翻译失败）",
+    translation: translation || "",
     phonetic,
   };
 }
@@ -111,7 +111,7 @@ export async function translateWord(word: string): Promise<DictResult> {
         body: JSON.stringify({ word: key }),
       });
       if (!resp.ok) {
-        return { translation: "（翻译失败）", phonetic: "" };
+        return { translation: "", phonetic: "" };
       }
       const data = await resp.json();
 
@@ -147,8 +147,8 @@ export async function translateWord(word: string): Promise<DictResult> {
       writeCache(cur);
       return result;
     } catch {
-      // 网络不可用，本地词典已查过无此词
-      return { translation: "（需联网）", phonetic: "" };
+      // Network unavailable
+      return { translation: "", phonetic: "" };
     } finally {
       inFlight.delete(key);
     }

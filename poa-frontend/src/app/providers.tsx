@@ -3,26 +3,26 @@
 import { useEffect, useState, ReactNode } from "react";
 import { POAProvider } from "@/lib/store";
 import { BASE_URL } from "@/lib/api";
+import { useTranslations } from "next-intl";
 
 const API_VERSION_KEY = "poa_api_base_url";
 
 function ApiVersionChecker({ children }: { children: ReactNode }) {
   const [showPrompt, setShowPrompt] = useState(false);
+  const t = useTranslations("providers");
 
   useEffect(() => {
     if (typeof window === "undefined") return;
 
     const storedUrl = localStorage.getItem(API_VERSION_KEY);
 
-    // 首次访问，存储当前 URL
     if (!storedUrl) {
       localStorage.setItem(API_VERSION_KEY, BASE_URL);
       return;
     }
 
-    // 检测 URL 是否变更
     if (storedUrl !== BASE_URL) {
-      console.warn(`[POA] API 地址已变更: ${storedUrl} → ${BASE_URL}`);
+      console.warn(`[POA] API URL changed: ${storedUrl} → ${BASE_URL}`);
       setShowPrompt(true);
     }
   }, []);
@@ -35,7 +35,6 @@ function ApiVersionChecker({ children }: { children: ReactNode }) {
   };
 
   const handleDismiss = () => {
-    // 用户选择忽略，更新存储的 URL
     localStorage.setItem(API_VERSION_KEY, BASE_URL);
     setShowPrompt(false);
   };
@@ -52,25 +51,25 @@ function ApiVersionChecker({ children }: { children: ReactNode }) {
                 </svg>
               </div>
               <div>
-                <h3 className="font-semibold text-card-foreground">检测到配置变更</h3>
-                <p className="text-xs text-muted-foreground">后端服务地址已更新</p>
+                <h3 className="font-semibold text-card-foreground">{t("config_changed")}</h3>
+                <p className="text-xs text-muted-foreground">{t("backend_updated")}</p>
               </div>
             </div>
             <p className="text-sm text-muted-foreground mb-4">
-              检测到后端地址已变更，历史数据可能无法正常加载。建议清除本地缓存以获得最佳体验。
+              {t("config_msg")}
             </p>
             <div className="flex gap-2 justify-end">
               <button
                 onClick={handleDismiss}
                 className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
               >
-                稍后处理
+                {t("later")}
               </button>
               <button
                 onClick={handleClearCache}
                 className="px-4 py-2 text-sm font-medium bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
               >
-                清除缓存并刷新
+                {t("clear_and_refresh")}
               </button>
             </div>
           </div>

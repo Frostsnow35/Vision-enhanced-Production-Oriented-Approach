@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useRef, useEffect, type DragEvent } from "react";
+import { useState, useRef, useEffect, useMemo, type DragEvent } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { Upload } from "lucide-react";
 import { uploadImage, type ScenarioResult, BASE_URL, buildImageUrl } from "@/lib/api";
@@ -12,22 +13,16 @@ import { usePOA, getScenarioHistory, addScenarioToHistory, removeScenarioFromHis
    ============================================================ */
 interface ToastItem { id: number; message: string; type: "error" | "success" }
 
-/* ============================================================
-   场景分析趣味提示词
-   ============================================================ */
-const FUN_TIPS = [
-  "AI 正在仔细观察照片里的每一个细节...",
-  "别急，好的任务需要细细打磨 ✨",
-  "正在为这场对话挑选最贴合的词汇表 ☕",
-  "下一步会根据你的目标推荐对话策略 💡",
-  "完成分析后可直接进入录音环节 🎙",
-  "提示：开口前先想清楚要达成的目标",
-  "AI 正在脑补这场对话会怎么展开...",
-];
-
 export default function ScenarioPage() {
+  const t = useTranslations();
   const router = useRouter();
   const { setScenarioResult } = usePOA();
+
+  // 场景分析趣味提示词（通过翻译动态获取）
+  const funTips: string[] = useMemo(() => {
+    const result = t("scenario.fun_tips");
+    return Array.isArray(result) ? result : [];
+  }, [t]);
 
   // ---- Upload state ----
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
@@ -46,11 +41,12 @@ export default function ScenarioPage() {
       setTipIndex(0);
       return;
     }
+    if (funTips.length === 0) return;
     const id = setInterval(() => {
-      setTipIndex((i) => (i + 1) % FUN_TIPS.length);
+      setTipIndex((i) => (i + 1) % funTips.length);
     }, 3000);
     return () => clearInterval(id);
-  }, [submitting]);
+  }, [submitting, funTips]);
 
   // ---- History ----
   const [history, setHistory] = useState<ScenarioHistoryItem[]>([]);
@@ -72,8 +68,8 @@ export default function ScenarioPage() {
   // ---- 文件校验 ----
   function validateFile(file: File): string | null {
     const allowed = ["image/jpeg", "image/png", "image/jpg"];
-    if (!allowed.includes(file.type)) return "仅支持 JPG / PNG 格式的图片";
-    if (file.size > 10 * 1024 * 1024) return "图片大小不能超过 10MB";
+    if (!allowed.includes(file.type)) return t("scenario.invalid_format");
+    if (file.size > 10 * 1024 * 1024) return t("scenario.file_too_large");
     return null;
   }
 
@@ -141,7 +137,7 @@ export default function ScenarioPage() {
         signal: AbortSignal.timeout(200000),
       });
       if (!res.ok) {
-        let msg = `服务器错误 (${res.status})`;
+        let msg = `${t("common.server_error")} (${res.status})`;
         try { const errBody = await res.json(); if (errBody?.message) msg = errBody.message; } catch {}
         throw new Error(msg);
       }
@@ -164,13 +160,13 @@ export default function ScenarioPage() {
       addScenarioToHistory(historyItem);
       selectScenario(historyItem.id);
       setScenarioResult(result);
-      addToast("场景分析完成，正在跳转...", "success");
+      addToast(t("scenario.analysis_done"), "success");
       setTimeout(() => router.push("/task"), 600);
     } catch (err: any) {
       if (err.name === "TimeoutError" || err.name === "AbortError") {
-        addToast("图片识别超时，请稍后重试。", "error");
+        addToast(t("scenario.timeout"), "error");
       } else {
-        addToast(`图片识别失败，请稍后重试。（错误：${err.message ?? "未知错误"}）`, "error");
+        addToast(t("scenario.analyze_failed", { error: err.message ?? t("common.error_unknown") }), "error");
       }
     } finally {
       setSubmitting(false);
@@ -182,14 +178,14 @@ export default function ScenarioPage() {
     const item = selectScenario(id);
     if (item) {
       setScenarioResult(item.task);
-      addToast("已选择场景，正在进入任务...", "success");
+      addToast(t("scenario.selected_navigating"), "success");
       setTimeout(() => router.push("/task"), 400);
     }
   }
 
   function handleDeleteHistory(id: string, e: React.MouseEvent) {
     e.stopPropagation();
-    if (!confirm("确定删除此场景记录？")) return;
+    if (!confirm(t("scenario.delete_confirm"))) return;
     removeScenarioFromHistory(id);
     refreshHistory();
   }
@@ -207,7 +203,7 @@ export default function ScenarioPage() {
         signal: AbortSignal.timeout(200000),
       });
       if (!res.ok) {
-        let msg = `服务器错误 (${res.status})`;
+        let msg = `${t("common.server_error")} (${res.status})`;
         try { const errBody = await res.json(); if (errBody?.message) msg = errBody.message; } catch {}
         throw new Error(msg);
       }
@@ -228,13 +224,13 @@ export default function ScenarioPage() {
       selectScenario(historyItem.id);
       setScenarioResult(result);
       refreshHistory();
-      addToast("场景分析完成，正在跳转...", "success");
+      addToast(t("scenario.analysis_done"), "success");
       setTimeout(() => router.push("/task"), 600);
     } catch (err: any) {
       if (err.name === "TimeoutError" || err.name === "AbortError") {
-        addToast("图片识别超时，请稍后重试。", "error");
+        addToast(t("scenario.timeout"), "error");
       } else {
-        addToast(`图片识别失败，请稍后重试。（错误：${err.message ?? "未知错误"}）`, "error");
+        addToast(t("scenario.analyze_failed", { error: err.message ?? t("common.error_unknown") }), "error");
       }
     } finally {
       setSubmitting(false);
@@ -245,9 +241,9 @@ export default function ScenarioPage() {
     const d = new Date(iso);
     const now = new Date();
     const diff = now.getTime() - d.getTime();
-    if (diff < 60000) return "刚刚";
-    if (diff < 3600000) return `${Math.floor(diff / 60000)} 分钟前`;
-    if (diff < 86400000) return `${Math.floor(diff / 3600000)} 小时前`;
+    if (diff < 60000) return t("scenario.just_now");
+    if (diff < 3600000) return t("scenario.minutes_ago", { min: Math.floor(diff / 60000) });
+    if (diff < 86400000) return t("scenario.hours_ago", { h: Math.floor(diff / 3600000) });
     return d.toLocaleDateString("zh-CN");
   }
 
@@ -266,15 +262,17 @@ export default function ScenarioPage() {
             </div>
             {/* 标题 */}
             <h2 className="text-center text-lg font-semibold text-card-foreground">
-              正在识别场景并生成任务...
+              {t("scenario.analyzing_title")}
             </h2>
             {/* 趣味提示词（每 3 秒轮换） */}
-            <p
-              key={tipIndex}
-              className="mt-4 text-center text-sm text-muted-foreground min-h-[2.5rem] animate-in fade-in duration-500"
-            >
-              {FUN_TIPS[tipIndex]}
-            </p>
+            {funTips.length > 0 && (
+              <p
+                key={tipIndex}
+                className="mt-4 text-center text-sm text-muted-foreground min-h-[2.5rem] animate-in fade-in duration-500"
+              >
+                {funTips[tipIndex]}
+              </p>
+            )}
             {/* 三个跳动小圆点 */}
             <div className="mt-4 flex items-center justify-center gap-1.5">
               <span className="size-1.5 rounded-full bg-primary animate-bounce [animation-delay:0ms]" />
@@ -282,37 +280,39 @@ export default function ScenarioPage() {
               <span className="size-1.5 rounded-full bg-primary animate-bounce [animation-delay:300ms]" />
             </div>
             {/* 进度点（轮换指示） */}
-            <div className="mt-3 flex items-center justify-center gap-1">
-              {FUN_TIPS.map((_, i) => (
-                <span
-                  key={i}
-                  className={`size-1 rounded-full transition-all duration-300 ${
-                    i === tipIndex ? "bg-primary w-4" : "bg-muted-foreground/30"
-                  }`}
-                />
-              ))}
-            </div>
+            {funTips.length > 0 && (
+              <div className="mt-3 flex items-center justify-center gap-1">
+                {funTips.map((_, i) => (
+                  <span
+                    key={i}
+                    className={`size-1 rounded-full transition-all duration-300 ${
+                      i === tipIndex ? "bg-primary w-4" : "bg-muted-foreground/30"
+                    }`}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
 
       {/* Toast */}
       <div className="fixed right-4 top-4 z-[100] flex flex-col gap-2 w-80 pointer-events-none">
-        {toasts.map(t => (
-          <div key={t.id} className={`pointer-events-auto flex items-start gap-3 rounded-lg border px-4 py-3 text-sm shadow-lg ${
-            t.type === "error" ? "border-destructive/30 bg-destructive/5 text-destructive"
+        {toasts.map(toast => (
+          <div key={toast.id} className={`pointer-events-auto flex items-start gap-3 rounded-lg border px-4 py-3 text-sm shadow-lg ${
+            toast.type === "error" ? "border-destructive/30 bg-destructive/5 text-destructive"
             : "border-green-500/30 bg-green-50 text-green-700 dark:bg-green-950/30 dark:text-green-400"
           }`}>
-            <span className="flex-1">{t.message}</span>
-            <button onClick={() => setToasts(prev => prev.filter(x => x.id !== t.id))} className="shrink-0 opacity-60 hover:opacity-100">✕</button>
+            <span className="flex-1">{toast.message}</span>
+            <button onClick={() => setToasts(prev => prev.filter(x => x.id !== toast.id))} className="shrink-0 opacity-60 hover:opacity-100">✕</button>
           </div>
         ))}
       </div>
 
       {/* 标题 */}
       <header className="text-center">
-        <h1 className="text-2xl font-bold tracking-tight text-card-foreground sm:text-3xl">选择场景照片</h1>
-        <p className="mt-2 text-sm text-muted-foreground">上传一张真实场景照片，系统将为你生成交际任务</p>
+        <h1 className="text-2xl font-bold tracking-tight text-card-foreground sm:text-3xl">{t("scenario.title")}</h1>
+        <p className="mt-2 text-sm text-muted-foreground">{t("scenario.subtitle")}</p>
       </header>
 
       {/* 上传区域 */}
@@ -320,11 +320,11 @@ export default function ScenarioPage() {
         {previewUrl ? (
           <div className="w-full space-y-4">
             <div className="overflow-hidden rounded-xl border border-border bg-muted/30">
-              <img src={previewUrl} alt="预览" className="mx-auto max-h-64 w-full object-contain" />
+              <img src={previewUrl} alt={t("scenario.preview")} className="mx-auto max-h-64 w-full object-contain" />
             </div>
             <div className="flex items-center justify-between">
-              <p className="text-sm text-muted-foreground">图片已就绪</p>
-              <Button variant="outline" size="sm" onClick={removeUpload}>移除并重新选择</Button>
+              <p className="text-sm text-muted-foreground">{t("scenario.image_ready")}</p>
+              <Button variant="outline" size="sm" onClick={removeUpload}>{t("scenario.remove_reselect")}</Button>
             </div>
           </div>
         ) : (
@@ -337,8 +337,8 @@ export default function ScenarioPage() {
             >
               <Upload className={`w-12 h-12 transition-colors ${isDragging ? "text-primary" : "text-muted-foreground/40"}`} />
               <div className="space-y-1">
-                <p className="text-sm text-muted-foreground">{isDragging ? "释放以上传图片" : "拖拽照片到此处 或 点击选择文件"}</p>
-                <p className="text-xs text-muted-foreground/60">支持 JPG / PNG 格式，单张 ≤ 10MB（上传后自动压缩加速识别）</p>
+                <p className="text-sm text-muted-foreground">{isDragging ? t("scenario.drop_hint") : t("scenario.drag_hint")}</p>
+                <p className="text-xs text-muted-foreground/60">{t("scenario.format_hint")}</p>
               </div>
               <input ref={fileInputRef} type="file" accept="image/jpeg,image/png" onChange={onFileInputChange} className="hidden" />
             </label>
@@ -355,16 +355,16 @@ export default function ScenarioPage() {
               <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" className="opacity-25" />
               <path d="M4 12a8 8 0 018-8" stroke="currentColor" strokeWidth="4" className="opacity-75" />
             </svg>
-            分析中...
+            {t("scenario.analyzing")}
           </span>
-        ) : "生成交际任务"}
+        ) : t("scenario.generate_task")}
       </Button>
 
       {/* 历史场景列表 */}
       {history.length > 0 && (
         <div className="mt-6 overflow-x-auto">
           <div className="flex items-center gap-2 mb-3">
-            <h2 className="text-lg font-semibold text-card-foreground">历史场景</h2>
+            <h2 className="text-lg font-semibold text-card-foreground">{t("scenario.history")}</h2>
             <span className="rounded-md bg-muted px-2 py-0.5 text-xs text-muted-foreground">{history.length}</span>
           </div>
 
@@ -402,7 +402,7 @@ export default function ScenarioPage() {
                   <span
                     onClick={(e) => handleReanalyze(item, e)}
                     className="inline-flex items-center justify-center size-6 cursor-pointer rounded text-muted-foreground/40 transition-colors hover:bg-primary/10 hover:text-primary"
-                    title="重新分析"
+                    title={t("scenario.reanalyze")}
                   >
                     <svg className="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <polyline points="23 4 23 10 17 10" />
@@ -412,7 +412,7 @@ export default function ScenarioPage() {
                   <span
                     onClick={(e) => handleDeleteHistory(item.id, e)}
                     className="inline-flex items-center justify-center size-6 cursor-pointer rounded text-muted-foreground/40 transition-colors hover:bg-destructive/10 hover:text-destructive"
-                    title="删除"
+                    title={t("scenario.delete")}
                   >
                     <svg className="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                       <path d="M18 6L6 18M6 6l12 12" />

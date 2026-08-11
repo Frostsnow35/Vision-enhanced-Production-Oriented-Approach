@@ -1,31 +1,285 @@
 """
-单词翻译路由 —— 调用豆包 LLM 进行英汉词典翻译。
+Word translation endpoint using MyMemory free translation API.
+Zero token cost, millisecond-level response.
 """
-import json
 import logging
 
 import httpx
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from config import DOUBAO_API_KEY, DOUBAO_MODEL_ID, DOUBAO_BASE_URL
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("translate_router")
 
 router = APIRouter(prefix="/api", tags=["translate"])
 
-DOUBAO_CHAT_URL = f"{DOUBAO_BASE_URL}/chat/completions"
+MYMEMORY_URL = "https://api.mymemory.translated.net/get"
 
-TRANSLATE_SYSTEM_PROMPT = """\
-你是英汉词典工具。你的唯一职责：把用户输入的英文单词翻译成中文，并给出简版音标。
-【输出格式】严格 JSON，不要 markdown，不要加任何解释：
-{"translation": "最常见的中文释义，15字以内", "phonetic": "简版音标，如 /ˈlæteɪ/"}
-【约束】
-- 只接受单个英文单词；如收到短语或句子，只翻译第一个核心词
-- translation 用 15 字以内的最常见中文释义（一个或多个，用顿号分隔）
-- phonetic 用简版音标格式
-- 不知道该词时，translation 返回 "未收录"，phonetic 留空字符串"""
+# Common word pronunciations (IPA) for fallback when API doesn't provide them
+PHONETIC_DICT: dict[str, str] = {
+    "hello": "/həˈloʊ/",
+    "goodbye": "/ɡʊdˈbaɪ/",
+    "please": "/pliːz/",
+    "thank": "/θæŋk/",
+    "sorry": "/ˈsɒri/",
+    "yes": "/jes/",
+    "no": "/noʊ/",
+    "morning": "/ˈmɔːrnɪŋ/",
+    "evening": "/ˈiːvnɪŋ/",
+    "night": "/naɪt/",
+    "water": "/ˈwɔːtər/",
+    "food": "/fuːd/",
+    "money": "/ˈmʌni/",
+    "time": "/taɪm/",
+    "friend": "/frend/",
+    "family": "/ˈfæməli/",
+    "work": "/wɜːrk/",
+    "school": "/skuːl/",
+    "help": "/help/",
+    "love": "/lʌv/",
+    "like": "/laɪk/",
+    "want": "/wɒnt/",
+    "need": "/niːd/",
+    "go": "/ɡoʊ/",
+    "come": "/kʌm/",
+    "make": "/meɪk/",
+    "know": "/noʊ/",
+    "think": "/θɪŋk/",
+    "see": "/siː/",
+    "say": "/seɪ/",
+    "get": "/ɡet/",
+    "take": "/teɪk/",
+    "give": "/ɡɪv/",
+    "tell": "/tel/",
+    "ask": "/æsk/",
+    "try": "/traɪ/",
+    "call": "/kɔːl/",
+    "keep": "/kiːp/",
+    "let": "/let/",
+    "begin": "/bɪˈɡɪn/",
+    "seem": "/siːm/",
+    "show": "/ʃoʊ/",
+    "hear": "/hɪr/",
+    "play": "/pleɪ/",
+    "run": "/rʌn/",
+    "move": "/muːv/",
+    "live": "/lɪv/",
+    "believe": "/bɪˈliːv/",
+    "bring": "/brɪŋ/",
+    "happen": "/ˈhæpən/",
+    "write": "/raɪt/",
+    "provide": "/prəˈvaɪd/",
+    "sit": "/sɪt/",
+    "stand": "/stænd/",
+    "lose": "/luːz/",
+    "pay": "/peɪ/",
+    "meet": "/miːt/",
+    "include": "/ɪnˈkluːd/",
+    "continue": "/kənˈtɪnjuː/",
+    "set": "/set/",
+    "learn": "/lɜːrn/",
+    "change": "/tʃeɪndʒ/",
+    "lead": "/liːd/",
+    "understand": "/ˌʌndərˈstænd/",
+    "watch": "/wɒtʃ/",
+    "follow": "/ˈfɒloʊ/",
+    "stop": "/stɒp/",
+    "create": "/kriˈeɪt/",
+    "speak": "/spiːk/",
+    "read": "/riːd/",
+    "allow": "/əˈlaʊ/",
+    "add": "/æd/",
+    "spend": "/spend/",
+    "grow": "/ɡroʊ/",
+    "open": "/ˈoʊpən/",
+    "walk": "/wɔːk/",
+    "win": "/wɪn/",
+    "offer": "/ˈɒfər/",
+    "remember": "/rɪˈmembər/",
+    "consider": "/kənˈsɪdər/",
+    "appear": "/əˈpɪr/",
+    "buy": "/baɪ/",
+    "serve": "/sɜːrv/",
+    "die": "/daɪ/",
+    "send": "/send/",
+    "build": "/bɪld/",
+    "stay": "/steɪ/",
+    "fall": "/fɔːl/",
+    "cut": "/kʌt/",
+    "reach": "/riːtʃ/",
+    "kill": "/kɪl/",
+    "remain": "/rɪˈmeɪn/",
+    "suggest": "/səˈdʒest/",
+    "raise": "/reɪz/",
+    "pass": "/pæs/",
+    "sell": "/sel/",
+    "require": "/rɪˈkwaɪər/",
+    "report": "/rɪˈpɔːrt/",
+    "decide": "/dɪˈsaɪd/",
+    "pull": "/pʊl/",
+    "good": "/ɡʊd/",
+    "bad": "/bæd/",
+    "big": "/bɪɡ/",
+    "small": "/smɔːl/",
+    "new": "/njuː/",
+    "old": "/oʊld/",
+    "high": "/haɪ/",
+    "low": "/loʊ/",
+    "long": "/lɒŋ/",
+    "short": "/ʃɔːrt/",
+    "fast": "/fæst/",
+    "slow": "/sloʊ/",
+    "hot": "/hɒt/",
+    "cold": "/koʊld/",
+    "happy": "/ˈhæpi/",
+    "sad": "/sæd/",
+    "beautiful": "/ˈbjuːtɪfəl/",
+    "important": "/ɪmˈpɔːrtənt/",
+    "different": "/ˈdɪfərənt/",
+    "available": "/əˈveɪləbəl/",
+    "popular": "/ˈpɒpjʊlər/",
+    "difficult": "/ˈdɪfɪkəlt/",
+    "strong": "/strɒŋ/",
+    "possible": "/ˈpɒsəbəl/",
+    "special": "/ˈspeʃəl/",
+    "natural": "/ˈnætʃərəl/",
+    "simple": "/ˈsɪmpəl/",
+    "clear": "/klɪr/",
+    "easy": "/ˈiːzi/",
+    "real": "/riːl/",
+    "true": "/truː/",
+    "sure": "/ʃʊr/",
+    "able": "/ˈeɪbəl/",
+    "early": "/ˈɜːrli/",
+    "late": "/leɪt/",
+    "free": "/friː/",
+    "full": "/fʊl/",
+    "kind": "/kaɪnd/",
+    "serious": "/ˈsɪriəs/",
+    "common": "/ˈkɒmən/",
+    "pretty": "/ˈprɪti/",
+    "bright": "/braɪt/",
+    "dark": "/dɑːrk/",
+    "quiet": "/ˈkwaɪət/",
+    "loud": "/laʊd/",
+    "soft": "/sɒft/",
+    "hard": "/hɑːrd/",
+    "deep": "/diːp/",
+    "wide": "/waɪd/",
+    "clean": "/kliːn/",
+    "dirty": "/ˈdɜːrti/",
+    "sweet": "/swiːt/",
+    "fresh": "/freʃ/",
+    "busy": "/ˈbɪzi/",
+    "careful": "/ˈkerfəl/",
+    "comfortable": "/ˈkʌmfətəbəl/",
+    "delicious": "/dɪˈlɪʃəs/",
+    "excellent": "/ˈeksələnt/",
+    "famous": "/ˈfeɪməs/",
+    "friendly": "/ˈfrendli/",
+    "helpful": "/ˈhelpfəl/",
+    "hungry": "/ˈhʌŋɡri/",
+    "interesting": "/ˈɪntrəstɪŋ/",
+    "necessary": "/ˈnesəsəri/",
+    "patient": "/ˈpeɪʃənt/",
+    "polite": "/pəˈlaɪt/",
+    "powerful": "/ˈpaʊərfəl/",
+    "quiet": "/ˈkwaɪət/",
+    "reasonable": "/ˈriːzənəbəl/",
+    "successful": "/səkˈsesfəl/",
+    "useful": "/ˈjuːsfəl/",
+    "wonderful": "/ˈwʌndərfəl/",
+    "coffee": "/ˈkɒfi/",
+    "tea": "/tiː/",
+    "milk": "/mɪlk/",
+    "breakfast": "/ˈbrekfəst/",
+    "lunch": "/lʌntʃ/",
+    "dinner": "/ˈdɪnər/",
+    "order": "/ˈɔːrdər/",
+    "menu": "/ˈmenjuː/",
+    "restaurant": "/ˈrestərɒnt/",
+    "hotel": "/hoʊˈtel/",
+    "airport": "/ˈerpɔːrt/",
+    "ticket": "/ˈtɪkɪt/",
+    "doctor": "/ˈdɒktər/",
+    "medicine": "/ˈmedɪsɪn/",
+    "phone": "/foʊn/",
+    "computer": "/kəmˈpjuːtər/",
+    "internet": "/ˈɪntərnet/",
+    "email": "/ˈiːmeɪl/",
+    "address": "/əˈdres/",
+    "weather": "/ˈweðər/",
+    "today": "/təˈdeɪ/",
+    "tomorrow": "/təˈmɒroʊ/",
+    "yesterday": "/ˈjestərdeɪ/",
+    "week": "/wiːk/",
+    "month": "/mʌnθ/",
+    "year": "/jɪr/",
+    "city": "/ˈsɪti/",
+    "country": "/ˈkʌntri/",
+    "world": "/wɜːrld/",
+    "people": "/ˈpiːpəl/",
+    "woman": "/ˈwʊmən/",
+    "child": "/tʃaɪld/",
+    "parent": "/ˈperənt/",
+    "teacher": "/ˈtiːtʃər/",
+    "student": "/ˈstuːdənt/",
+    "question": "/ˈkwestʃən/",
+    "answer": "/ˈænsər/",
+    "problem": "/ˈprɒbləm/",
+    "idea": "/aɪˈdiːə/",
+    "example": "/ɪɡˈzæmpəl/",
+    "information": "/ˌɪnfərˈmeɪʃən/",
+    "experience": "/ɪkˈspɪriəns/",
+    "education": "/ˌedʒʊˈkeɪʃən/",
+    "language": "/ˈlæŋɡwɪdʒ/",
+    "conversation": "/ˌkɒnvərˈseɪʃən/",
+    "situation": "/ˌsɪtʃuˈeɪʃən/",
+    "opportunity": "/ˌɒpərˈtjuːnəti/",
+    "recommendation": "/ˌrekəmenˈdeɪʃən/",
+    "appointment": "/əˈpɔɪntmənt/",
+    "reservation": "/ˌrezərˈveɪʃən/",
+    "complaint": "/kəmˈpleɪnt/",
+    "assistance": "/əˈsɪstəns/",
+    "preference": "/ˈprefərəns/",
+    "allergy": "/ˈælərdʒi/",
+    "ingredient": "/ɪnˈɡriːdiənt/",
+    "discount": "/ˈdɪskaʊnt/",
+    "receipt": "/rɪˈsiːt/",
+    "refund": "/ˈriːfʌnd/",
+    "delivery": "/dɪˈlɪvəri/",
+    "available": "/əˈveɪləbəl/",
+    "schedule": "/ˈskedʒuːl/",
+    "confirm": "/kənˈfɜːrm/",
+    "cancel": "/ˈkænsəl/",
+    "apologize": "/əˈpɒlədʒaɪz/",
+    "explain": "/ɪkˈspleɪn/",
+    "describe": "/dɪˈskraɪb/",
+    "suggest": "/səˈdʒest/",
+    "recommend": "/ˌrekəˈmend/",
+    "request": "/rɪˈkwest/",
+    "complain": "/kəmˈpleɪn/",
+    "invite": "/ɪnˈvaɪt/",
+    "introduce": "/ˌɪntrəˈdjuːs/",
+    "compare": "/kəmˈper/",
+    "prefer": "/prɪˈfɜːr/",
+    "arrange": "/əˈreɪndʒ/",
+    "prepare": "/prɪˈper/",
+    "manage": "/ˈmænɪdʒ/",
+    "accept": "/əkˈsept/",
+    "refuse": "/rɪˈfjuːz/",
+    "agree": "/əˈɡriː/",
+    "discuss": "/dɪˈskʌs/",
+    "mention": "/ˈmenʃən/",
+    "promise": "/ˈprɒmɪs/",
+    "worry": "/ˈwʌri/",
+    "enjoy": "/ɪnˈdʒɔɪ/",
+    "imagine": "/ɪˈmædʒɪn/",
+    "realize": "/ˈriːəlaɪz/",
+    "notice": "/ˈnoʊtɪs/",
+    "recognize": "/ˈrekəɡnaɪz/",
+    "forget": "/fərˈɡet/",
+}
 
 
 class TranslateRequest(BaseModel):
@@ -37,64 +291,42 @@ class TranslateResponse(BaseModel):
     phonetic: str
 
 
-def _clean_markdown_fence(text: str) -> str:
-    """清洗 LLM 返回中可能包裹的 markdown 代码块标记（```json ... ```）。"""
-    cleaned = text.strip()
-    if cleaned.startswith("```"):
-        parts = cleaned.split("```", 2)
-        if len(parts) >= 2:
-            cleaned = parts[1]
-            if cleaned.startswith("json"):
-                cleaned = cleaned[4:]
-            cleaned = cleaned.strip()
-    return cleaned
-
-
 @router.post("/translate", response_model=TranslateResponse)
 async def translate_word(req: TranslateRequest):
     """
-    调用豆包 LLM 将英文单词翻译为中文，并返回简版音标。
-    成功返回 {translation, phonetic}；失败时返回 translation="（翻译失败）"，phonetic=""，HTTP 200。
+    Translate an English word to Chinese using MyMemory free translation API.
+    Zero token cost, millisecond-level response.
+    Falls back to built-in phonetic dictionary when API doesn't provide phonetics.
     """
-    word = req.word.strip()
+    word = req.word.strip().lower()
     if not word:
-        return TranslateResponse(translation="（翻译失败）", phonetic="")
+        return TranslateResponse(translation="", phonetic="")
 
-    body = {
-        "model": DOUBAO_MODEL_ID,
-        "temperature": 0.1,
-        "max_tokens": 80,
-        "messages": [
-            {"role": "system", "content": TRANSLATE_SYSTEM_PROMPT},
-            {"role": "user", "content": word},
-        ],
-    }
+    phonetic = PHONETIC_DICT.get(word, "")
 
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.post(
-                DOUBAO_CHAT_URL,
-                headers={
-                    "Authorization": f"Bearer {DOUBAO_API_KEY}",
-                    "Content-Type": "application/json",
-                },
-                json=body,
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            resp = await client.get(
+                MYMEMORY_URL,
+                params={"q": word, "langpair": "en|zh-CN"},
             )
             resp.raise_for_status()
+            data = resp.json()
 
-        text = resp.json()["choices"][0]["message"]["content"]
-        cleaned = _clean_markdown_fence(text)
-        data = json.loads(cleaned)
+        translation = ""
+        if data.get("responseStatus") == 200:
+            translation = data.get("responseData", {}).get("translatedText", "")
 
-        translation = str(data.get("translation", "")).strip()
-        phonetic = str(data.get("phonetic", "")).strip()
+        translation = translation.strip() if translation else ""
 
         if not translation:
-            translation = "（翻译失败）"
+            return TranslateResponse(translation="词义未收录", phonetic=phonetic)
 
         logger.info(f"[translate] word={word!r} → translation={translation!r}, phonetic={phonetic!r}")
         return TranslateResponse(translation=translation, phonetic=phonetic)
 
     except Exception as e:
-        logger.warning(f"[translate] 翻译失败 word={word!r}: {e}")
-        return TranslateResponse(translation="（翻译失败）", phonetic="")
+        logger.warning(f"[translate] Translation failed word={word!r}: {e}")
+        if phonetic:
+            return TranslateResponse(translation="翻译暂不可用", phonetic=phonetic)
+        return TranslateResponse(translation="翻译暂不可用", phonetic="")

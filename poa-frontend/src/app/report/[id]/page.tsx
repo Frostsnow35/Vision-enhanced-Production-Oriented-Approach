@@ -2,6 +2,7 @@
 
 import { useState, useEffect, use } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { BASE_URL, buildImageUrl } from "@/lib/api";
 import { getScenarioHistory, selectScenario, type ScenarioHistoryItem } from "@/lib/store";
@@ -48,6 +49,8 @@ function TimelineNode({
   onToggle: () => void;
   children: React.ReactNode;
 }) {
+  const t = useTranslations();
+
   return (
     <div className="relative flex gap-4 pb-6 last:pb-0">
       {/* 竖线和图标 */}
@@ -69,7 +72,7 @@ function TimelineNode({
           </span>
           <span className="text-sm font-semibold text-card-foreground">{title}</span>
           <span className="ml-auto flex items-center gap-1 text-xs text-muted-foreground transition-transform duration-300">
-            {collapsed ? "展开" : "收起"}
+            {collapsed ? t("common.expand") : t("common.collapse")}
             <svg className={`size-3 transition-transform ${collapsed ? "" : "rotate-180"}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M5 12h14M12 5l7 7-7 7" />
             </svg>
@@ -90,9 +93,10 @@ function TimelineNode({
 
 /* ============================================================ */
 function SceneContent({ scenario, historyItem }: { scenario: Record<string, any> | null; historyItem: ScenarioHistoryItem | null }) {
+  const t = useTranslations();
   const imgPath = scenario?.image_path || historyItem?.imageUrl || "";
   const imgUrl = buildImageUrl(imgPath);
-  const sceneLabel = scenario?.scene_label || historyItem?.sceneLabel || "未知场景";
+  const sceneLabel = scenario?.scene_label || historyItem?.sceneLabel || t("report.unknown_scene");
 
   return (
     <div className="space-y-4">
@@ -122,7 +126,7 @@ function SceneContent({ scenario, historyItem }: { scenario: Record<string, any>
                 <circle cx="8.5" cy="8.5" r="1.5" />
                 <path d="M21 15l-5-5L5 21" />
               </svg>
-              <p className="mt-2 text-sm">图片加载失败</p>
+              <p className="mt-2 text-sm">{t("report.image_load_failed")}</p>
             </div>
           </div>
         </div>
@@ -141,6 +145,7 @@ function SceneContent({ scenario, historyItem }: { scenario: Record<string, any>
 
 /* ============================================================ */
 function TaskContent({ task, historyItem }: { task: Record<string, any> | null; historyItem: ScenarioHistoryItem | null }) {
+  const t = useTranslations();
   const roles = task?.roles || historyItem?.roles || "";
   const goal = task?.goal || historyItem?.goal || "";
   
@@ -148,8 +153,8 @@ function TaskContent({ task, historyItem }: { task: Record<string, any> | null; 
     const splitRe = /(?:；|;)\s*B[:：]\s*/i;
     const parts = raw.split(splitRe);
     return {
-      user: parts[0]?.replace(/^A[:：]\s*/i, "").trim() || "未指定",
-      ai: parts[1]?.trim() || "未指定",
+      user: parts[0]?.replace(/^A[:：]\s*/i, "").trim() || t("common.not_specified"),
+      ai: parts[1]?.trim() || t("common.not_specified"),
     };
   };
   
@@ -159,32 +164,32 @@ function TaskContent({ task, historyItem }: { task: Record<string, any> | null; 
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="rounded-lg bg-primary/5 p-4 border border-primary/10">
-          <p className="text-xs font-semibold uppercase tracking-wider text-primary/70 mb-2">你扮演</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-primary/70 mb-2">{t("report.you_play")}</p>
           <p className="text-sm font-medium text-card-foreground">{parsedRoles.user}</p>
         </div>
         <div className="rounded-lg bg-secondary/5 p-4 border border-secondary/10">
-          <p className="text-xs font-semibold uppercase tracking-wider text-secondary/70 mb-2">AI 扮演</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-secondary/70 mb-2">{t("report.ai_play")}</p>
           <p className="text-sm font-medium text-card-foreground">{parsedRoles.ai}</p>
         </div>
       </div>
 
       {goal && (
         <div className="space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">交际目标</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t("report.goal")}</p>
           <p className="text-sm leading-relaxed text-card-foreground">{goal}</p>
         </div>
       )}
 
       {task?.context && (
         <div className="space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">语境限制</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t("report.context")}</p>
           <p className="text-sm leading-relaxed text-muted-foreground bg-muted/30 rounded-lg p-3">{task.context}</p>
         </div>
       )}
 
       {task?.success_criteria && (
         <div className="space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">评价标准</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t("report.criteria")}</p>
           <div className="space-y-2">
             {(task.success_criteria as string).split(/\d+\./).filter(Boolean).map((item, i) => (
               <div key={i} className="flex items-start gap-2 text-sm">
@@ -201,7 +206,8 @@ function TaskContent({ task, historyItem }: { task: Record<string, any> | null; 
 
 /* ============================================================ */
 function AttemptContent({ attempt }: { attempt: Record<string, any> | null }) {
-  if (!attempt) return <p className="text-sm text-muted-foreground">暂无产出数据</p>;
+  const t = useTranslations();
+  if (!attempt) return <p className="text-sm text-muted-foreground">{t("report.no_output")}</p>;
 
   const audioPath = attempt.audio_path ?? "";
   const audioUrl = audioPath.startsWith("/") ? `${BASE_URL}${audioPath}` : audioPath;
@@ -211,7 +217,7 @@ function AttemptContent({ attempt }: { attempt: Record<string, any> | null }) {
       {(attempt.text || attempt.attempt_text) && (
         <div className="space-y-3">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-muted-foreground">对话记录</span>
+            <span className="text-xs font-semibold text-muted-foreground">{t("report.dialog_record")}</span>
           </div>
           <pre className="whitespace-pre-wrap rounded-lg bg-muted/30 p-4 text-sm text-card-foreground font-sans">
             {attempt.text || attempt.attempt_text}
@@ -221,7 +227,7 @@ function AttemptContent({ attempt }: { attempt: Record<string, any> | null }) {
 
       {audioUrl && (
         <div className="space-y-3">
-          <span className="text-xs font-semibold text-muted-foreground">录音回放</span>
+          <span className="text-xs font-semibold text-muted-foreground">{t("report.audio_replay")}</span>
           <audio
             src={audioUrl}
             controls
@@ -232,7 +238,7 @@ function AttemptContent({ attempt }: { attempt: Record<string, any> | null }) {
 
       {attempt.timestamp && (
         <p className="text-xs text-muted-foreground">
-          完成时间：{attempt.timestamp}
+          {t("report.completed_at")}{attempt.timestamp}
         </p>
       )}
     </div>
@@ -241,7 +247,8 @@ function AttemptContent({ attempt }: { attempt: Record<string, any> | null }) {
 
 /* ============================================================ */
 function DiagnosisContent({ gaps }: { gaps: Record<string, any>[] }) {
-  if (gaps.length === 0) return <p className="text-sm text-muted-foreground">暂无诊断数据</p>;
+  const t = useTranslations();
+  if (gaps.length === 0) return <p className="text-sm text-muted-foreground">{t("report.no_diagnosis")}</p>;
   
   return (
     <div className="space-y-4">
@@ -254,7 +261,7 @@ function DiagnosisContent({ gaps }: { gaps: Record<string, any>[] }) {
             <div className="flex-1">
               <p className="text-sm font-medium text-amber-800">{gap.label || gap.description}</p>
               {gap.suggestion && (
-                <p className="mt-1 text-xs text-amber-600">建议：<ClickableEnglish text={gap.suggestion} /></p>
+                <p className="mt-1 text-xs text-amber-600">{t("report.suggestion_prefix")}<ClickableEnglish text={gap.suggestion} /></p>
               )}
               {gap.explanation && (
                 <p className="mt-1 text-xs text-amber-600"><ClickableEnglish text={gap.explanation} /></p>
@@ -276,7 +283,8 @@ function parseJsonField(val: any): any {
 }
 
 function FacilitationContent({ packs }: { packs: Record<string, any>[] }) {
-  if (packs.length === 0) return <p className="text-sm text-muted-foreground">暂无学习材料</p>;
+  const t = useTranslations();
+  if (packs.length === 0) return <p className="text-sm text-muted-foreground">{t("report.no_learning_material")}</p>;
 
   return (
     <div className="space-y-4">
@@ -285,11 +293,11 @@ function FacilitationContent({ packs }: { packs: Record<string, any>[] }) {
         const dialogue = parseJsonField(pack.demo_dialogue);
         return (
         <div key={index} className="card p-4">
-          <p className="text-xs font-semibold uppercase tracking-wider text-primary mb-3">学习材料 {index + 1}</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-primary mb-3">{t("report.learning_material", { n: index + 1 })}</p>
 
           {Array.isArray(phrases) && phrases.length > 0 && (
             <div className="space-y-2 mb-4">
-              <p className="text-xs font-medium text-muted-foreground">场景词块与句式</p>
+              <p className="text-xs font-medium text-muted-foreground">{t("report.scene_chunks")}</p>
               <div className="space-y-1.5">
                 {phrases.map((p: any, i: number) => (
                   <div key={i} className="flex items-start gap-2 rounded bg-muted/30 px-3 py-1.5">
@@ -303,7 +311,7 @@ function FacilitationContent({ packs }: { packs: Record<string, any>[] }) {
 
           {Array.isArray(dialogue) && dialogue.length > 0 && (
             <div className="space-y-2 mb-4">
-              <p className="text-xs font-medium text-muted-foreground">示范对话</p>
+              <p className="text-xs font-medium text-muted-foreground">{t("report.demo_dialogue")}</p>
               <div className="space-y-1">
                 {dialogue.map((d: any, i: number) => (
                   <div key={i} className="flex gap-2 text-xs">
@@ -339,7 +347,8 @@ function renderChange(change: number | undefined) {
 }
 
 function EvaluationContent({ evaluation }: { evaluation: Record<string, any> | null }) {
-  if (!evaluation) return <p className="text-sm text-muted-foreground">暂无评价数据</p>;
+  const t = useTranslations();
+  if (!evaluation) return <p className="text-sm text-muted-foreground">{t("report.no_evaluation")}</p>;
 
   const dims = evaluation.dimension_scores ?? {};
   const entries = Object.entries(dims);
@@ -359,13 +368,13 @@ function EvaluationContent({ evaluation }: { evaluation: Record<string, any> | n
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <span className="text-xs text-muted-foreground">评价时间</span>
+        <span className="text-xs text-muted-foreground">{t("report.eval_time")}</span>
         <span className="text-xs text-card-foreground">{evaluation.created_at?.slice(0, 10) ?? ""}</span>
       </div>
 
       {sortedEntries.length > 0 && (
         <div className="space-y-3">
-          <p className="text-xs font-medium text-muted-foreground">维度评分</p>
+          <p className="text-xs font-medium text-muted-foreground">{t("report.dim_score")}</p>
           <div className="space-y-2">
             {sortedEntries.map(([key, value]) => {
               const isComparisonItem =
@@ -382,10 +391,10 @@ function EvaluationContent({ evaluation }: { evaluation: Record<string, any> | n
                     <span className="text-muted-foreground">{key}</span>
                     {isComparisonItem ? (
                       <span className="font-medium text-card-foreground">
-                        {toFixed((value as any).attempt1, 1)} → {toFixed((value as any).attempt2, 1)}分
+                        {toFixed((value as any).attempt1, 1)} → {toFixed((value as any).attempt2, 1)}{t("report.score")}
                       </span>
                     ) : (
-                      <span className="font-medium text-card-foreground">{score}分</span>
+                      <span className="font-medium text-card-foreground">{score}{t("report.score")}</span>
                     )}
                   </div>
                   {isComparisonItem ? (
@@ -423,7 +432,7 @@ function EvaluationContent({ evaluation }: { evaluation: Record<string, any> | n
 
       {evaluation.full_report && (
         <div className="space-y-2">
-          <p className="text-xs font-medium text-muted-foreground">综合评价</p>
+          <p className="text-xs font-medium text-muted-foreground">{t("report.overall_eval")}</p>
           <pre className="whitespace-pre-wrap rounded-lg bg-muted/30 p-4 text-sm text-card-foreground">
             <ClickableEnglish text={evaluation.full_report} />
           </pre>
@@ -432,7 +441,7 @@ function EvaluationContent({ evaluation }: { evaluation: Record<string, any> | n
 
       {evaluation.problem_improved && (
         <div className="rounded-lg bg-green-50/50 border border-green-100 p-4">
-          <p className="text-xs font-medium text-green-700 mb-2">改善情况</p>
+          <p className="text-xs font-medium text-green-700 mb-2">{t("report.improvement")}</p>
           <pre className="whitespace-pre-wrap text-xs text-green-600">
             <ClickableEnglish text={evaluation.problem_improved} />
           </pre>
@@ -446,6 +455,7 @@ function EvaluationContent({ evaluation }: { evaluation: Record<string, any> | n
 export default function ReportPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
+  const t = useTranslations();
 
   // 折叠状态
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -483,7 +493,7 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
     if (!scenarioId) {
       setReportError({
         kind: "not_found",
-        message: "未找到该学习记录，请从历史记录中选择",
+        message: t("common.record_not_found"),
       });
       setLoading(false);
       return;
@@ -497,19 +507,19 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
       } else if (res.status === 404) {
         setReportError({
           kind: "not_found",
-          message: "该学习记录已过期或被删除",
+          message: t("common.record_expired"),
         });
       } else {
         setReportError({
           kind: "server",
-          message: "报告生成出错，请稍后重试",
+          message: t("common.report_error"),
         });
       }
     } catch (err) {
       console.error("Failed to fetch report:", err);
       setReportError({
         kind: "network",
-        message: "网络异常，请检查连接后重试",
+        message: t("common.network_error"),
       });
     } finally {
       setLoading(false);
@@ -568,7 +578,7 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
             </svg>
           </div>
-          <p className="text-sm text-muted-foreground">正在加载学习证据链...</p>
+          <p className="text-sm text-muted-foreground">{t("report.loading")}</p>
         </div>
       </div>
     );
@@ -582,7 +592,7 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
             ring: "border-amber-200",
             bg: "bg-amber-50/50",
             icon: "📂",
-            title: "未找到该学习记录",
+            title: t("report.not_found"),
             iconBg: "bg-amber-100",
             iconText: "text-amber-700",
           }
@@ -591,7 +601,7 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
             ring: "border-amber-200",
             bg: "bg-amber-50/50",
             icon: "⚠️",
-            title: "报告生成出错",
+            title: t("report.error"),
             iconBg: "bg-amber-100",
             iconText: "text-amber-700",
           }
@@ -599,7 +609,7 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
             ring: "border-amber-200",
             bg: "bg-amber-50/50",
             icon: "📡",
-            title: "网络异常",
+            title: t("report.network_error"),
             iconBg: "bg-amber-100",
             iconText: "text-amber-700",
           };
@@ -616,11 +626,11 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
           <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
             {reportError.kind !== "not_found" && (
               <Button onClick={handleRetry} size="sm" className="w-full sm:w-auto">
-                🔄 重新加载
+                🔄 {t("common.reload")}
               </Button>
             )}
             <Button variant="outline" onClick={handleBackToList} size="sm" className="w-full sm:w-auto">
-              返回首页
+              {t("common.back_home")}
             </Button>
           </div>
         </div>
@@ -629,7 +639,7 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
   }
 
   // 使用历史记录或后端报告数据
-  const sceneLabel = (historyItem as any)?.sceneLabel || report?.scenario?.scene_label || "未知场景";
+  const sceneLabel = (historyItem as any)?.sceneLabel || report?.scenario?.scene_label || t("report.unknown_scene");
   const createdAt = report?.scenario?.created_at?.slice(0, 10) || (historyItem as any)?.createdAt?.slice(0, 10) || "";
 
   return (
@@ -643,7 +653,7 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
       <div className="relative mx-auto max-w-3xl px-4 py-12">
         {reportError && historyItem && (
           <div className="mb-6 rounded-lg bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 px-4 py-2.5 text-center">
-            <p className="text-sm text-amber-700 dark:text-amber-300">服务器未找到完整报告，正在展示本地缓存的摘要</p>
+            <p className="text-sm text-amber-700 dark:text-amber-300">{t("report.partial_notice")}</p>
           </div>
         )}
         {/* 标题区域 */}
@@ -656,11 +666,11 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
               <line x1="16" y1="17" x2="8" y2="17" />
               <polyline points="10 9 9 9 8 9" />
             </svg>
-            <span className="text-xs font-semibold text-primary">学习证据链</span>
+            <span className="text-xs font-semibold text-primary">{t("report.title_short")}</span>
           </div>
           
           <h1 className="text-3xl font-bold tracking-tight text-card-foreground sm:text-4xl mb-2">
-            学习证据链报告
+            {t("report.subtitle")}
           </h1>
           <p className="text-muted-foreground">
             {sceneLabel}{createdAt ? ` · ${createdAt}` : ""}
@@ -676,14 +686,14 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
               <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M16 11H8m0 0v6m0-6l-8 4m8-4l8 4" />
               </svg>
-              导出报告
+              {t("report.export")}
             </Button>
             <Button 
               variant="ghost" 
               size="sm" 
               onClick={() => router.push("/")}
             >
-              返回首页
+              {t("common.back_home")}
             </Button>
           </div>
         </header>
@@ -692,40 +702,40 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-10">
           <div className="rounded-xl bg-card border border-border/50 p-4 shadow-sm">
             <p className="text-2xl font-bold text-primary mb-1">7</p>
-            <p className="text-xs text-muted-foreground">学习环节</p>
+            <p className="text-xs text-muted-foreground">{t("report.stats_learning_steps")}</p>
           </div>
           <div className="rounded-xl bg-card border border-border/50 p-4 shadow-sm">
             <p className="text-2xl font-bold text-secondary mb-1">
               {report?.attempt1 ? "✓" : "-"}
             </p>
-            <p className="text-xs text-muted-foreground">初次产出</p>
+            <p className="text-xs text-muted-foreground">{t("report.stats_attempt1")}</p>
           </div>
           <div className="rounded-xl bg-card border border-border/50 p-4 shadow-sm">
             <p className="text-2xl font-bold text-amber-500 mb-1">
               {report?.diagnosis?.gaps?.length || 0}
             </p>
-            <p className="text-xs text-muted-foreground">诊断问题</p>
+            <p className="text-xs text-muted-foreground">{t("report.stats_diagnosis")}</p>
           </div>
           <div className="rounded-xl bg-card border border-border/50 p-4 shadow-sm">
             <p className="text-2xl font-bold text-green-500 mb-1">
               {report?.attempt2 ? "✓" : "-"}
             </p>
-            <p className="text-xs text-muted-foreground">二次产出</p>
+            <p className="text-xs text-muted-foreground">{t("report.stats_attempt2")}</p>
           </div>
         </div>
 
         {/* 时间线 */}
         <div className="card p-6 border-border/50">
           <div className="mb-6">
-            <h2 className="text-lg font-semibold text-card-foreground">学习流程</h2>
-            <p className="text-sm text-muted-foreground">按时间顺序记录您的学习过程</p>
+            <h2 className="text-lg font-semibold text-card-foreground">{t("report.timeline")}</h2>
+            <p className="text-sm text-muted-foreground">{t("report.timeline_desc")}</p>
           </div>
 
           <div className="relative ml-2">
             <TimelineNode
               idx={1}
               icon={<Camera className="size-5 text-sky-500" />}
-              title="场景照片"
+              title={t("report.node_scene_photo")}
               borderColor="border-sky-400/40"
               collapsed={collapsed["scene"] ?? false}
               onToggle={() => toggle("scene")}
@@ -736,7 +746,7 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
             <TimelineNode
               idx={2}
               icon={<ClipboardList className="size-5 text-violet-500" />}
-              title="交际任务"
+              title={t("report.node_task")}
               borderColor="border-violet-400/40"
               collapsed={collapsed["task"] ?? false}
               onToggle={() => toggle("task")}
@@ -747,7 +757,7 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
             <TimelineNode
               idx={3}
               icon={<Mic className="size-5 text-fuchsia-500" />}
-              title="初次产出"
+              title={t("report.node_attempt1")}
               borderColor="border-fuchsia-400/40"
               collapsed={collapsed["attempt1"] ?? false}
               onToggle={() => toggle("attempt1")}
@@ -758,7 +768,7 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
             <TimelineNode
               idx={4}
               icon={<Search className="size-5 text-red-500" />}
-              title="诊断结果"
+              title={t("report.node_diagnosis")}
               borderColor="border-red-400/40"
               collapsed={collapsed["diagnosis"] ?? false}
               onToggle={() => toggle("diagnosis")}
@@ -769,7 +779,7 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
             <TimelineNode
               idx={5}
               icon={<BookOpen className="size-5 text-emerald-500" />}
-              title="促成学习"
+              title={t("report.node_facilitate")}
               borderColor="border-emerald-400/40"
               collapsed={collapsed["facilitation"] ?? false}
               onToggle={() => toggle("facilitation")}
@@ -780,7 +790,7 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
             <TimelineNode
               idx={6}
               icon={<Repeat className="size-5 text-fuchsia-500" />}
-              title="二次产出"
+              title={t("report.node_attempt2")}
               borderColor="border-fuchsia-400/40"
               collapsed={collapsed["attempt2"] ?? false}
               onToggle={() => toggle("attempt2")}
@@ -791,7 +801,7 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
             <TimelineNode
               idx={7}
               icon={<BarChart3 className="size-5 text-amber-500" />}
-              title="双轨评价"
+              title={t("report.node_evaluation")}
               borderColor="border-amber-400/40"
               collapsed={collapsed["evaluation"] ?? false}
               onToggle={() => toggle("evaluation")}
@@ -804,7 +814,7 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
         {/* 底部信息 */}
         <footer className="mt-10 text-center">
           <p className="text-xs text-muted-foreground">
-            POA英语实景交际学习系统 · 学习证据链报告
+            {t("report.footer")}
           </p>
         </footer>
       </div>

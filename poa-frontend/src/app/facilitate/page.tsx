@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import InlineLoadingHint from "@/components/InlineLoadingHint";
 import TaskGate from "@/components/TaskGate";
@@ -12,7 +13,7 @@ import { getScenarioHistory, isTaskSelectedInSession, markTaskSelectedInSession,
 import { isDeviceCheckPassed } from "@/lib/device-check";
 
 /* ============================================================
-   类型 & 常量
+   类型
    ============================================================ */
 interface GapItem {
   label: string;
@@ -52,18 +53,49 @@ interface LearningProgress {
   phrasesLearned: string[];
 }
 
-const DIM_ORDER = [
-  "发音标准度",
-  "语法规范性",
-  "词汇适配性",
-  "语言功能达成度",
-  "语用策略得体性",
-  "话语回合适配性",
-  "副语言匹配度",
-];
+/* ============================================================
+   常量 —— 维度标识符（语言无关），显示时用 t("dims.xxx")
+   ============================================================ */
 
-const DIM_DESCRIPTIONS: Record<string, { description: string; levels: Record<number, string>; tips: string }> = {
-  "发音标准度": {
+/** 维度标识符列表（语言无关，用于内部逻辑） */
+const DIM_ORDER = [
+  "pronunciation",
+  "grammar",
+  "vocabulary",
+  "function",
+  "pragmatics",
+  "turn_taking",
+  "paralanguage",
+] as const;
+
+type DimKey = (typeof DIM_ORDER)[number];
+
+/** API 可能返回中文维度名，需要映射到内部标识符 */
+const CHINESE_DIM_TO_KEY: Record<string, DimKey> = {
+  "发音标准度": "pronunciation",
+  "语法规范性": "grammar",
+  "词汇适配性": "vocabulary",
+  "语言功能达成度": "function",
+  "语用策略得体性": "pragmatics",
+  "话语回合适配性": "turn_taking",
+  "副语言匹配度": "paralanguage",
+};
+
+/** 将 API 返回的分数对象（可能包含中文键）归一化为 dim key 键 */
+function normalizeScores(raw: Record<string, any>): DimScores {
+  const result: DimScores = {};
+  for (const [key, val] of Object.entries(raw)) {
+    const dimKey = CHINESE_DIM_TO_KEY[key] ?? key;
+    if ((DIM_ORDER as readonly string[]).includes(dimKey)) {
+      result[dimKey] = Number(val) || 0;
+    }
+  }
+  return result;
+}
+
+/** 维度描述（内容数据，非 UI 标签；键为 dim key） */
+const DIM_DESCRIPTIONS: Record<DimKey, { description: string; levels: Record<number, string>; tips: string }> = {
+  pronunciation: {
     description: "评估英语发音的准确程度，包括元音、辅音、重音和语调。",
     levels: {
       1: "发音困难，大量错误，难以理解",
@@ -74,7 +106,7 @@ const DIM_DESCRIPTIONS: Record<string, { description: string; levels: Record<num
     },
     tips: "多听示范音频，模仿跟读，注意重音和语调，可以录下自己的发音进行对比。",
   },
-  "语法规范性": {
+  grammar: {
     description: "评估语法使用的正确性，包括时态、语态、主谓一致等。",
     levels: {
       1: "语法错误频繁，严重影响理解",
@@ -85,7 +117,7 @@ const DIM_DESCRIPTIONS: Record<string, { description: string; levels: Record<num
     },
     tips: "练习时注意自我纠正，建立语法笔记，定期复习巩固。",
   },
-  "词汇适配性": {
+  vocabulary: {
     description: "评估词汇使用的恰当性、丰富性和准确性。",
     levels: {
       1: "词汇量有限，表达单一",
@@ -96,7 +128,7 @@ const DIM_DESCRIPTIONS: Record<string, { description: string; levels: Record<num
     },
     tips: "建立场景词汇库，学习同义词替换，注意词汇搭配。",
   },
-  "语言功能达成度": {
+  function: {
     description: "评估能否用英语完成特定的交际功能，如请求、建议、道歉等。",
     levels: {
       1: "难以完成基本交际功能",
@@ -107,7 +139,7 @@ const DIM_DESCRIPTIONS: Record<string, { description: string; levels: Record<num
     },
     tips: "明确每种交际功能的常用表达，进行有针对性的练习。",
   },
-  "语用策略得体性": {
+  pragmatics: {
     description: "评估语言使用的礼貌性、得体性和文化适应性。",
     levels: {
       1: "表达直接生硬，缺乏礼貌",
@@ -118,7 +150,7 @@ const DIM_DESCRIPTIONS: Record<string, { description: string; levels: Record<num
     },
     tips: "学习委婉表达，注意礼貌用语，了解文化差异。",
   },
-  "话语回合适配性": {
+  turn_taking: {
     description: "评估对话中的回应能力，包括话题延续和转换。",
     levels: {
       1: "回应困难，难以维持对话",
@@ -129,7 +161,7 @@ const DIM_DESCRIPTIONS: Record<string, { description: string; levels: Record<num
     },
     tips: "练习使用话语标记，注意倾听对方，学会自然地转换话题。",
   },
-  "副语言匹配度": {
+  paralanguage: {
     description: "评估语调、语速、停顿等非语言要素的使用。",
     levels: {
       1: "语调单一，语速不当",
@@ -142,14 +174,15 @@ const DIM_DESCRIPTIONS: Record<string, { description: string; levels: Record<num
   },
 };
 
-const DIM_ADVICE: Record<string, string> = {
-  "发音标准度": "多听示范音频跟读，重点练习元音饱满度和词尾辅音，可使用录音自评。",
-  "语法规范性": "重点复习时态、主谓一致和介词搭配，口头练习时注意自我纠正。",
-  "词汇适配性": "积累场景核心词汇和固定搭配，用同义替换避免重复使用基础词汇。",
-  "语言功能达成度": "先确保完成所有交际要点再追求复杂表达，练习前先列出关键步骤。",
-  "语用策略得体性": "学习使用 'I'd like', 'Could you...' 等委婉表达，强化礼貌标记词。",
-  "话语回合适配性": "练习使用 'Well', 'Actually', 'Sure' 等话语标记自然开启回应，注意话轮交替节奏。",
-  "副语言匹配度": "注意疑问句升调和陈述句降调，练习语速变化和情感语调，可跟读示范音频。",
+/** 维度提升建议（内容数据，键为 dim key） */
+const DIM_ADVICE: Record<DimKey, string> = {
+  pronunciation: "多听示范音频跟读，重点练习元音饱满度和词尾辅音，可使用录音自评。",
+  grammar: "重点复习时态、主谓一致和介词搭配，口头练习时注意自我纠正。",
+  vocabulary: "积累场景核心词汇和固定搭配，用同义替换避免重复使用基础词汇。",
+  function: "先确保完成所有交际要点再追求复杂表达，练习前先列出关键步骤。",
+  pragmatics: "学习使用 'I'd like', 'Could you...' 等委婉表达，强化礼貌标记词。",
+  turn_taking: "练习使用 'Well', 'Actually', 'Sure' 等话语标记自然开启回应，注意话轮交替节奏。",
+  paralanguage: "注意疑问句升调和陈述句降调，练习语速变化和情感语调，可跟读示范音频。",
 };
 
 const TAB_ICONS: Record<TabKey, string> = {
@@ -158,14 +191,6 @@ const TAB_ICONS: Record<TabKey, string> = {
   dialogue: "🎙️",
   exercises: "✍️",
   oral: "🎤",
-};
-
-const TAB_LABELS: Record<TabKey, string> = {
-  assessment: "当前能力评估",
-  phrases: "场景词块与句式",
-  dialogue: "示范对话",
-  exercises: "即时练习",
-  oral: "口语练习",
 };
 
 /* ============================================================
@@ -277,12 +302,12 @@ const markTabComplete = (
   });
 };
 
-const copyToClipboard = async (text: string) => {
+const copyToClipboard = async (text: string, successMsg: string, errorMsg: string) => {
   try {
     await navigator.clipboard.writeText(text);
-    alert("已复制到剪贴板！");
+    alert(successMsg);
   } catch {
-    alert("复制失败，请手动复制");
+    alert(errorMsg);
   }
 };
 
@@ -291,6 +316,7 @@ const copyToClipboard = async (text: string) => {
    ============================================================ */
 export default function FacilitatePage() {
   const router = useRouter();
+  const t = useTranslations();
 
   // ---- 所有 useState 必须在早期返回之前 ----
   const [initDone, setInitDone] = useState(false);
@@ -328,6 +354,15 @@ export default function FacilitatePage() {
   const [expandedDim, setExpandedDim] = useState<string | null>(null);
   const [devicePassed, setDevicePassed] = useState(false);
 
+  // ---- useMemo：Tab 标签 ----
+  const TAB_LABELS: Record<TabKey, string> = useMemo(() => ({
+    assessment: t("facilitate.tab_assessment"),
+    phrases: t("facilitate.tab_phrases"),
+    dialogue: t("facilitate.tab_dialogue"),
+    exercises: t("facilitate.tab_exercises"),
+    oral: t("facilitate.tab_oral"),
+  }), [t]);
+
   // ---- 初始化 ----
   useEffect(() => {
     setDevicePassed(isDeviceCheckPassed());
@@ -349,12 +384,12 @@ export default function FacilitatePage() {
       try {
         const raw = localStorage.getItem("currentTask");
         if (raw) {
-          const t = JSON.parse(raw);
+          const task = JSON.parse(raw);
           setTaskContext({
-            task_id: t.task_id ?? 0,
-            scene_label: t.scene_label ?? "",
-            roles: t.roles ?? "",
-            goal: t.goal ?? "",
+            task_id: task.task_id ?? 0,
+            scene_label: task.scene_label ?? "",
+            roles: task.roles ?? "",
+            goal: task.goal ?? "",
           });
           hasData = true;
         }
@@ -384,12 +419,12 @@ export default function FacilitatePage() {
     try {
       const raw = localStorage.getItem("currentTask");
       if (raw) {
-        const t = JSON.parse(raw);
+        const task = JSON.parse(raw);
         setTaskContext({
-          task_id: t.task_id ?? 0,
-          scene_label: t.scene_label ?? "",
-          roles: t.roles ?? "",
-          goal: t.goal ?? "",
+          task_id: task.task_id ?? 0,
+          scene_label: task.scene_label ?? "",
+          roles: task.roles ?? "",
+          goal: task.goal ?? "",
         });
         hasData = true;
       }
@@ -501,11 +536,15 @@ export default function FacilitatePage() {
           const rawScores = data?.dimension_scores ?? data;
           const rawComments = data?.comments ?? {};
           if (rawScores && typeof rawScores === "object" && Object.keys(rawScores).length > 0) {
-            const filtered: DimScores = {};
+            const filtered = normalizeScores(rawScores);
             const filteredComments: DimComments = {};
             for (const dim of DIM_ORDER) {
-              if (dim in rawScores) filtered[dim] = Number(rawScores[dim]) || 0;
-              if (typeof rawComments[dim] === "string" && rawComments[dim].trim()) filteredComments[dim] = rawComments[dim];
+              // 同时查找 dim key 和中文名
+              const chineseName = Object.keys(CHINESE_DIM_TO_KEY).find(k => CHINESE_DIM_TO_KEY[k] === dim);
+              const commentVal = rawComments[dim] ?? (chineseName ? rawComments[chineseName] : undefined);
+              if (typeof commentVal === "string" && commentVal.trim()) {
+                filteredComments[dim] = commentVal;
+              }
             }
             if (Object.keys(filtered).length > 0) {
               setScores(filtered);
@@ -553,7 +592,7 @@ export default function FacilitatePage() {
 
   // ---- 词块学习 ----
   const learnPhrase = (sentence: string) => {
-    copyToClipboard(sentence);
+    copyToClipboard(sentence, t("common.copy_success"), t("common.copy_failed"));
     setProgress((prev) => {
       if (!prev.phrasesLearned.includes(sentence)) {
         const newProgress = {
@@ -601,7 +640,7 @@ export default function FacilitatePage() {
   if (!initDone) {
     return (
       <div className="flex items-center justify-center py-20">
-        <div className="text-sm text-muted-foreground">加载中...</div>
+        <div className="text-sm text-muted-foreground">{t("common.loading")}</div>
       </div>
     );
   }
@@ -667,13 +706,13 @@ export default function FacilitatePage() {
         }`}>
           <span className="flex items-center gap-2">
             <span className={`size-2 rounded-full ${devicePassed ? "bg-emerald-500" : "bg-amber-500"}`} />
-            {devicePassed ? "设备就绪：摄像头和麦克风可用" : "建议先进行设备检测，确保后续练习顺畅"}
+            {devicePassed ? t("facilitate.device_ready_msg") : t("facilitate.device_check_hint")}
           </span>
           <button
             onClick={() => router.push("/device-check")}
             className="rounded-md bg-white/60 px-3 py-1 text-xs font-medium hover:bg-white"
           >
-            {devicePassed ? "重新检测" : "去检测"}
+            {devicePassed ? t("facilitate.recheck") : t("facilitate.check_now")}
           </button>
         </div>
         {/* 顶部渐变区域 */}
@@ -685,19 +724,19 @@ export default function FacilitatePage() {
           <div className="relative z-10">
             <div className="flex items-center gap-3 mb-2">
               <span className="text-3xl">📚</span>
-              <h1 className="text-2xl font-bold sm:text-3xl">促成学习</h1>
+              <h1 className="text-2xl font-bold sm:text-3xl">{t("facilitate.title")}</h1>
             </div>
             <p className="text-primary-foreground/70 mt-2">
-              能力评估 + 针对性输入 + 即时练习
+              {t("facilitate.subtitle")}
               {gaps.length > 0 && (
-                <span className="ml-2 text-primary-foreground/50">— 基于 {gaps.length} 项诊断不足</span>
+                <span className="ml-2 text-primary-foreground/50">{t("facilitate.based_on_gaps", { count: gaps.length })}</span>
               )}
             </p>
 
             {/* 学习进度条 */}
             <div className="mt-6">
               <div className="flex justify-between text-sm text-primary-foreground/70 mb-2">
-                <span>学习进度</span>
+                <span>{t("facilitate.learning_progress")}</span>
                 <span>{Math.round(getOverallProgress())}% · {getLearningMinutes()} 分钟</span>
               </div>
               <div className="h-2 bg-white/20 rounded-full overflow-hidden">
@@ -710,10 +749,10 @@ export default function FacilitatePage() {
           </div>
         </div>
 
-        {/* 诊断标签 - 改用 amber，避免红色过多 */}
+        {/* 诊断标签 */}
         {gaps.length > 0 && (
           <div className="mb-6">
-            <p className="text-sm text-muted-foreground mb-2">🎯 重点提升方向：</p>
+            <p className="text-sm text-muted-foreground mb-2">{t("facilitate.focus_areas")}</p>
             <div className="flex flex-wrap gap-2">
               {gaps.map((g, i) => (
                 <span
@@ -731,26 +770,26 @@ export default function FacilitatePage() {
         {/* Tab 导航 */}
         <div className="mb-6">
           <div className="card flex flex-wrap gap-2 p-2">
-            {(Object.keys(TAB_LABELS) as TabKey[]).map((t) => (
+            {(Object.keys(TAB_LABELS) as TabKey[]).map((tabKey) => (
               <button
-                key={t}
+                key={tabKey}
                 onClick={() => {
-                  setTab(t);
+                  setTab(tabKey);
                 }}
                 className={`flex items-center gap-2 px-4 py-3 rounded-lg text-sm font-medium transition-all ${
-                  tab === t
+                  tab === tabKey
                     ? "bg-primary text-primary-foreground shadow-md"
                     : "text-muted-foreground hover:bg-muted"
                 }`}
               >
-                <span>{TAB_ICONS[t]}</span>
-                <span>{TAB_LABELS[t]}</span>
-                {progress.tabs[t] === "completed" && (
+                <span>{TAB_ICONS[tabKey]}</span>
+                <span>{TAB_LABELS[tabKey]}</span>
+                {progress.tabs[tabKey] === "completed" && (
                   <span className="ml-1 text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
                     ✓
                   </span>
                 )}
-                {progress.tabs[t] === "visited" && (
+                {progress.tabs[tabKey] === "visited" && (
                   <span className="ml-1 text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full">
                     ...
                   </span>
@@ -776,7 +815,7 @@ export default function FacilitatePage() {
           )}
           {tab === "phrases" && (
             materialsLoading ? (
-              <InlineLoadingHint show message="正在为你定制场景词块..." height="h-64" />
+              <InlineLoadingHint show message={t("facilitate.gen_chunks")} height="h-64" />
             ) : (
               <PhrasesTab
                 phrases={phrases.length > 0 ? phrases : DEFAULT_PHRASES}
@@ -788,7 +827,7 @@ export default function FacilitatePage() {
           )}
           {tab === "dialogue" && (
             materialsLoading ? (
-              <InlineLoadingHint show message="正在生成示范对话..." height="h-64" />
+              <InlineLoadingHint show message={t("facilitate.gen_dialogue")} height="h-64" />
             ) : (
               <DialogueTab
                 dialogue={dialogue ?? DEFAULT_DIALOGUE}
@@ -798,7 +837,7 @@ export default function FacilitatePage() {
           )}
           {tab === "exercises" && (
             materialsLoading ? (
-              <InlineLoadingHint show message="正在为你准备练习题..." height="h-64" />
+              <InlineLoadingHint show message={t("facilitate.gen_exercises")} height="h-64" />
             ) : (
               <ExercisesTab
                 exercises={exercises.length > 0 ? exercises : DEFAULT_EXERCISES}
@@ -821,13 +860,13 @@ export default function FacilitatePage() {
         <div className="mt-8 card p-6">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
             <div>
-              <p className="text-sm font-medium text-foreground">准备好继续了吗？</p>
+              <p className="text-sm font-medium text-foreground">{t("facilitate.ready_to_continue")}</p>
               <p className="text-sm text-muted-foreground mt-1">
-                完成学习后，用改进的表达进行第二次产出
+                {t("facilitate.ready_hint")}
               </p>
             </div>
               <button key="continue" className="w-full sm:w-auto card bg-primary hover:bg-primary/80 text-primary-foreground px-8 py-3 text-sm font-semibold transition-all" onClick={() => router.push("/attempt2")}>
-              完成学习，进入二次产出 →
+              {t("facilitate.enter_attempt2")}
             </button>
           </div>
         </div>
@@ -857,6 +896,7 @@ function AssessmentTab({
   setExpandedDim: (dim: string | null) => void;
   onComplete: () => void;
 }) {
+  const t = useTranslations();
   const chartRef = useRef<HTMLDivElement>(null);
   const [showAllDetails, setShowAllDetails] = useState(false);
 
@@ -865,9 +905,9 @@ function AssessmentTab({
     const scoreMap = scores;
     const dims = DIM_ORDER.filter((d) => d in scoreMap);
     const values = dims.map((d) => scoreMap[d] ?? 0);
-    const indicator = dims.map((name) => ({ name, min: 1, max: 5 }));
+    const indicator = dims.map((name) => ({ name: t(`dims.${name}`), min: 1, max: 5 }));
     if (indicator.length === 0) {
-      DIM_ORDER.forEach((d) => indicator.push({ name: d, min: 1, max: 5 }));
+      DIM_ORDER.forEach((d) => indicator.push({ name: t(`dims.${d}`), min: 1, max: 5 }));
       DIM_ORDER.forEach(() => values.push(3));
     }
 
@@ -879,7 +919,7 @@ function AssessmentTab({
           let result = `${params.name}<br/>`;
           params.value.forEach((val: number, idx: number) => {
             const dim = dims[idx];
-            result += `${dim}: ${val} 分<br/>`;
+            result += `${t(`dims.${dim}`)}: ${val} ${t("report.score")}<br/>`;
           });
           return result;
         },
@@ -913,7 +953,7 @@ function AssessmentTab({
           data: [
             {
               value: values,
-              name: "你的表现",
+              name: t("facilitate.your_performance"),
               areaStyle: {
                 color: "rgba(59, 130, 246, 0.3)",
               },
@@ -938,18 +978,19 @@ function AssessmentTab({
       window.removeEventListener("resize", handleResize);
       chart.dispose();
     };
-  }, [scores]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scores, t]);
 
   if (loading) {
     return (
-      <InlineLoadingHint show message="正在评估你的能力维度..." height="h-64" />
+      <InlineLoadingHint show message={t("facilitate.evaluating")} height="h-64" />
     );
   }
 
   if (!scores || Object.keys(scores).length === 0) {
     return (
       <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
-        暂无评估数据，请先完成初次产出
+        {t("facilitate.no_assessment")}
       </div>
     );
   }
@@ -961,9 +1002,9 @@ function AssessmentTab({
   return (
     <div className="space-y-8">
       <div className="flex items-center justify-between mb-2">
-        <h2 className="text-lg font-bold text-foreground">能力评估概览</h2>
+        <h2 className="text-lg font-bold text-foreground">{t("facilitate.assessment_overview")}</h2>
         <Button size="sm" variant="outline" onClick={onComplete}>
-          标记完成 ✓
+          {t("facilitate.mark_complete")}
         </Button>
       </div>
 
@@ -993,13 +1034,13 @@ function AssessmentTab({
               </svg>
               <div className="absolute flex flex-col items-center">
                 <span className="text-2xl font-bold text-foreground">{avgScore.toFixed(1)}</span>
-                <span className="text-xs text-muted-foreground">平均分</span>
+                <span className="text-xs text-muted-foreground">{t("facilitate.avg_score")}</span>
               </div>
             </div>
           </div>
           <div className="flex-1">
             <p className="text-sm text-muted-foreground">
-              根据你的初次产出，我们从7个维度进行了综合评估。点击下方卡片可以查看每个维度的详细说明和提升建议。
+              {t("facilitate.assessment_intro")}
             </p>
           </div>
         </div>
@@ -1008,12 +1049,12 @@ function AssessmentTab({
       {/* 雷达图 */}
       <div ref={chartRef} style={{ width: "100%", height: 450 }} className="bg-white rounded-xl"></div>
 
-      {/* 重点提升维度 - 改用 amber */}
+      {/* 重点提升维度 */}
       {weakDims.length > 0 && (
         <div className="space-y-4">
           <div className="flex items-center gap-2">
             <span className="text-xl">🎯</span>
-            <h3 className="text-base font-bold text-foreground">需要重点提升的维度</h3>
+            <h3 className="text-base font-bold text-foreground">{t("facilitate.key_improvement_areas")}</h3>
           </div>
           <div className="space-y-3">
             {weakDims.map((dim) => (
@@ -1028,19 +1069,19 @@ function AssessmentTab({
                     </div>
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-bold text-amber-900">{dim}</span>
+                        <span className="text-sm font-bold text-amber-900">{t(`dims.${dim}`)}</span>
                         <span className="text-xs text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
                           {(scoreMap[dim] ?? 0).toFixed(1)} / 5.0
                         </span>
                       </div>
-                      <p className="text-xs text-amber-700 mt-1">{comments?.[dim] ?? DIM_ADVICE[dim]}</p>
+                      <p className="text-xs text-amber-700 mt-1">{comments?.[dim] ?? DIM_ADVICE[dim as DimKey]}</p>
                     </div>
                   </div>
                   <button
                     onClick={() => setExpandedDim(expandedDim === dim ? null : dim)}
                     className="text-xs text-amber-700 hover:text-amber-900 font-medium"
                   >
-                    {expandedDim === dim ? "收起详情" : "查看详情"}
+                    {expandedDim === dim ? t("common.collapse_detail") : t("common.view_detail")}
                   </button>
                 </div>
                 {expandedDim === dim && (
@@ -1059,13 +1100,13 @@ function AssessmentTab({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="text-xl">📋</span>
-            <h3 className="text-base font-bold text-foreground">所有能力维度</h3>
+            <h3 className="text-base font-bold text-foreground">{t("facilitate.all_dims")}</h3>
           </div>
           <button
             onClick={() => setShowAllDetails(!showAllDetails)}
             className="text-sm text-primary hover:text-primary/80 font-medium"
           >
-            {showAllDetails ? "收起全部" : "展开全部"}
+            {showAllDetails ? t("common.collapse_all") : t("common.expand_all")}
           </button>
         </div>
         <div className="space-y-3">
@@ -1077,7 +1118,7 @@ function AssessmentTab({
               <div className="flex items-start justify-between">
                 <div className="flex-1">
                   <div className="flex items-center gap-3">
-                    <span className="text-sm font-medium text-foreground">{dim}</span>
+                    <span className="text-sm font-medium text-foreground">{t(`dims.${dim}`)}</span>
                     <div className="flex-1 ml-4">
                       <div className="h-2 bg-muted rounded-full overflow-hidden">
                         <div className={`h-full transition-all duration-500 rounded-full ${
@@ -1100,7 +1141,7 @@ function AssessmentTab({
                   onClick={() => setExpandedDim(expandedDim === dim ? null : dim)}
                   className="text-xs text-muted-foreground hover:text-foreground font-medium ml-4"
                 >
-                  {expandedDim === dim ? "收起" : "详情"}
+                  {expandedDim === dim ? t("common.collapse") : t("common.detail")}
                 </button>
               </div>
               {(expandedDim === dim || showAllDetails) && (
@@ -1120,17 +1161,18 @@ function AssessmentTab({
    维度详情组件
    ============================================================ */
 function DimensionDetail({ dim, score }: { dim: string; score: number }) {
-  const info = DIM_DESCRIPTIONS[dim];
+  const t = useTranslations();
+  const info = DIM_DESCRIPTIONS[dim as DimKey];
   if (!info) return null;
 
   return (
     <div className="space-y-4">
       <div>
-        <h4 className="text-sm font-medium text-foreground mb-2">维度说明</h4>
+        <h4 className="text-sm font-medium text-foreground mb-2">{t("facilitate.dim_desc")}</h4>
         <p className="text-sm text-muted-foreground">{info.description}</p>
       </div>
       <div>
-        <h4 className="text-sm font-medium text-foreground mb-2">评分标准</h4>
+        <h4 className="text-sm font-medium text-foreground mb-2">{t("facilitate.scoring_standard")}</h4>
         <div className="space-y-2">
           {Object.entries(info.levels)
             .sort(([a], [b]) => Number(a) - Number(b))
@@ -1143,14 +1185,14 @@ function DimensionDetail({ dim, score }: { dim: string; score: number }) {
                     : "bg-muted text-muted-foreground"
                 }`}
               >
-                <span className="font-medium">{level} 分：</span>
+                <span className="font-medium">{level} {t("facilitate.score_unit")}</span>
                 {desc}
               </div>
             ))}
         </div>
       </div>
       <div>
-        <h4 className="text-sm font-medium text-foreground mb-2">提升建议</h4>
+        <h4 className="text-sm font-medium text-foreground mb-2">{t("facilitate.improvement_tip")}</h4>
         <p className="text-sm text-muted-foreground bg-yellow-50 p-3 rounded-lg border border-yellow-100">
           💡 {info.tips}
         </p>
@@ -1173,17 +1215,19 @@ function PhrasesTab({
   onLearn: (sentence: string) => void;
   onComplete: () => void;
 }) {
+  const t = useTranslations();
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between mb-2">
-        <h2 className="text-lg font-bold text-foreground">场景词块与句式</h2>
+        <h2 className="text-lg font-bold text-foreground">{t("facilitate.phrases_title")}</h2>
         <Button size="sm" variant="outline" onClick={onComplete}>
-          标记完成 ✓
+          {t("facilitate.mark_complete")}
         </Button>
       </div>
 
       <p className="text-sm text-muted-foreground mb-6">
-        点击任意卡片可以复制英文句子，方便你进行练习。
+        {t("facilitate.phrases_hint")}
       </p>
 
       <div className="grid gap-4">
@@ -1213,7 +1257,7 @@ function PhrasesTab({
                     </span>
                     {isLearned && (
                       <span className="text-xs text-green-600 flex items-center gap-1">
-                        <span>✓</span> 已学习
+                        <span>✓</span> {t("common.learned")}
                       </span>
                     )}
                   </div>
@@ -1246,7 +1290,7 @@ function PhrasesTab({
         <div className="mt-6 rounded-xl bg-primary/5 p-4 border border-primary/10">
           <p className="text-sm text-primary flex items-center gap-2">
             <span>📝</span>
-            已学习 {learnedPhrases.length} / {phrases.length} 个词块
+            {t("facilitate.phrases_learned", { learned: learnedPhrases.length, total: phrases.length })}
           </p>
         </div>
       )}
@@ -1264,6 +1308,7 @@ function DialogueTab({
   dialogue: DialogueData;
   onComplete: () => void;
 }) {
+  const t = useTranslations();
   const [playingLine, setPlayingLine] = useState<number | null>(null);
 
   const playLine = (text: string, idx: number) => {
@@ -1279,9 +1324,9 @@ function DialogueTab({
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between mb-2">
-        <h2 className="text-lg font-bold text-foreground">示范对话</h2>
+        <h2 className="text-lg font-bold text-foreground">{t("facilitate.dialogue_title")}</h2>
         <Button size="sm" variant="outline" onClick={onComplete}>
-          标记完成 ✓
+          {t("facilitate.mark_complete")}
         </Button>
       </div>
 
@@ -1321,11 +1366,11 @@ function DialogueTab({
                   >
                     {playingLine === i ? (
                       <>
-                        <span className="animate-pulse">🔊</span> 播放中...
+                        <span className="animate-pulse">🔊</span> {t("facilitate.dialogue_playing")}
                       </>
                     ) : (
                       <>
-                        <span>🔊</span> 播放
+                        <span>🔊</span> {t("facilitate.dialogue_play")}
                       </>
                     )}
                   </button>
@@ -1339,9 +1384,7 @@ function DialogueTab({
       <div className="rounded-xl bg-yellow-50 p-4 border border-yellow-100">
         <p className="text-sm text-yellow-800 flex items-start gap-2">
           <span>💡</span>
-          <span>
-            点击播放按钮可以听每句话的发音，建议你也跟着模仿朗读，注意语调和停顿。
-          </span>
+          <span>{t("facilitate.dialogue_hint")}</span>
         </p>
       </div>
     </div>
@@ -1362,6 +1405,7 @@ function ExercisesTab({
   onSelect: (exId: number, key: string) => void;
   onComplete: () => void;
 }) {
+  const t = useTranslations();
   const completedCount = Object.values(state).filter((s) => s?.revealed).length;
   const correctCount = Object.entries(state).filter(([exId, s]) => {
     if (!s?.revealed) return false;
@@ -1374,10 +1418,10 @@ function ExercisesTab({
   return (
     <div className="space-y-8">
       <div className="flex items-center justify-between mb-2">
-        <h2 className="text-lg font-bold text-foreground">即时练习</h2>
+        <h2 className="text-lg font-bold text-foreground">{t("facilitate.exercises_title")}</h2>
         {allCompleted && (
           <Button size="sm" variant="outline" onClick={onComplete}>
-            标记完成 ✓
+            {t("facilitate.mark_complete")}
           </Button>
         )}
       </div>
@@ -1388,10 +1432,10 @@ function ExercisesTab({
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-green-900">
-                练习进度：{completedCount} / {exercises.length}
+                {t("facilitate.exercise_progress", { done: completedCount, total: exercises.length })}
               </p>
               <p className="text-sm text-green-700 mt-1">
-                正确率：{completedCount > 0 ? Math.round((correctCount / completedCount) * 100) : 0}%
+                {t("facilitate.accuracy_rate", { rate: completedCount > 0 ? Math.round((correctCount / completedCount) * 100) : 0 })}
               </p>
             </div>
             <div className="text-3xl">
@@ -1422,11 +1466,11 @@ function ExercisesTab({
               <div className="mb-4">
                 <div className="flex items-center gap-2 mb-2 flex-wrap">
                   <span className="text-xs font-bold text-primary-foreground bg-primary px-3 py-1 rounded-full">
-                    第 {i + 1} 题
+                    {t("facilitate.question_n", { n: i + 1 })}
                   </span>
                   {ex.gap_target && (
                     <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-primary/10 text-primary border border-primary/20">
-                      🎯 针对你的 {ex.gap_target} 问题
+                      {t("facilitate.targeting", { gap: ex.gap_target })}
                     </span>
                   )}
                   {revealed && (
@@ -1437,7 +1481,7 @@ function ExercisesTab({
                           : "bg-amber-100 text-amber-800"
                       }`}
                     >
-                      {isCorrect ? "✓ 正确" : "✗ 错误"}
+                      {isCorrect ? t("facilitate.correct") : t("facilitate.wrong")}
                     </span>
                   )}
                 </div>
@@ -1512,7 +1556,7 @@ function ExercisesTab({
                       isCorrect ? "text-green-700" : "text-amber-800"
                     }`}
                   >
-                    {isCorrect ? "太棒了！" : "正确答案是 " + ex.answer}
+                    {isCorrect ? t("facilitate.excellent") : t("facilitate.correct_answer") + ex.answer}
                   </p>
                   <p className="text-sm text-muted-foreground">{ex.explanation}</p>
                 </div>
@@ -1527,9 +1571,9 @@ function ExercisesTab({
           <div className="flex items-center gap-4">
             <div className="text-5xl">🎉</div>
             <div>
-              <h3 className="text-lg font-bold">恭喜完成所有练习！</h3>
+              <h3 className="text-lg font-bold">{t("facilitate.all_done")}</h3>
               <p className="text-green-100 mt-1">
-                你答对了 {correctCount} / {exercises.length} 题，做得很好！
+                {t("facilitate.score_summary", { correct: correctCount, total: exercises.length })}
               </p>
             </div>
           </div>
@@ -1549,6 +1593,7 @@ function OralTab({
   sentences: string[];
   onComplete: () => void;
 }) {
+  const t = useTranslations();
   const [practiced, setPracticed] = useState<Set<number>>(new Set());
   const [recordingIdx, setRecordingIdx] = useState<number | null>(null);
   const [elapsed, setElapsed] = useState(0);
@@ -1572,7 +1617,7 @@ function OralTab({
       audioStreamRef.current = stream;
       return stream;
     } catch {
-      alert("无法访问麦克风，请检查权限设置");
+      alert(t("facilitate.mic_not_available"));
       return null;
     }
   };
@@ -1606,7 +1651,7 @@ function OralTab({
         ? new MediaRecorder(stream, { mimeType })
         : new MediaRecorder(stream);
     } catch (err: unknown) {
-      alert("无法启动录音: " + ((err as Error)?.message ?? ""));
+      alert(t("facilitate.cannot_start") + ((err as Error)?.message ?? ""));
       return;
     }
 
@@ -1617,10 +1662,9 @@ function OralTab({
     };
     recorder.onerror = () => {
       setRecordingIdx(null);
-      alert("录音出错，请重试");
+      alert(t("facilitate.record_error"));
     };
     recorder.onstop = () => {
-      // 录音完成，标记为已练习
       setPracticed((prev) => {
         const next = new Set(prev);
         next.add(idx);
@@ -1657,17 +1701,16 @@ function OralTab({
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between mb-2">
-        <h2 className="text-lg font-bold text-foreground">口语练习</h2>
+        <h2 className="text-lg font-bold text-foreground">{t("facilitate.oral_title")}</h2>
         {allDone && (
           <span className="text-xs font-medium text-green-600 bg-green-50 px-3 py-1 rounded-full border border-green-200">
-            ✓ 已完成
+            {t("facilitate.oral_done")}
           </span>
         )}
       </div>
 
       <p className="text-sm text-muted-foreground mb-6">
-        跟读以下示范语句，点击「播放」听 TTS 发音，然后点击「录音」进行跟读练习。
-        完成至少 {Math.min(2, sentences.length)} 句跟读后即可标记完成。
+        {t("facilitate.oral_instruction", { min: Math.min(2, sentences.length) })}
       </p>
 
       {/* 进度 */}
@@ -1675,7 +1718,7 @@ function OralTab({
         <div className="rounded-xl bg-blue-50 p-4 border border-blue-100">
           <div className="flex items-center justify-between">
             <p className="text-sm font-medium text-blue-900">
-              已跟读 {practicedCount} / {sentences.length} 句
+              {t("facilitate.oral_practiced", { practiced: practicedCount, total: sentences.length })}
             </p>
             <div className="h-2 flex-1 mx-4 bg-blue-100 rounded-full overflow-hidden">
               <div
@@ -1725,7 +1768,7 @@ function OralTab({
                   className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-all disabled:opacity-50"
                 >
                   <span>🔊</span>
-                  播放TTS
+                  {t("facilitate.play_tts")}
                 </button>
 
                 {isRecording ? (
@@ -1734,7 +1777,7 @@ function OralTab({
                     className="flex items-center gap-2 rounded-lg bg-red-500 px-4 py-2 text-sm font-medium text-white hover:bg-red-600 transition-all animate-pulse"
                   >
                     <span>⏹</span>
-                    停止录音 ({elapsed}s)
+                    {t("facilitate.stop_recording", { elapsed })}
                   </button>
                 ) : (
                   <button
@@ -1746,12 +1789,12 @@ function OralTab({
                     }`}
                   >
                     <span>{isPracticed ? "🔄" : "🎙️"}</span>
-                    {isPracticed ? "重新录音" : "开始录音"}
+                    {isPracticed ? t("facilitate.re_record") : t("facilitate.start_recording")}
                   </button>
                 )}
 
                 {isPracticed && (
-                  <span className="text-sm text-green-600 font-medium">✓ 已完成</span>
+                  <span className="text-sm text-green-600 font-medium">{t("facilitate.oral_done")}</span>
                 )}
               </div>
             </div>
@@ -1764,9 +1807,9 @@ function OralTab({
           <div className="flex items-center gap-4">
             <div className="text-5xl">🎉</div>
             <div>
-              <h3 className="text-lg font-bold">口语练习完成！</h3>
+              <h3 className="text-lg font-bold">{t("facilitate.oral_complete")}</h3>
               <p className="text-green-100 mt-1">
-                你已完成 {practicedCount} 句跟读练习，发音准确度来源于反复模仿。
+                {t("facilitate.oral_complete_msg", { practiced: practicedCount })}
               </p>
             </div>
           </div>
@@ -1775,7 +1818,3 @@ function OralTab({
     </div>
   );
 }
-
-/* ============================================================
-   END
-   ============================================================ */

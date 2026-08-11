@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
+import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { usePOA, getScenarioHistory, isTaskSelectedInSession, markTaskSelectedInSession, type ScenarioHistoryItem } from "@/lib/store";
 import HistoryTaskSelector from "@/components/HistoryTaskSelector";
@@ -13,12 +14,12 @@ import HistoryTaskSelector from "@/components/HistoryTaskSelector";
    输出：
      { user: "顾客（Customer）—— 有乳糖不耐受", ai: "咖啡师（Barista）—— 高峰期忙碌" }
    ============================================================ */
-function parseRoles(raw: string): { user: string; ai: string } {
+function parseRoles(raw: string, fallback = "未指定"): { user: string; ai: string } {
   const splitRe = /(?:；|;)\s*B[:：]\s*/i;
   const parts = raw.split(splitRe);
   return {
-    user: parts[0]?.replace(/^A[:：]\s*/i, "").trim() || "未指定",
-    ai: parts[1]?.trim() || "未指定",
+    user: parts[0]?.replace(/^A[:：]\s*/i, "").trim() || fallback,
+    ai: parts[1]?.trim() || fallback,
   };
 }
 
@@ -70,6 +71,7 @@ function TaskTextBlock({
 
 export default function TaskPage() {
   const router = useRouter();
+  const t = useTranslations();
   const { scenarioResult, setScenarioResult } = usePOA();
 
   // ---- 初始化状态 ----
@@ -113,7 +115,7 @@ export default function TaskPage() {
   if (!initDone) {
     return (
       <div className="mx-auto max-w-2xl py-8 flex items-center justify-center">
-        <div className="text-muted-foreground">加载中...</div>
+        <div className="text-muted-foreground">{t("common.loading")}</div>
       </div>
     );
   }
@@ -136,18 +138,18 @@ export default function TaskPage() {
   if (!task) {
     return (
       <div className="mx-auto max-w-2xl py-8 text-center">
-        <h2 className="text-xl font-bold text-card-foreground">未找到任务</h2>
+        <h2 className="text-xl font-bold text-card-foreground">{t("task.not_found")}</h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          请先在场景驱动页面选择或上传场景照片
+          {t("task.not_found_hint")}
         </p>
         <Button className="mt-6" variant="outline" onClick={() => router.push("/scenario")}>
-          ← 返回场景驱动
+          {t("common.back_to_scenario")}
         </Button>
       </div>
     );
   }
 
-  const { user, ai } = parseRoles(task.roles);
+  const { user, ai } = parseRoles(task.roles, t("common.not_specified"));
 
   return (
     <div className="mx-auto max-w-2xl space-y-8">
@@ -155,18 +157,18 @@ export default function TaskPage() {
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold tracking-tight text-card-foreground sm:text-3xl">
-            交际任务卡
+            {t("task.title")}
           </h1>
           <Button
             variant="outline"
             size="sm"
             onClick={() => router.push("/scenario")}
           >
-            切换场景
+            {t("task.switch_scene")}
           </Button>
         </div>
         <p className="text-sm text-muted-foreground">
-          请仔细阅读任务要求，然后开始初次产出
+          {t("task.hint")}
         </p>
       </div>
 
@@ -186,18 +188,18 @@ export default function TaskPage() {
             {/* 角色 */}
             <div className="space-y-2">
               <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                角色设定
+                {t("task.role_setting")}
               </h3>
               <div className="grid gap-2 sm:grid-cols-2">
                 <div className="rounded-lg bg-muted/50 p-3">
                   <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                    你扮演
+                    {t("task.you_play")}
                   </p>
                   <p className="mt-1 text-sm font-medium text-card-foreground">{user}</p>
                 </div>
                 <div className="rounded-lg bg-muted/50 p-3">
                   <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                    AI 扮演
+                    {t("task.ai_play")}
                   </p>
                   <p className="mt-1 text-sm font-medium text-card-foreground">{ai}</p>
                 </div>
@@ -207,7 +209,7 @@ export default function TaskPage() {
             {/* 交际目标 */}
             <div className="space-y-2">
               <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                交际目标
+                {t("task.goal")}
               </h3>
               <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">
                 <TaskTextBlock text={task.goal} />
@@ -218,7 +220,7 @@ export default function TaskPage() {
             {task.context && (
               <div className="space-y-2">
                 <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  语境提示
+                  {t("task.context")}
                 </h3>
                 <div className="rounded-lg bg-muted/50 p-4">
                   <TaskTextBlock text={task.context} tone="muted" />
@@ -229,7 +231,7 @@ export default function TaskPage() {
             {/* 成功标准 */}
             <div className="space-y-2">
               <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                成功标准
+                {t("task.criteria")}
               </h3>
               <div className="rounded-lg border border-border bg-card p-4">
                 <TaskTextBlock text={task.evaluation_criteria} />
@@ -242,9 +244,9 @@ export default function TaskPage() {
       {/* 开始按钮 */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="space-y-1">
-          <h3 className="text-sm font-semibold text-card-foreground">准备就绪？</h3>
+          <h3 className="text-sm font-semibold text-card-foreground">{t("task.ready")}</h3>
           <p className="text-xs text-muted-foreground">
-            点击按钮开始与 AI 进行对话练习，系统将实时记录你的表现
+            {t("task.ready_hint")}
           </p>
         </div>
         <div className="flex flex-wrap gap-3">
@@ -258,7 +260,7 @@ export default function TaskPage() {
               <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
               <line x1="12" x2="12" y1="19" y2="22" />
             </svg>
-            开始初次产出
+            {t("task.start_attempt1")}
           </Button>
         </div>
       </div>

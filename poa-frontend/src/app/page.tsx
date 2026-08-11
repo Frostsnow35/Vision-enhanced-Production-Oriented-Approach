@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import {
   getLearningJourney,
@@ -10,46 +11,6 @@ import {
   type JourneyEntry,
   type JourneyDimensionScore,
 } from "@/lib/store";
-
-/* ============================================================
-   常量
-   ============================================================ */
-const DIM_LABELS: Record<string, string> = {
-  "发音标准度": "发音标准度",
-  "语法规范性": "语法规范性",
-  "词汇适配性": "词汇适配性",
-  "语言功能达成度": "语言功能达成度",
-  "语用策略得体性": "语用策略得体性",
-  "话语回合适配性": "话语回合适配性",
-  "副语言匹配度": "副语言匹配度",
-};
-
-const DIM_ORDER = [
-  "发音标准度",
-  "语法规范性",
-  "词汇适配性",
-  "语言功能达成度",
-  "语用策略得体性",
-  "话语回合适配性",
-  "副语言匹配度",
-];
-
-/* ============================================================
-   工具函数
-   ============================================================ */
-function timeAgo(ts: number): string {
-  const diff = Date.now() - ts;
-  const min = Math.floor(diff / 60000);
-  if (min < 1) return "刚刚";
-  if (min < 60) return `${min} 分钟前`;
-  const h = Math.floor(min / 60);
-  if (h < 24) return `${h} 小时前`;
-  const d = Math.floor(h / 24);
-  if (d < 7) return `${d} 天前`;
-  const w = Math.floor(d / 7);
-  if (w < 4) return `${w} 周前`;
-  return new Date(ts).toLocaleDateString("zh-CN");
-}
 
 /* ============================================================
    子组件
@@ -88,13 +49,23 @@ function ScoreRing({ value }: { value: number }) {
 }
 
 /** 七维迷你进度条 */
-function MiniDimBars({ scores }: { scores: Record<string, JourneyDimensionScore> }) {
-  const visible = DIM_ORDER.filter((d) => scores[d]);
+function MiniDimBars({
+  scores,
+  dimLabels,
+  dimOrder,
+  noDataText,
+}: {
+  scores: Record<string, JourneyDimensionScore>;
+  dimLabels: Record<string, string>;
+  dimOrder: string[];
+  noDataText: string;
+}) {
+  const visible = dimOrder.filter((d) => scores[d]);
 
   if (visible.length === 0) {
     return (
       <p className="text-[11px] text-muted-foreground/60 italic">
-        暂无维度数据
+        {noDataText}
       </p>
     );
   }
@@ -103,7 +74,7 @@ function MiniDimBars({ scores }: { scores: Record<string, JourneyDimensionScore>
     <div className="space-y-1">
       {visible.map((dim) => {
         const s = scores[dim];
-        const label = DIM_LABELS[dim] ?? dim;
+        const label = dimLabels[dim] ?? dim;
         const a1Pct = Math.min(100, Math.max(0, ((s.attempt1 || 0) / 5) * 100));
         const a2Pct = Math.min(100, Math.max(0, ((s.attempt2 || 0) / 5) * 100));
         const up = s.change > 0;
@@ -152,12 +123,48 @@ function MiniDimBars({ scores }: { scores: Record<string, JourneyDimensionScore>
    首页主组件
    ============================================================ */
 export default function Home() {
+  const t = useTranslations();
   const router = useRouter();
   const [journey, setJourney] = useState<JourneyEntry[]>([]);
 
   useEffect(() => {
     setJourney(getLearningJourney());
   }, []);
+
+  // 维度标签（通过翻译动态获取）
+  const dimLabels = useMemo<Record<string, string>>(() => ({
+    "发音标准度": t("dims.pronunciation"),
+    "语法规范性": t("dims.grammar"),
+    "词汇适配性": t("dims.vocabulary"),
+    "语言功能达成度": t("dims.function"),
+    "语用策略得体性": t("dims.pragmatics"),
+    "话语回合适配性": t("dims.turn_taking"),
+    "副语言匹配度": t("dims.paralanguage"),
+  }), [t]);
+
+  const dimOrder = useMemo(() => [
+    "发音标准度",
+    "语法规范性",
+    "词汇适配性",
+    "语言功能达成度",
+    "语用策略得体性",
+    "话语回合适配性",
+    "副语言匹配度",
+  ], []);
+
+  function timeAgo(ts: number): string {
+    const diff = Date.now() - ts;
+    const min = Math.floor(diff / 60000);
+    if (min < 1) return t("home.just_now");
+    if (min < 60) return t("home.minutes_ago", { min });
+    const h = Math.floor(min / 60);
+    if (h < 24) return t("home.hours_ago", { h });
+    const d = Math.floor(h / 24);
+    if (d < 7) return t("home.days_ago", { d });
+    const w = Math.floor(d / 7);
+    if (w < 4) return t("home.weeks_ago", { w });
+    return new Date(ts).toLocaleDateString("zh-CN");
+  }
 
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
@@ -174,31 +181,30 @@ export default function Home() {
       </div>
 
       <h1 className="max-w-2xl text-3xl font-extrabold tracking-tight sm:text-4xl animate-float gradient-text">
-        GlimpSay：AI实景英语交际学习平台
+        {t("home.title")}
       </h1>
 
       <p className="mt-3 text-lg font-bold text-primary">
-        看见真实场景，开口自然发生。
+        {t("home.subtitle")}
       </p>
 
       <div className="mt-6 max-w-xl">
         <p className="text-base leading-relaxed text-muted-foreground">
-          GlimpSay 将你身边的校园、餐厅、商店、街角变成英语交际课堂。
-          只需拍下眼前场景， AI 就能识别语境、生成任务，并与你展开真实对话练习。
+          {t("home.description")}
         </p>
 
         <div className="mt-6 grid grid-cols-3 gap-4">
           <div className="rounded-xl bg-primary p-4 text-center shadow-lg shadow-primary/30">
             <div className="text-3xl font-bold text-primary-foreground">7</div>
-            <div className="text-sm text-primary-foreground/90">维度评估</div>
+            <div className="text-sm text-primary-foreground/90">{t("home.dim_assessment")}</div>
           </div>
           <div className="rounded-xl bg-accent p-4 text-center shadow-lg shadow-accent/30">
             <div className="text-3xl font-bold text-accent-foreground">AI</div>
-            <div className="text-sm text-accent-foreground/90">实时诊断</div>
+            <div className="text-sm text-accent-foreground/90">{t("home.realtime_diagnosis")}</div>
           </div>
           <div className="rounded-xl bg-primary p-4 text-center shadow-lg shadow-primary/30">
             <div className="text-3xl font-bold text-primary-foreground">2</div>
-            <div className="text-sm text-primary-foreground/90">轮练习</div>
+            <div className="text-sm text-primary-foreground/90">{t("home.rounds_practice")}</div>
           </div>
         </div>
       </div>
@@ -209,7 +215,7 @@ export default function Home() {
         size="lg"
         onClick={() => router.push("/scenario")}
       >
-        开始体验
+        {t("home.start_experience")}
       </Button>
 
       {/* ---- 学习旅程区域 ---- */}
@@ -217,19 +223,19 @@ export default function Home() {
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-lg font-bold text-card-foreground flex items-center gap-2">
             <span className="inline-block w-1.5 h-5 rounded-full bg-primary" />
-            学习旅程
+            {t("home.learning_journey")}
           </h2>
           {journey.length > 0 && (
             <button
               onClick={() => {
-                if (confirm("确定清空所有学习记录？")) {
+                if (confirm(t("home.clear_confirm"))) {
                   clearLearningJourney();
                   setJourney([]);
                 }
               }}
               className="text-xs text-muted-foreground hover:text-destructive transition-colors"
             >
-              清空
+              {t("home.clear")}
             </button>
           )}
         </div>
@@ -239,17 +245,17 @@ export default function Home() {
           <div className="rounded-xl border border-dashed border-border bg-muted/20 px-6 py-10 text-center">
             <p className="text-3xl mb-3">🗣️</p>
             <p className="text-sm font-medium text-card-foreground mb-1">
-              开始你的第一次实景口语练习
+              {t("home.empty_title")}
             </p>
             <p className="text-xs text-muted-foreground mb-5">
-              拍下身边场景，AI 即刻生成交际任务，开启沉浸式英语学习
+              {t("home.empty_desc")}
             </p>
             <Button
               variant="default"
               size="sm"
               onClick={() => router.push("/scenario")}
             >
-              开始实景练习
+              {t("home.start_practice")}
             </Button>
           </div>
         ) : (
@@ -261,7 +267,7 @@ export default function Home() {
                 type="button"
                 className="w-full text-left rounded-lg border border-border bg-card px-4 py-3 hover:shadow-md hover:border-primary/30 transition-all cursor-pointer group"
                 onClick={() => router.push("/scenario")}
-                title="继续练习"
+                title={t("home.continue_practice")}
               >
                 {/* 第一行：分数 + 标签 + 时间 */}
                 <div className="flex items-center gap-3">
@@ -276,7 +282,7 @@ export default function Home() {
                       </span>
                     </div>
                     <p className="text-xs text-card-foreground/80 truncate">
-                      {entry.taskTitle || "实景对话任务"}
+                      {entry.taskTitle || t("home.task_label")}
                     </p>
                   </div>
                   {/* 右箭头 */}
@@ -292,16 +298,21 @@ export default function Home() {
                   Object.keys(entry.dimensionScores).length > 0 && (
                     <div className="mt-3 pt-2.5 border-t border-border/60">
                       <p className="text-[10px] text-muted-foreground/60 mb-1.5 font-medium">
-                        七维能力趋势
+                        {t("home.dim_trend")}
                       </p>
-                      <MiniDimBars scores={entry.dimensionScores} />
+                      <MiniDimBars
+                        scores={entry.dimensionScores}
+                        dimLabels={dimLabels}
+                        dimOrder={dimOrder}
+                        noDataText={t("home.no_dim_data")}
+                      />
                     </div>
                   )}
               </button>
             ))}
             {journey.length > 5 && (
               <p className="text-center text-xs text-muted-foreground/60 pt-1">
-                还有 {journey.length - 5} 条历史记录…
+                {t("home.more_records", { count: journey.length - 5 })}
               </p>
             )}
           </div>

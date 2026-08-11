@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { segmentForClickable, translateWord, type DictResult } from "@/lib/translation";
+import { useTranslations } from "next-intl";
 
 interface ClickableEnglishProps {
   text: string;
@@ -9,9 +10,9 @@ interface ClickableEnglishProps {
 }
 
 /**
- * 把英文文本渲染为可点击词的 React 组件
- * - 每个英文词是可点的，hover/点击弹出 WordTooltip
- * - 仅当 token 长度 ≥ 2 时可点（a, I 跳过）
+ * Renders English text as clickable words.
+ * Each English word is clickable — clicking it shows a WordTooltip with Chinese translation.
+ * Only words with token length >= 2 are clickable (skipping single letters like "a", "I").
  */
 export default function ClickableEnglish({ text, className }: ClickableEnglishProps) {
   const segs = segmentForClickable(text);
@@ -19,7 +20,6 @@ export default function ClickableEnglish({ text, className }: ClickableEnglishPr
     <span className={className}>
       {segs.map((seg, i) => {
         if (seg.type === "text") return <span key={i}>{seg.value}</span>;
-        // word
         if (seg.value.length < 2) return <span key={i}>{seg.value}</span>;
         return <WordSpan key={i} word={seg.value} />;
       })}
@@ -34,6 +34,7 @@ function WordSpan({ word }: { word: string }) {
   const [loading, setLoading] = useState(false);
   const ref = useRef<HTMLSpanElement>(null);
   const containerRef = useRef<HTMLSpanElement>(null);
+  const t = useTranslations("clickable_english");
 
   useEffect(() => {
     if (!open) return;
@@ -66,7 +67,7 @@ function WordSpan({ word }: { word: string }) {
         ref={ref}
         onClick={handleClick}
         className="cursor-pointer rounded-sm px-0.5 -mx-0.5 hover:bg-primary/10 transition-colors"
-        title="点击查看翻译"
+        title={t("click_to_translate")}
       >
         {word}
       </span>
@@ -83,9 +84,9 @@ function WordSpan({ word }: { word: string }) {
             </span>
             <span className="block text-sm">
               {loading ? (
-                <span className="text-muted-foreground">翻译中…</span>
+                <span className="text-muted-foreground">{t("translating")}</span>
               ) : (
-                <span>{data?.translation || "（无）"}</span>
+                <span>{data?.translation || t("no_translation")}</span>
               )}
             </span>
             <span className="block absolute left-1/2 -translate-x-1/2 -bottom-1 size-2 rotate-45 bg-card border-r border-b border-border" />

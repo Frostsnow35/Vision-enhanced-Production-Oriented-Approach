@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { Link, usePathname } from "@/i18n/routing";
+import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 
 interface NavItem {
@@ -11,6 +11,7 @@ interface NavItem {
 
 export function NavLinks({ items }: { items: NavItem[] }) {
   const pathname = usePathname();
+  const t = useTranslations();
 
   return (
     <>
@@ -31,7 +32,7 @@ export function NavLinks({ items }: { items: NavItem[] }) {
                 : "text-muted-foreground hover:text-foreground hover:bg-muted"
             )}
           >
-            {item.label}
+            {t(item.label)}
           </Link>
         );
       })}

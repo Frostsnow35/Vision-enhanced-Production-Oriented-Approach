@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import HistoryTaskSelector from "@/components/HistoryTaskSelector";
 import ClickableEnglish from "@/components/ClickableEnglish";
@@ -13,17 +14,6 @@ import {
   type ScenarioHistoryItem,
 } from "@/lib/store";
 import { BASE_URL } from "@/lib/api";
-
-/* ============================================================
-   常量
-   ============================================================ */
-const LOADING_TIPS = [
-  "AI 正在仔细分析你的表达...",
-  "正在对比标准英语表达...",
-  "识别你的语言提升空间...",
-  "准备个性化的促成材料...",
-  "分析你的对话策略...",
-];
 
 /* ============================================================
    类型定义
@@ -70,6 +60,8 @@ function SkeletonCard({ className = "" }: { className?: string }) {
    ============================================================ */
 export default function DiagnosisPage() {
   const router = useRouter();
+  const t = useTranslations();
+  const funTips: string[] = t.raw("diagnosis.fun_tips");
   const [initDone, setInitDone] = useState(false);
   const [hasHistory, setHasHistory] = useState(false);
   const [gaps, setGaps] = useState<GapItem[] | null>(null);
@@ -82,9 +74,9 @@ export default function DiagnosisPage() {
 
   // 轮换提示词
   useEffect(() => {
-    const t = setInterval(() => setTipIndex((i) => (i + 1) % LOADING_TIPS.length), 2000);
+    const t = setInterval(() => setTipIndex((i) => (i + 1) % funTips.length), 2000);
     return () => clearInterval(t);
-  }, []);
+  }, [funTips.length]);
 
   useEffect(() => {
     let hasData = false;
@@ -161,10 +153,10 @@ export default function DiagnosisPage() {
       <div className="mx-auto max-w-2xl space-y-6 px-4 py-12">
         <div className="text-center">
           <h1 className="text-2xl font-bold tracking-tight text-card-foreground sm:text-3xl">
-            诊断中...
+            {t("diagnosis.diagnosing")}
           </h1>
           <p className="mt-2 text-sm text-muted-foreground transition-opacity duration-500">
-            {LOADING_TIPS[tipIndex]}
+            {funTips[tipIndex]}
           </p>
         </div>
         <SkeletonCard />
@@ -210,16 +202,16 @@ export default function DiagnosisPage() {
     return (
       <div className="mx-auto max-w-lg py-16 text-center">
         <h1 className="text-xl font-bold tracking-tight text-card-foreground">
-          诊断完成
+          {t("diagnosis.diagnosis_done")}
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          未发现明显的语言不足，继续保持！
+          {t("diagnosis.no_gaps")}
         </p>
         <Button
           className="mt-6"
           onClick={() => router.push("/facilitate")}
         >
-          进入促成学习 →
+          {t("diagnosis.enter_facilitate")}
         </Button>
       </div>
     );
@@ -234,10 +226,10 @@ export default function DiagnosisPage() {
       {/* ---- 页面标题 ---- */}
       <header>
         <h1 className="text-2xl font-bold tracking-tight text-card-foreground sm:text-3xl">
-          初次产出诊断报告
+          {t("diagnosis.title")}
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          以下是你的核心不足，共 {gaps.length} 项
+          {t("diagnosis.summary", { count: gaps.length })}
         </p>
       </header>
 
@@ -249,7 +241,7 @@ export default function DiagnosisPage() {
               <path d="M12 9v2m0 4h.01M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Z" />
             </svg>
             <h2 className="text-sm font-semibold text-amber-800 dark:text-amber-400">
-              本次对话中的高频错误
+              {t("diagnosis.high_freq_errors")}
             </h2>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -298,7 +290,7 @@ export default function DiagnosisPage() {
             {/* 角标（仅第一项保留"最需关注"，改用 amber 替代 destructive） */}
             {i === 0 && (
               <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium mb-2 ${tagColor}`}>
-                最需关注
+                {t("diagnosis.most_attention")}
               </span>
             )}
             {/* 序号 + 标签（去掉 destructive 红色） */}
@@ -315,7 +307,7 @@ export default function DiagnosisPage() {
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <div className="rounded-lg border-l-2 border-l-muted-foreground/30 bg-muted/30 px-4 py-3">
                   <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
-                    你这么说
+                    {t("diagnosis.you_said")}
                   </p>
                   <p className="text-sm italic text-muted-foreground">
                     &ldquo;<ClickableEnglish text={gap.evidence_sentence} />&rdquo;
@@ -324,7 +316,7 @@ export default function DiagnosisPage() {
                 {gap.reference_expression ? (
                   <div className="rounded-lg border-l-2 border-l-primary bg-primary/5 px-4 py-3">
                     <p className="text-[10px] font-semibold uppercase tracking-wider text-primary mb-1">
-                      建议这样说
+                      {t("diagnosis.suggest_say")}
                     </p>
                     <p className="text-sm font-medium text-foreground">
                       &ldquo;<ClickableEnglish text={gap.reference_expression} />&rdquo;
@@ -333,7 +325,7 @@ export default function DiagnosisPage() {
                 ) : (
                   <div className="rounded-lg border-l-2 border-l-muted-foreground/20 bg-muted/20 px-4 py-3 flex items-center justify-center">
                     <p className="text-xs text-muted-foreground italic">
-                      {gap.explanation ? "（详细说明见下方）" : "（暂无参考表达）"}
+                      {gap.explanation ? t("diagnosis.detail_below") : t("diagnosis.no_reference")}
                     </p>
                   </div>
                 )}
@@ -363,7 +355,7 @@ export default function DiagnosisPage() {
       {dimensionScores && Object.keys(dimensionScores).length > 0 && (
         <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
           <h2 className="text-lg font-semibold text-card-foreground mb-4">
-            七维综合评价
+            {t("diagnosis.dim_eval")}
           </h2>
           <div className="grid grid-cols-2 gap-3">
             {Object.entries(dimensionScores).map(([key, score]) => (
@@ -384,10 +376,10 @@ export default function DiagnosisPage() {
       {/* ---- 底部按钮 ---- */}
       <div className="card flex items-center justify-between rounded-xl border border-border bg-card px-6 py-4 shadow-sm">
         <p className="text-sm text-muted-foreground">
-          查看诊断结果后，进入针对性的促成学习
+          {t("diagnosis.enter_facilitate_hint")}
         </p>
         <Button size="lg" onClick={() => router.push("/facilitate")}>
-          进入促成学习 →
+          {t("diagnosis.enter_facilitate")}
         </Button>
       </div>
     </div>

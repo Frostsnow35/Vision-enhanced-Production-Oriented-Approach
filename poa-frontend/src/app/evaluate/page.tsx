@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import * as echarts from "echarts";
 import { BASE_URL } from "@/lib/api";
@@ -18,7 +19,7 @@ interface DimScore {
   attempt1: number;
   attempt2: number;
   change: number;
-  weight?: number;  // 维度权重（取自 Excel 评分表）
+  weight?: number;
   explanation: string;
 }
 
@@ -43,23 +44,12 @@ interface TargetEvalItem {
   suggestion: string;
 }
 
-const DIM_LABELS: Record<string, string> = {
-  "发音标准度": "发音标准度",
-  "语法规范性": "语法规范性",
-  "词汇适配性": "词汇适配性",
-  "语言功能达成度": "语言功能达成度",
-  "语用策略得体性": "语用策略得体性",
-  "话语回合适配性": "话语回合适配性",
-  "副语言匹配度": "副语言匹配度",
-};
-
 /* ============================================================
    将后端返回的 comparison 数组转换为 dimension_scores 格式
    ============================================================ */
 function convertApiToEvaluateData(raw: any): EvaluateData | null {
   if (!raw || typeof raw !== "object") return null;
 
-  // 已经是前端格式
   if (raw.dimension_scores && typeof raw.dimension_scores === "object") {
     const dims = raw.dimension_scores;
     if (Object.keys(dims).length > 0) {
@@ -70,7 +60,6 @@ function convertApiToEvaluateData(raw: any): EvaluateData | null {
     }
   }
 
-  // 后端 /api/evaluate-compare 格式：{ comparison: [...] } 或 { dimension_scores: {...} }
   if (Array.isArray(raw.comparison) && raw.comparison.length > 0) {
     const dims: Record<string, DimScore> = {};
     for (const item of raw.comparison as ComparisonItem[]) {
@@ -86,7 +75,6 @@ function convertApiToEvaluateData(raw: any): EvaluateData | null {
     return { dimension_scores: dims, overall_improvement: "" };
   }
 
-  // 兼容：后端返回的 dimension_scores 字典格式
   if (raw.dimension_scores && typeof raw.dimension_scores === "object") {
     const dims: Record<string, DimScore> = {};
     for (const [key, val] of Object.entries(raw.dimension_scores as Record<string, any>)) {
@@ -111,6 +99,18 @@ function convertApiToEvaluateData(raw: any): EvaluateData | null {
    ============================================================ */
 export default function EvaluatePage() {
   const router = useRouter();
+  const t = useTranslations();
+
+  // ---- DIM_LABELS (使用 t) ----
+  const DIM_LABELS: Record<string, string> = useMemo(() => ({
+    "发音标准度": t("dims.pronunciation"),
+    "语法规范性": t("dims.grammar"),
+    "词汇适配性": t("dims.vocabulary"),
+    "语言功能达成度": t("dims.function"),
+    "语用策略得体性": t("dims.pragmatics"),
+    "话语回合适配性": t("dims.turn_taking"),
+    "副语言匹配度": t("dims.paralanguage"),
+  }), [t]);
 
   // ---- 初始化状态 ----
   const [initDone, setInitDone] = useState(false);
@@ -123,15 +123,12 @@ export default function EvaluatePage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // 如果 sessionStorage 有标记（正常导航），直接加载评价数据
     if (isTaskSelectedInSession()) {
       loadEvaluationData();
       setHasHistory(false);
       setInitDone(true);
       return;
     }
-    
-    // 否则显示选择器（刷新/重新进入）
     const history = getScenarioHistory();
     setHasHistory(history.length > 0);
     setInitDone(true);
@@ -142,7 +139,6 @@ export default function EvaluatePage() {
       let text1 = "";
       let text2 = "";
       let gaps: any[] = [];
-      // 读取 attempt1 的预计算评分和对话文本
       let attempt1_scores: Record<string, number> = {};
       try {
         const raw1 = localStorage.getItem("diagnosis");
@@ -155,13 +151,11 @@ export default function EvaluatePage() {
             explanation: g.explanation ?? "",
           }));
           text1 = gaps1.map((g: any) => g?.evidence_sentence ?? "").filter(Boolean).join(" ");
-          // 取预计算的七维评分（与诊断/促成学习同一份）
           if (d1.dimension_scores && typeof d1.dimension_scores === "object") {
             attempt1_scores = d1.dimension_scores;
           }
         }
       } catch { /* ignore */ }
-      // 读取 attempt2 的完整对话文本
       try {
         const convText = localStorage.getItem("conversationText2") || localStorage.getItem("conversationText");
         if (convText) text2 = convText;
@@ -192,7 +186,6 @@ export default function EvaluatePage() {
         const converted = convertApiToEvaluateData(raw);
         if (converted && Object.keys(converted.dimension_scores).length > 0) {
           setData(converted);
-          // 写入学习旅程
           try {
             const scores: Record<string, JourneyDimensionScore> = {};
             let total = 0, count = 0;
@@ -203,30 +196,30 @@ export default function EvaluatePage() {
             const avg = count > 0 ? total / count : 0;
             const scene = (() => {
               try {
-                const t = localStorage.getItem("currentTask");
-                if (t) {
-                  const parsed = JSON.parse(t);
-                  return parsed?.scene_label || "实景对话";
+                const ct = localStorage.getItem("currentTask");
+                if (ct) {
+                  const parsed = JSON.parse(ct);
+                  return parsed?.scene_label || t("evaluate.scene_label");
                 }
               } catch { /* ignore */ }
-              return "实景对话";
+              return t("evaluate.scene_label");
             })();
             const taskTitle = (() => {
               try {
-                const t = localStorage.getItem("currentTask");
-                if (t) {
-                  const parsed = JSON.parse(t);
+                const ct = localStorage.getItem("currentTask");
+                if (ct) {
+                  const parsed = JSON.parse(ct);
                   const goal = parsed?.goal || "";
                   return goal.length > 30 ? goal.slice(0, 30) + "..." : goal;
                 }
               } catch { /* ignore */ }
-              return "实景对话任务";
+              return t("evaluate.task_label");
             })();
             const imageUrl = (() => {
               try {
-                const t = localStorage.getItem("currentTask");
-                if (t) {
-                  const parsed = JSON.parse(t);
+                const ct = localStorage.getItem("currentTask");
+                if (ct) {
+                  const parsed = JSON.parse(ct);
                   return parsed?.image_url || undefined;
                 }
               } catch { /* ignore */ }
@@ -242,23 +235,22 @@ export default function EvaluatePage() {
             });
           } catch (e) { console.warn("[evaluate] 写入 journey 失败:", e); }
         } else {
-          setError("评价数据为空，请稍后重试");
+          setError(t("evaluate.error_empty"));
         }
         if (Array.isArray(raw.target_evaluation) && raw.target_evaluation.length > 0) {
           setTargetEval(raw.target_evaluation);
         }
       } else {
-        setError("评价服务暂时不可用，请稍后重试");
+        setError(t("evaluate.error_unavailable"));
       }
     } catch {
-      setError("网络请求失败，请检查网络后重试");
+      setError(t("evaluate.error_network"));
     } finally {
       setLoading(false);
       setInitDone(true);
     }
   };
 
-  // 安全提取 dims
   const dims: string[] = data?.dimension_scores
     ? Object.keys(data.dimension_scores)
     : [];
@@ -275,7 +267,7 @@ export default function EvaluatePage() {
   if (!initDone) {
     return (
       <div className="flex h-[calc(100vh-100px)] items-center justify-center">
-        <div className="text-center text-muted-foreground">加载中...</div>
+        <div className="text-center text-muted-foreground">{t("common.loading")}</div>
       </div>
     );
   }
@@ -304,8 +296,8 @@ export default function EvaluatePage() {
   if (loading) {
     return (
       <div className="space-y-4 py-12">
-        <InlineLoadingHint show message="AI 正在对比两轮产出并生成评价..." height="h-48" />
-        <InlineLoadingHint show message="正在分析你的提升表现..." height="h-32" />
+        <InlineLoadingHint show message={t("evaluate.evaluating")} height="h-48" />
+        <InlineLoadingHint show message={t("evaluate.analyzing")} height="h-32" />
       </div>
     );
   }
@@ -315,10 +307,10 @@ export default function EvaluatePage() {
     return (
       <div className="mx-auto max-w-2xl py-8">
         <div className="card p-8 text-center space-y-4">
-          <h2 className="text-lg font-semibold text-destructive">评价生成失败</h2>
+          <h2 className="text-lg font-semibold text-destructive">{t("evaluate.generate_failed")}</h2>
           <p className="text-sm text-muted-foreground">{error}</p>
           <Button variant="outline" onClick={() => { setError(null); setLoading(true); loadEvaluationData(); }}>
-            重新尝试
+            {t("common.retry_action")}
           </Button>
         </div>
       </div>
@@ -330,10 +322,10 @@ export default function EvaluatePage() {
     return (
       <div className="mx-auto max-w-2xl py-8">
         <div className="card p-8 text-center">
-          <h2 className="text-lg font-semibold text-card-foreground">暂无评价数据</h2>
-          <p className="mt-2 text-sm text-muted-foreground">请先完成初次产出和二次产出练习</p>
+          <h2 className="text-lg font-semibold text-card-foreground">{t("evaluate.no_eval_data")}</h2>
+          <p className="mt-2 text-sm text-muted-foreground">{t("evaluate.no_eval_hint")}</p>
           <Button className="mt-4" variant="outline" onClick={() => router.push("/scenario")}>
-            返回场景驱动
+            {t("common.back_to_scenario")}
           </Button>
         </div>
       </div>
@@ -348,28 +340,28 @@ export default function EvaluatePage() {
     <div className="mx-auto max-w-2xl space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
       <header>
         <h1 className="text-2xl font-bold tracking-tight text-card-foreground sm:text-3xl">
-          双轨评价报告
+          {t("evaluate.title")}
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          初次产出 vs 二次产出 — 七维度对比评估
+          {t("evaluate.subtitle")}
         </p>
       </header>
 
       {data.overall_improvement ? (
         <div className="card p-5">
-          <p className="text-sm font-semibold text-card-foreground">总体评价</p>
+          <p className="text-sm font-semibold text-card-foreground">{t("evaluate.overall")}</p>
           <p className="mt-1.5 text-sm text-muted-foreground">{data.overall_improvement}</p>
         </div>
       ) : null}
 
-      <RadarChart data={data} dims={dims} />
+      <RadarChart data={data} dims={dims} dimLabels={DIM_LABELS} />
 
       {/* ---- 靶向问题改善评估 ---- */}
       <div className="space-y-3">
-        <h2 className="text-lg font-semibold text-card-foreground">靶向问题改善评估</h2>
+        <h2 className="text-lg font-semibold text-card-foreground">{t("evaluate.targeted_title")}</h2>
         {targetEval.length === 0 ? (
           <div className="card p-6 text-center text-sm text-muted-foreground">
-            暂无靶向评估数据
+            {t("evaluate.no_targeted")}
           </div>
         ) : (
           targetEval.map((item, i) => (
@@ -395,13 +387,13 @@ export default function EvaluatePage() {
                       : "bg-destructive/10 text-destructive"
                   }`}
                 >
-                  {item.improved ? "已改善" : "未改善"}
+                  {item.improved ? t("evaluate.improved") : t("evaluate.not_improved")}
                 </span>
               </div>
 
               <div className="rounded-lg bg-muted/40 px-4 py-2.5">
                 <p className="text-xs font-medium text-muted-foreground">
-                  {item.improved ? "改善证据" : "问题证据"}
+                  {item.improved ? t("evaluate.improvement_evidence") : t("evaluate.problem_evidence")}
                 </p>
                 <p className="mt-1 text-sm text-card-foreground">
                   {item.evidence}
@@ -409,7 +401,7 @@ export default function EvaluatePage() {
               </div>
 
               <p className="text-xs text-muted-foreground">
-                <span className="font-medium">建议：</span>
+                <span className="font-medium">{t("evaluate.suggestion_prefix")}</span>
                 {item.suggestion}
               </p>
             </div>
@@ -418,7 +410,7 @@ export default function EvaluatePage() {
       </div>
 
       <div className="space-y-3">
-        <h2 className="text-lg font-semibold text-card-foreground">逐维度分析</h2>
+        <h2 className="text-lg font-semibold text-card-foreground">{t("evaluate.dim_analysis")}</h2>
         {sorted.map((dim) => {
           const s = data.dimension_scores[dim];
           if (!s) return null;
@@ -445,7 +437,7 @@ export default function EvaluatePage() {
 
               <div className="grid grid-cols-2 gap-3 text-xs">
                 <div>
-                  <span className="text-muted-foreground">初次产出</span>
+                  <span className="text-muted-foreground">{t("evaluate.attempt1")}</span>
                   <div className="mt-0.5 flex items-center gap-2">
                     <div className="h-2 flex-1 rounded-full bg-muted overflow-hidden">
                       <div className="h-full rounded-full bg-primary" style={{ width: `${((s.attempt1 || 0) / 5) * 100}%` }} />
@@ -456,7 +448,7 @@ export default function EvaluatePage() {
                   </div>
                 </div>
                 <div>
-                  <span className="text-muted-foreground">二次产出</span>
+                  <span className="text-muted-foreground">{t("evaluate.attempt2")}</span>
                   <div className="mt-0.5 flex items-center gap-2">
                     <div className="h-2 flex-1 rounded-full bg-muted overflow-hidden">
                       <div className="h-full rounded-full bg-accent" style={{ width: `${((s.attempt2 || 0) / 5) * 100}%` }} />
@@ -477,9 +469,9 @@ export default function EvaluatePage() {
       </div>
 
       <div className="card flex items-center justify-between px-6 py-4">
-        <p className="text-sm text-muted-foreground">查看从场景到评价的完整学习证据链</p>
+        <p className="text-sm text-muted-foreground">{t("evaluate.view_report_hint")}</p>
         <Button size="lg" onClick={() => router.push(`/report/${scenarioId}`)}>
-          查看完整学习证据链 →
+          {t("evaluate.view_report_btn")}
         </Button>
       </div>
     </div>
@@ -490,33 +482,33 @@ export default function EvaluatePage() {
 /* ============================================================
    双线雷达图（含完整空值保护）
    ============================================================ */
-const FALLBACK_INDICATOR = [
-  { name: "流利度", min: 1, max: 5 },
-  { name: "语法", min: 1, max: 5 },
-  { name: "语用", min: 1, max: 5 },
-  { name: "复杂度", min: 1, max: 5 },
-  { name: "任务完成", min: 1, max: 5 },
-  { name: "词汇", min: 1, max: 5 },
-  { name: "发音", min: 1, max: 5 },
-];
-
-function RadarChart({ data, dims }: { data: EvaluateData | null; dims: string[] }) {
+function RadarChart({ data, dims, dimLabels }: { data: EvaluateData | null; dims: string[]; dimLabels: Record<string, string> }) {
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstanceRef = useRef<echarts.ECharts | null>(null);
+  const t = useTranslations();
 
   useEffect(() => {
     if (!chartRef.current) return;
 
-    // 初始化或复用 chart 实例
     if (!chartInstanceRef.current) {
       chartInstanceRef.current = echarts.init(chartRef.current);
     }
     const chart = chartInstanceRef.current;
 
-    // 安全构建 indicator 和 values
     const hasData = data && dims.length > 0;
+
+    const FALLBACK_INDICATOR = [
+      { name: t("evaluate.fallback_fluency"), min: 1, max: 5 },
+      { name: t("evaluate.fallback_grammar"), min: 1, max: 5 },
+      { name: t("evaluate.fallback_pragmatics"), min: 1, max: 5 },
+      { name: t("evaluate.fallback_complexity"), min: 1, max: 5 },
+      { name: t("evaluate.fallback_task_completion"), min: 1, max: 5 },
+      { name: t("evaluate.fallback_vocabulary"), min: 1, max: 5 },
+      { name: t("evaluate.fallback_pronunciation"), min: 1, max: 5 },
+    ];
+
     const indicator = hasData
-      ? dims.map((d) => ({ name: DIM_LABELS[d] ?? d, min: 1, max: 5 }))
+      ? dims.map((d) => ({ name: dimLabels[d] ?? d, min: 1, max: 5 }))
       : FALLBACK_INDICATOR;
 
     const scoreMap = data?.dimension_scores ?? {};
@@ -529,12 +521,15 @@ function RadarChart({ data, dims }: { data: EvaluateData | null; dims: string[] 
       ? dims.map((d) => scoreMap[d]?.attempt2 ?? 0)
       : FALLBACK_INDICATOR.map(() => 3);
 
+    const attempt1Label = t("evaluate.attempt1");
+    const attempt2Label = t("evaluate.attempt2");
+
     chart.setOption(
       {
         tooltip: { trigger: "item" },
         legend: {
           bottom: 8,
-          data: ["初次产出", "二次产出"],
+          data: [attempt1Label, attempt2Label],
           textStyle: { fontSize: 12, color: "#64748b" },
         },
         radar: {
@@ -548,9 +543,9 @@ function RadarChart({ data, dims }: { data: EvaluateData | null; dims: string[] 
         },
         series: [
           {
-            name: "初次产出",
+            name: attempt1Label,
             type: "radar",
-            data: [{ value: values1, name: "初次产出" }],
+            data: [{ value: values1, name: attempt1Label }],
             lineStyle: { color: "#3b82f6", width: 2 },
             itemStyle: { color: "#3b82f6" },
             areaStyle: { color: "rgba(59, 130, 246, 0.08)" },
@@ -564,9 +559,9 @@ function RadarChart({ data, dims }: { data: EvaluateData | null; dims: string[] 
             },
           },
           {
-            name: "二次产出",
+            name: attempt2Label,
             type: "radar",
-            data: [{ value: values2, name: "二次产出" }],
+            data: [{ value: values2, name: attempt2Label }],
             lineStyle: { color: "#f97316", width: 2 },
             itemStyle: { color: "#f97316" },
             areaStyle: { color: "rgba(249, 115, 22, 0.08)" },
@@ -588,7 +583,7 @@ function RadarChart({ data, dims }: { data: EvaluateData | null; dims: string[] 
       chart.dispose();
       chartInstanceRef.current = null;
     };
-  }, [data, dims]);
+  }, [data, dims, dimLabels, t]);
 
   return (
     <div className="card p-4">

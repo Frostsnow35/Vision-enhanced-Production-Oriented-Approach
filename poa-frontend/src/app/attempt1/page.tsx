@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { BASE_URL, chatStart, chatTurn, type TurnFeedback } from "@/lib/api";
 import { playAiAudio } from "@/lib/audio";
@@ -59,23 +60,6 @@ type SpeechProcessingStage =
   | "ai_speaking"
   | "wrapping_up";
 
-function stageToLabel(stage: SpeechProcessingStage): string {
-  switch (stage) {
-    case "recording":
-      return "正在录音";
-    case "uploading":
-      return "上传中...";
-    case "processing":
-      return "正在处理...";
-    case "ai_speaking":
-      return "AI 正在说话...";
-    case "wrapping_up":
-      return "AI 正在收尾...";
-    default:
-      return "";
-  }
-}
-
 function parseRoles(raw: string): { user: string; ai: string } {
   const splitRe = /(?:；|;)\s*B[:：]\s*/i;
   const parts = raw.split(splitRe);
@@ -90,6 +74,19 @@ function parseRoles(raw: string): { user: string; ai: string } {
    ============================================================ */
 export default function Attempt1Page() {
   const router = useRouter();
+  const t = useTranslations();
+
+  // ---- stageToLabel（使用 t）----
+  const stageToLabel = useCallback((stage: SpeechProcessingStage): string => {
+    switch (stage) {
+      case "recording": return t("attempt.recording");
+      case "uploading": return t("attempt.uploading");
+      case "processing": return t("attempt.processing");
+      case "ai_speaking": return t("attempt.ai_speaking");
+      case "wrapping_up": return t("attempt.ai_wrapping");
+      default: return "";
+    }
+  }, [t]);
 
   // ---- 初始化状态 ----
   const [initDone, setInitDone] = useState(false);
@@ -158,8 +155,8 @@ export default function Attempt1Page() {
   // ---- 摄像头 & 麦克风 ----
   const initDevices = useCallback(async () => {
     // 先清理旧流
-    cameraStreamRef.current?.getTracks().forEach((t) => t.stop());
-    audioStreamRef.current?.getTracks().forEach((t) => { if (t.kind === "audio") t.stop(); });
+    cameraStreamRef.current?.getTracks().forEach((tr) => tr.stop());
+    audioStreamRef.current?.getTracks().forEach((tr) => { if (tr.kind === "audio") tr.stop(); });
     audioContextRef.current?.close().catch(() => {});
     setCameraStatus("pending");
     setMicStatus("pending");
@@ -245,12 +242,12 @@ export default function Attempt1Page() {
       // 如果从未开过模态框 = 老用户，立即启动
       // 如果刚关了 = 新用户，延迟 600ms 等 track 释放
       const delay = wasOpen ? 600 : 100;
-      const t = setTimeout(() => {
+      const tm = setTimeout(() => {
         startedRef.current = true;
         initDevices();
         setMicReadyWait(true);
       }, delay);
-      return () => clearTimeout(t);
+      return () => clearTimeout(tm);
     }
   }, [initDone, showDeviceModal, devicePassed, initDevices]);
 
@@ -280,8 +277,8 @@ export default function Attempt1Page() {
   // 页面卸载清理
   useEffect(() => {
     return () => {
-      cameraStreamRef.current?.getTracks().forEach((t) => t.stop());
-      audioStreamRef.current?.getTracks().forEach((t) => { if (t.kind === "audio") t.stop(); });
+      cameraStreamRef.current?.getTracks().forEach((tr) => tr.stop());
+      audioStreamRef.current?.getTracks().forEach((tr) => { if (tr.kind === "audio") tr.stop(); });
       audioContextRef.current?.close().catch(() => {});
     };
   }, []);
@@ -331,11 +328,11 @@ export default function Attempt1Page() {
   // 倒计时结束：开始 AI 开场白
   useEffect(() => {
     if (countdownKey === null) return;
-    const t = setTimeout(() => {
+    const tm = setTimeout(() => {
       setCountdownKey(null);
       void startAiOpening();
     }, 3100);
-    return () => clearTimeout(t);
+    return () => clearTimeout(tm);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [countdownKey]);
 
@@ -347,7 +344,7 @@ export default function Attempt1Page() {
   const startAiOpening = async () => {
     if (!task) return;
     setWaitingForAiReply(true);
-    setCurrentSubtitle("正在准备开场白...");
+    setCurrentSubtitle(t("attempt.preparing_opening"));
     try {
       const data = await chatStart(
         task.scene_label,
@@ -384,7 +381,7 @@ export default function Attempt1Page() {
     } catch (err) {
       console.error("[startAiOpening] LLM 失败:", err);
       setWaitingForAiReply(false);
-      setCurrentSubtitle("AI 开场失败，请刷新重试");
+      setCurrentSubtitle(t("attempt.opening_failed"));
       setAiSpeaking(false);
     }
   };
@@ -429,7 +426,7 @@ export default function Attempt1Page() {
         setUploading(false);
         setAiSpeaking(false);
         setWaitingForAiReply(false);
-        const errorMsg = `[模型调用失败] ${data.llm_error}`;
+        const errorMsg = `[${t("attempt.model_failed_tag")}] ${data.llm_error}`;
         setCurrentSubtitle(errorMsg);
         setPendingAiSubtitle(errorMsg);
         const errorTurn: ConversationTurn = {
@@ -454,7 +451,7 @@ export default function Attempt1Page() {
       setHistory((prev) => {
         let resolvedUserText = data.user_text || "";
         if (!resolvedUserText && data.asr_error) {
-          resolvedUserText = `[语音转写失败: ${data.asr_error}] 请重试或直接输入文字`;
+          resolvedUserText = t("attempt.asr_failed", { error: data.asr_error });
         }
         if (resolvedUserText) {
           console.log("[backfill] model user_text:", resolvedUserText);
@@ -473,7 +470,7 @@ export default function Attempt1Page() {
             ];
           }
         } else {
-          resolvedUserText = "[语音未识别]";
+          resolvedUserText = t("attempt.asr_no_result");
           console.log("[backfill] no user_text from server, asr_error:", data.asr_error || "无");
         }
         return [...prev, aiTurn];
@@ -511,8 +508,10 @@ export default function Attempt1Page() {
       setAiSpeaking(false);
       setSpeechStage("idle");
       const errText = err?.message || String(err);
-      setCurrentSubtitle(`对话失败: ${errText}`);
-      setHistory(prev => [...prev, { role: "ai", text: `[请求失败] ${errText}`, error: true } as ConversationTurn]);
+      const dialogFailedMsg = t("attempt.dialog_failed", { error: errText });
+      setCurrentSubtitle(dialogFailedMsg);
+      const requestFailedTag = t("attempt.request_failed_tag");
+      setHistory(prev => [...prev, { role: "ai", text: `[${requestFailedTag}] ${errText}`, error: true } as ConversationTurn]);
     }
   };
 
@@ -540,12 +539,12 @@ export default function Attempt1Page() {
 
     // 音频轨道健康检查
     const audioTracks = audioStreamRef.current.getAudioTracks();
-    const activeTracks = audioTracks.filter(t => t.readyState === "live");
+    const activeTracks = audioTracks.filter(tr => tr.readyState === "live");
     console.log(`[attempt1] 音频轨道: total=${audioTracks.length}, live=${activeTracks.length}, isMobile=${isMobile}`);
     if (activeTracks.length === 0) {
       console.error("[attempt1] 没有活跃的音频轨道，无法录制");
       isRecordingRef.current = false;
-      setCurrentSubtitle("麦克风未就绪，请刷新页面后重试");
+      setCurrentSubtitle(t("attempt.mic_retry"));
       return;
     }
 
@@ -574,7 +573,8 @@ export default function Attempt1Page() {
     } catch (err: unknown) {
       console.error("[attempt1] MediaRecorder 创建失败:", (err as Error)?.message);
       isRecordingRef.current = false;
-      alert("无法启动录音: " + ((err as Error)?.message ?? ""));
+      const errMsg = (err as Error)?.message ?? "";
+      alert(t("attempt.cannot_start_recording") + errMsg);
       return;
     }
 
@@ -600,7 +600,7 @@ export default function Attempt1Page() {
       }
       setUploading(true);
       setSpeechStage("uploading");
-      setCurrentSubtitle("上传中...");
+      setCurrentSubtitle(t("attempt.uploading"));
       let audioUrl = "";
       let uploadFailed = false;
       try {
@@ -611,8 +611,8 @@ export default function Attempt1Page() {
         form.append("file", blob, `turn-${Date.now()}.${ext}`);
         const uploadRes = await fetch(`${BASE_URL}/api/upload/audio`, { method: "POST", body: form });
         if (uploadRes.ok) {
-          const data = await uploadRes.json() as { audio_url: string };
-          audioUrl = data.audio_url;
+          const upData = await uploadRes.json() as { audio_url: string };
+          audioUrl = upData.audio_url;
         } else {
           console.error("[attempt1] 上传失败:", uploadRes.status, await uploadRes.text().catch(() => ""));
           uploadFailed = true;
@@ -625,8 +625,9 @@ export default function Attempt1Page() {
       if (uploadFailed) {
         setUploading(false);
         setSpeechStage("idle");
-        setCurrentSubtitle("上传失败，请检查网络后重试");
-        setHistory((prev) => [...prev, { role: "user", text: "[上传失败]", error: true } as ConversationTurn]);
+        setCurrentSubtitle(t("attempt.upload_failed"));
+        const failedTag = t("attempt.upload_failed_tag");
+        setHistory((prev) => [...prev, { role: "user", text: `[${failedTag}]`, error: true } as ConversationTurn]);
         return;
       }
 
@@ -640,7 +641,7 @@ export default function Attempt1Page() {
       setHistory(newHistory);
       setUploading(false); // 上传完成，之后是 AI 处理
       setSpeechStage("processing");
-      setCurrentSubtitle("正在处理...");
+      setCurrentSubtitle(t("attempt.processing"));
 
       // Plan A 自动收尾：用户达轮次上限时不再立即 setIsFinal，而是串行触发一次 chatTurn
       // 注入 WRAP_UP_HINT 让 AI 自然告别；失败时降级为通用告别模板
@@ -649,7 +650,7 @@ export default function Attempt1Page() {
         setWrappingUp(true);
         setWaitingForAiReply(true);
         setSpeechStage("wrapping_up");
-        setCurrentSubtitle("AI 正在收尾...");
+        setCurrentSubtitle(t("attempt.ai_wrapping"));
         setPendingAiSubtitle(null);
         // 剔除末尾用户轮次，避免 LLM 收到重复消息
         const historyForPlanA = newHistory.length > 0 && newHistory[newHistory.length - 1].role === "user"
@@ -732,7 +733,7 @@ export default function Attempt1Page() {
       }
       const browserText = browserTextRef.current;
       const userTextForBackend = browserText || "";
-      console.log("[attempt1] 流式 ASR 转录:", browserText || "(无文本)");
+      console.log("[attempt1] 流式 ASR 转录:", browserText || t("attempt.no_text"));
       await callChatTurn(userTextForBackend, newHistory);
     };
     recorder.onstart = () => {
@@ -744,8 +745,8 @@ export default function Attempt1Page() {
     setSpeechStage("recording");
     setElapsed(0);
     timerRef.current = setInterval(() => setElapsed((n) => n + 1), 1000);
-    setCurrentSubtitle("正在听你说话...");
-  }, [recording, uploading, history, canRecord, isFinal, turnLimitReached, wrappingUp]);
+    setCurrentSubtitle(t("attempt.listening_prompt"));
+  }, [recording, uploading, history, canRecord, isFinal, turnLimitReached, wrappingUp, t, streamASR]);
 
   const endRecord = useCallback(() => {
     if (!isRecordingRef.current) return; // 已经在结束中或从未开始
@@ -785,13 +786,13 @@ export default function Attempt1Page() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const handleSubmit = async () => {
-    if (history.length < MIN_USER_TURNS) { setSubmitError("请至少进行一轮对话"); return; }
+    if (history.length < MIN_USER_TURNS) { setSubmitError(t("attempt.min_one_round")); return; }
     setSubmitting(true);
     setSubmitError(null);
     try {
       const conversationText = history
         .map((h) => {
-          const roleLabel = h.role === "ai" ? "AI" : "你";
+          const roleLabel = h.role === "ai" ? t("attempt.ai") : t("attempt.you");
           return `[${roleLabel}]: ${h.text || ""}`;
         })
         .filter((s) => s.trim().length > 0)
@@ -820,7 +821,7 @@ export default function Attempt1Page() {
       const taskId = (taskRef.current as any)?.task_id;
       const res = await fetch(`${BASE_URL}/api/attempt1/submit`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ task_id: taskId ?? 0, attempt_text: conversationText || "[no speech]", attempt_number: 1, audio_urls: audioUrls }) });
       if (!res.ok) {
-        const detail = await res.text().catch(() => "未知错误");
+        const detail = await res.text().catch(() => t("common.error_unknown"));
         throw new Error(`服务器返回错误 (${res.status}): ${detail}`);
       }
       const data = await res.json();
@@ -834,11 +835,11 @@ export default function Attempt1Page() {
     } catch (err: any) {
       const msg = err?.message || String(err);
       if (msg.includes("Failed to fetch") || msg.includes("NetworkError") || msg.includes("fetch")) {
-        setSubmitError("无法连接到服务器，请确认后端服务已启动（端口 8000），然后重试");
+        setSubmitError(t("attempt.cannot_connect"));
       } else if (msg.includes("服务器返回错误")) {
         setSubmitError(msg);
       } else {
-        setSubmitError("提交失败：" + msg);
+        setSubmitError(t("attempt.submit_failed", { error: msg }));
       }
     } finally { setSubmitting(false); }
   };
@@ -846,9 +847,16 @@ export default function Attempt1Page() {
   const formatTime = (s: number) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
   const { user, ai } = task ? parseRoles(task.roles) : { user: "", ai: "" };
 
+  // ---- dimLabels (使用 t) ----
+  const dimLabels = useMemo(() => ({
+    grammar: t("attempt.dim_grammar"),
+    vocabulary: t("attempt.dim_vocabulary"),
+    coherence: t("attempt.dim_coherence"),
+  }), [t]);
+
   // ---- 加载中 ----
   if (!initDone) {
-    return <div className="flex h-[calc(100vh-100px)] items-center justify-center"><div className="text-center text-muted-foreground">加载中...</div></div>;
+    return <div className="flex h-[calc(100vh-100px)] items-center justify-center"><div className="text-center text-muted-foreground">{t("common.loading")}</div></div>;
   }
 
   // ---- 有历史任务 ----
@@ -858,7 +866,7 @@ export default function Attempt1Page() {
 
   // ---- 无任务 ----
   if (!task) {
-    return <div className="flex h-[calc(100vh-100px)] items-center justify-center"><div className="text-center"><h1 className="text-xl font-bold">初次产出</h1><p className="mt-2 text-sm text-muted-foreground">请先选择场景生成任务</p><Button className="mt-4" variant="outline" onClick={() => router.push("/scenario")}>返回场景驱动</Button></div></div>;
+    return <div className="flex h-[calc(100vh-100px)] items-center justify-center"><div className="text-center"><h1 className="text-xl font-bold">{t("attempt.title_1")}</h1><p className="mt-2 text-sm text-muted-foreground">{t("common.please_select_scene_first")}</p><Button className="mt-4" variant="outline" onClick={() => router.push("/scenario")}>{t("common.back_to_scenario")}</Button></div></div>;
   }
 
   /* ============================================================
@@ -866,19 +874,19 @@ export default function Attempt1Page() {
      ============================================================ */
   const cameraReady = cameraStatus === "ready";
   const recordDisabledReason = !devicePassed
-    ? "请先完成设备检测"
+    ? t("attempt.please_do_device_check")
     : !micReady
-    ? "麦克风未就绪"
+    ? t("attempt.mic_not_ready")
     : uploading
-    ? "正在上传"
+    ? t("attempt.uploading")
     : waitingForAiReply
     ? stageToLabel(speechStage)
     : aiSpeaking
-    ? "AI 正在说话..."
+    ? t("attempt.ai_speaking")
     : isFinal
-    ? "对话已结束"
+    ? t("attempt.dialog_ended")
     : turnLimitReached
-      ? "已达到建议轮次"
+      ? t("attempt.turn_limit_reached")
       : "";
 
   return (
@@ -892,7 +900,7 @@ export default function Attempt1Page() {
             <span className="text-muted-foreground">{user.split("——")[0]} × {ai.split("——")[0]}</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="hidden sm:inline text-[11px] text-amber-600 dark:text-amber-400">语句加载可能稍慢，请耐心等待</span>
+            <span className="hidden sm:inline text-[11px] text-amber-600 dark:text-amber-400">{t("attempt.system_loading_slow")}</span>
             {/* 设备检测独立页入口 */}
             <button
               onClick={() => router.push("/device-check")}
@@ -901,16 +909,16 @@ export default function Attempt1Page() {
                   ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
                   : "bg-rose-100 text-rose-700 hover:bg-rose-200"
               }`}
-              title={devicePassed ? "设备检测已通过" : "点击进行设备检测"}
+              title={devicePassed ? t("attempt.device_checked") : t("attempt.click_to_check")}
             >
               <span className={`size-2 rounded-full ${devicePassed ? "bg-emerald-500" : "bg-rose-500"}`} />
-              <span>🎛 {devicePassed ? "设备就绪" : "设备检测"}</span>
+              <span>🎛 {devicePassed ? t("attempt.device_ready") : t("attempt.device_check")}</span>
             </button>
             {/* 设备状态指示器 */}
             <button onClick={() => setShowDevicePanel(!showDevicePanel)} className="flex items-center gap-1.5 rounded-md bg-muted/50 px-2 py-1 hover:bg-muted transition-colors">
-              <span className={`size-2 rounded-full ${cameraReady ? "bg-green-500" : "bg-red-500"}`} title="摄像头" />
-              <span className={`size-2 rounded-full ${micReady ? "bg-green-500" : "bg-red-500"}`} title="麦克风" />
-              <span className="text-muted-foreground">调试</span>
+              <span className={`size-2 rounded-full ${cameraReady ? "bg-green-500" : "bg-red-500"}`} title={t("attempt.camera")} />
+              <span className={`size-2 rounded-full ${micReady ? "bg-green-500" : "bg-red-500"}`} title={t("attempt.microphone")} />
+              <span className="text-muted-foreground">{t("attempt.debug")}</span>
             </button>
           </div>
         </div>
@@ -922,19 +930,19 @@ export default function Attempt1Page() {
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
               <span className={`size-2 rounded-full ${cameraStatus === "ready" ? "bg-green-500" : cameraStatus === "error" ? "bg-red-500" : "bg-yellow-500"}`} />
-              <span className="text-xs">摄像头: {cameraStatus === "ready" ? "正常" : cameraStatus === "error" ? "失败" : "初始化中"}</span>
+              <span className="text-xs">{t("attempt.camera_label")}{cameraStatus === "ready" ? t("attempt.normal") : cameraStatus === "error" ? t("attempt.failed") : t("attempt.initializing")}</span>
               {cameraStatus === "error" && (
-                <button onClick={initDevices} className="ml-2 text-xs text-primary underline hover:text-primary/80">重试</button>
+                <button onClick={initDevices} className="ml-2 text-xs text-primary underline hover:text-primary/80">{t("attempt.retry")}</button>
               )}
             </div>
             <div className="flex items-center gap-2">
               <span className={`size-2 rounded-full ${micStatus === "ready" ? "bg-green-500" : micStatus === "error" ? "bg-red-500" : "bg-yellow-500"}`} />
-              <span className="text-xs">麦克风: {micStatus === "ready" ? "正常" : micStatus === "error" ? "失败" : "初始化中"}</span>
+              <span className="text-xs">{t("attempt.mic_label")}{micStatus === "ready" ? t("attempt.normal") : micStatus === "error" ? t("attempt.failed") : t("attempt.initializing")}</span>
             </div>
           </div>
           {micReady && (
             <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">麦克风音量:</span>
+              <span className="text-xs text-muted-foreground">{t("attempt.volume")}</span>
               <div className="flex-1 h-6 flex items-end gap-0.5">
                 {micSpectrum.map((v, i) => (
                   <div
@@ -950,7 +958,7 @@ export default function Attempt1Page() {
               <span className="text-xs text-muted-foreground w-9 text-right">{Math.round(micLevel * 100)}%</span>
             </div>
           )}
-          <p className="text-xs text-muted-foreground/60">点击空白处或再次点击&quot;设备&quot;关闭此面板</p>
+          <p className="text-xs text-muted-foreground/60">{t("attempt.click_blank_to_close")}</p>
         </div>
       )}
 
@@ -959,8 +967,8 @@ export default function Attempt1Page() {
         <div className="relative flex-1 border-r border-border bg-black">
           {cameraReady ? <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 h-full w-full object-cover" /> : (
             <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
-              <span>摄像头未就绪</span>
-              {cameraStatus === "error" && <span className="text-xs text-amber-500">请允许浏览器访问摄像头</span>}
+              <span>{t("attempt.camera_not_ready")}</span>
+              {cameraStatus === "error" && <span className="text-xs text-amber-500">{t("attempt.please_allow_camera")}</span>}
             </div>
           )}
           <div className="absolute left-3 bottom-3 flex items-center gap-2 rounded-lg bg-black/50 px-3 py-1 text-xs text-white backdrop-blur">
@@ -983,10 +991,10 @@ export default function Attempt1Page() {
             <div className="text-center">
               <p className="text-sm font-semibold text-card-foreground">{ai.split("——")[0]}</p>
               <p className={`text-xs ${aiSpeaking || waitingForAiReply ? "text-primary animate-pulse" : "text-muted-foreground"}`}>
-                {aiSpeaking ? "正在说话..." : recording ? "正在听..." : waitingForAiReply ? stageToLabel(speechStage) : "等待中"}
+                {aiSpeaking ? t("attempt.speaking") : recording ? t("attempt.listening") : waitingForAiReply ? stageToLabel(speechStage) : t("attempt.waiting")}
               </p>
               {waitingForAiReply && history.filter(h => h.role === "ai").length <= 1 && (
-                <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 animate-in fade-in duration-300">首句回复可能需等待 10-30 秒，请耐心等待</p>
+                <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 animate-in fade-in duration-300">{t("attempt.first_reply_slow")}</p>
               )}
             </div>
             <div className="max-w-[90%] rounded-xl bg-muted/50 px-4 py-2.5 text-center min-h-[3rem] flex flex-col items-center justify-center gap-1">
@@ -1001,7 +1009,7 @@ export default function Attempt1Page() {
                 <p className="text-xs text-destructive">{streamASR.error}</p>
               )}
               <p className={`text-xs ${aiSpeaking ? "text-card-foreground" : "text-muted-foreground"}`}>
-                {currentSubtitle ? <ClickableEnglish text={currentSubtitle} /> : "点击下方按钮或按空格键开始对话"}
+                {currentSubtitle ? <ClickableEnglish text={currentSubtitle} /> : t("attempt.click_or_space")}
               </p>
             </div>
             {/* 重播按钮 + 显示字幕按钮 同行 */}
@@ -1011,7 +1019,7 @@ export default function Attempt1Page() {
                 <button
                   onClick={() => setShowHistory(!showHistory)}
                   className="inline-flex items-center justify-center size-9 rounded-full bg-muted/50 text-muted-foreground hover:bg-muted transition-colors"
-                  title={showHistory ? "隐藏对话记录" : "显示对话记录"}
+                  title={showHistory ? t("attempt.hide_history") : t("attempt.show_history")}
                 >
                   <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
@@ -1037,7 +1045,7 @@ export default function Attempt1Page() {
                   }}
                   disabled={replaying}
                   className="inline-flex items-center justify-center size-9 rounded-full bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-50"
-                  title="重播 AI 语音"
+                  title={t("attempt.replay_ai")}
                 >
                   {replaying ? (
                     <svg className="size-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1060,18 +1068,18 @@ export default function Attempt1Page() {
                   setPendingAiSubtitle(null);
                 }}
                 className="group relative inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-primary to-primary/80 px-6 py-2.5 text-sm font-bold text-primary-foreground shadow-lg shadow-primary/30 hover:shadow-2xl hover:shadow-primary/50 transition-all hover:scale-105 active:scale-95 animate-pulse"
-                title="查看 AI 的上一句话"
+                title={t("attempt.view_last_ai")}
               >
                 <span className="absolute inset-0 rounded-full bg-primary/40 blur-md opacity-60 group-hover:opacity-100 animate-pulse" />
                 <svg className="relative size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
                   <circle cx="12" cy="12" r="3" />
                 </svg>
-                <span className="relative">显示字幕</span>
+                <span className="relative">{t("attempt.show_subtitle")}</span>
               </button>
             )}
             </div>
-            <p className="text-xs text-muted-foreground/60">已对话 {history.length} 轮</p>
+            <p className="text-xs text-muted-foreground/60">{t("attempt.dialog_rounds", { count: history.length })}</p>
           </div>
 
           {/* 下半段：可滚动历史对话气泡列表 */}
@@ -1079,7 +1087,7 @@ export default function Attempt1Page() {
           <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto px-4 pb-2 space-y-2">
             {history.length === 0 ? (
               <div className="flex h-full items-center justify-center text-xs text-muted-foreground/60">
-                对话将在这里显示
+                {t("attempt.dialog_placeholder")}
               </div>
             ) : (
               history.map((h, i) => {
@@ -1092,11 +1100,6 @@ export default function Attempt1Page() {
                   grammar: "bg-rose-500",
                   vocabulary: "bg-violet-500",
                   coherence: "bg-cyan-500",
-                };
-                const dimLabels: Record<string, string> = {
-                  grammar: "语法",
-                  vocabulary: "词汇",
-                  coherence: "话轮",
                 };
                 return (
                   <div key={i} className={`flex flex-col ${isUser ? "items-end" : "items-start"}`}>
@@ -1121,7 +1124,7 @@ export default function Attempt1Page() {
                     )}
                     <div className="flex items-center gap-1.5 mt-0.5 mb-0.5">
                       <span className={`text-[10px] ${isUser ? "text-blue-500" : "text-muted-foreground"}`}>
-                        {isUser ? "你" : "AI"}
+                        {isUser ? t("attempt.you") : t("attempt.ai")}
                       </span>
                       {isUser && fb && (() => {
                         const sc = fb.scores;
@@ -1164,7 +1167,7 @@ export default function Attempt1Page() {
         <RecordingWaveform isRecording={recording} analyserRef={analyserRef} />
         {isFinal && (
           <div className="rounded-lg bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 px-4 py-2.5 text-center">
-            <p className="text-sm font-semibold text-green-700 dark:text-green-300">对话已完成，可以提交诊断了</p>
+            <p className="text-sm font-semibold text-green-700 dark:text-green-300">{t("attempt.dialog_done_1")}</p>
           </div>
         )}
         {!canRecord && recordDisabledReason && (
@@ -1172,7 +1175,7 @@ export default function Attempt1Page() {
             {recordDisabledReason}
             {!devicePassed && (
               <button onClick={() => router.push("/device-check")} className="ml-2 underline hover:text-rose-800">
-                去检测
+                {t("attempt.go_check")}
               </button>
             )}
           </p>
@@ -1184,7 +1187,7 @@ export default function Attempt1Page() {
               if (recording) { endRecord(); } else { beginRecord(); }
             }}
             disabled={!canRecord && !recording}
-            title={recording ? "点击结束录音" : "点击开始说话"}
+            title={recording ? t("attempt.click_stop_recording") : t("attempt.click_start_speaking")}
             className={`shrink-0 select-none rounded-full px-8 py-3 text-sm font-semibold transition-all duration-150 active:scale-95 ${
               recording
                 ? elapsed >= 28
@@ -1198,13 +1201,13 @@ export default function Attempt1Page() {
                     ? "bg-muted text-muted-foreground cursor-not-allowed"
                     : "bg-primary text-primary-foreground shadow-md hover:shadow-lg hover:bg-primary/90"
             }`}>
-            {!micReady ? "麦克风未就绪" : wrappingUp ? "AI 正在收尾..." : recording ? `点击停止 (${formatTime(elapsed)})` : uploading || waitingForAiReply ? stageToLabel(speechStage) : isFinal ? "对话已结束" : turnLimitReached ? "已达到建议轮次" : "点击说话"}
+            {!micReady ? t("attempt.mic_not_ready") : wrappingUp ? t("attempt.ai_wrapping") : recording ? `${t("attempt.click_stop")} (${formatTime(elapsed)})` : uploading || waitingForAiReply ? stageToLabel(speechStage) : isFinal ? t("attempt.dialog_ended") : turnLimitReached ? t("attempt.turn_limit_reached") : t("attempt.click_speak")}
           </button>
-          {showHint && micReady && <span className="hidden sm:inline text-xs text-muted-foreground/60 animate-in fade-in duration-300">或按空格键切换</span>}
+          {showHint && micReady && <span className="hidden sm:inline text-xs text-muted-foreground/60 animate-in fade-in duration-300">{t("attempt.or_space_toggle")}</span>}
           <div className="flex-1" />
-          <Button size="sm" variant="outline" onClick={handleSubmit} disabled={submitting || history.length < MIN_USER_TURNS}>{submitting ? "提交中..." : "提交诊断"}</Button>
+          <Button size="sm" variant="outline" onClick={handleSubmit} disabled={submitting || history.length < MIN_USER_TURNS}>{submitting ? t("attempt.submitting") : t("attempt.submit_diagnosis")}</Button>
           {turnLimitReached && (
-            <span className="ml-2 text-xs text-muted-foreground">已达到建议轮次</span>
+            <span className="ml-2 text-xs text-muted-foreground">{t("attempt.turn_limit_reached")}</span>
           )}
         </div>
         {submitError && (
@@ -1221,7 +1224,7 @@ export default function Attempt1Page() {
                   onClick={() => { setSubmitError(null); handleSubmit(); }}
                   className="mt-2 text-xs text-red-600 dark:text-red-400 underline hover:text-red-800"
                 >
-                  点击重试
+                  {t("attempt.click_retry")}
                 </button>
               </div>
               <button onClick={() => setSubmitError(null)} className="text-red-400 hover:text-red-600">
