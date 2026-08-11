@@ -431,7 +431,7 @@ export default function EvaluatePage() {
                         : "bg-destructive/10 text-destructive"
                   }`}
                 >
-                  {up ? "↑" : flat ? "→" : "↓"} {Math.abs(s.change).toFixed(1)}
+                  {up ? "↑" : flat ? "→" : "↓"} {Math.abs(s.change ?? 0).toFixed(1)}
                 </span>
               </div>
 

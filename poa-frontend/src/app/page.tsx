@@ -42,7 +42,7 @@ function ScoreRing({ value }: { value: number }) {
         />
       </svg>
       <span className={`absolute text-xs font-semibold ${color}`}>
-        {value.toFixed(1)}
+        {(value ?? 0).toFixed(1)}
       </span>
     </div>
   );
@@ -110,7 +110,7 @@ function MiniDimBars({
                     : "text-rose-500"
               }`}
             >
-              {up ? "+" : ""}{s.change.toFixed(1)}
+              {up ? "+" : ""}{(s.change ?? 0).toFixed(1)}
             </span>
           </div>
         );
