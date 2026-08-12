@@ -75,8 +75,8 @@ export default function ScenarioPage() {
 
   // ---- 图片压缩（Canvas API，上传前缩放以减少 VLM 推理时间）----
   async function compressImage(file: File): Promise<File> {
-    const MAX_DIM = 480; // 480px 足够场景识别，手机端加快上传+减少VLM处理数据量
-    const QUALITY = 0.4;
+    const MAX_DIM = 640; // 640px 足够场景识别，昨晚正常工作参数
+    const QUALITY = 0.5;
     // 小文件不压缩（中国大陆到 Railway 美国跨国传输，减小体积是关键）
     if (file.size < 80 * 1024) return file;
 
