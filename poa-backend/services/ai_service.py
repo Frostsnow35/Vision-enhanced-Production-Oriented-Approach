@@ -662,29 +662,21 @@ def diagnose_attempt(attempt_text: str, scene_context: str = "") -> Dict[str, An
     # 构建用户消息：场景信息 + 对话文本
     user_msg = f"场景信息：{scene_context}\n\n对话文本：\n{attempt_text}" if scene_context else attempt_text
 
-    # 1. 尝试调用真实 LLM（文本模型）
+    # 1. 尝试调用真实 LLM（文本模型，走带重试的统一调用，避免 429/5xx 直接失败）
     try:
-        body = {
-            "model": DOUBAO_MODEL_ID,
-            "messages": [
+        logger.info(f"[diagnose_attempt] 调用 LLM — model={DOUBAO_MODEL_ID}")
+        raw = _call_doubao(
+            [
                 {"role": "system", "content": _DIAGNOSIS_PROMPT},
                 {"role": "user", "content": user_msg},
             ],
-        }
-        logger.info(f"[diagnose_attempt] 调用 LLM — model={DOUBAO_MODEL_ID}")
-        with httpx.Client(timeout=30.0) as client:
-            resp = client.post(
-                CHAT_URL,
-                headers={
-                    "Authorization": f"Bearer {DOUBAO_API_KEY}",
-                    "Content-Type": "application/json",
-                },
-                json=body,
-            )
-            resp.raise_for_status()
-
-        data = resp.json()
-        raw = data["choices"][0]["message"]["content"].strip()
+            model=DOUBAO_MODEL_ID,
+            max_tokens=1000,
+            timeout=60,
+            max_retries=2,
+            use_stream=True,
+        )
+        raw = (raw or "").strip()
         # 去除 markdown 代码块包裹
         if raw.startswith("```"):
             lines = raw.split("\n")
@@ -729,6 +721,16 @@ def diagnose_attempt(attempt_text: str, scene_context: str = "") -> Dict[str, An
             for j, he in enumerate(hf_errors):
                 if isinstance(he, dict) and f"hf_{j}_suggestion" in translations:
                     he["suggestion_en"] = translations[f"hf_{j}_suggestion"]
+
+        # 防御：过滤非法 gap 项并确保 label 为字符串，避免 response_model 校验抛 500
+        safe_gaps = []
+        for gap in gaps:
+            if not isinstance(gap, dict):
+                continue
+            if not gap.get("label"):
+                gap["label"] = "待改进项"
+            safe_gaps.append(gap)
+        parsed["gaps"] = safe_gaps
         return parsed
 
     except Exception as e:
@@ -768,25 +770,18 @@ def _extract_high_freq_errors(attempt_text: str) -> List[Dict[str, Any]]:
     if not attempt_text or not attempt_text.strip() or len(attempt_text) < 50:
         return []
     try:
-        body = {
-            "model": DOUBAO_MODEL_ID,
-            "messages": [
+        raw = _call_doubao(
+            [
                 {"role": "system", "content": _HIGHFREQ_PROMPT},
                 {"role": "user", "content": attempt_text},
             ],
-        }
-        with httpx.Client(timeout=20.0) as client:
-            resp = client.post(
-                CHAT_URL,
-                headers={
-                    "Authorization": f"Bearer {DOUBAO_API_KEY}",
-                    "Content-Type": "application/json",
-                },
-                json=body,
-            )
-            resp.raise_for_status()
-        data = resp.json()
-        raw = data["choices"][0]["message"]["content"].strip()
+            model=DOUBAO_MODEL_ID,
+            max_tokens=500,
+            timeout=40,
+            max_retries=1,
+            use_stream=True,
+        )
+        raw = (raw or "").strip()
         if raw.startswith("```"):
             lines = raw.split("\n")
             lines = lines[1:] if lines[0].startswith("```") else lines

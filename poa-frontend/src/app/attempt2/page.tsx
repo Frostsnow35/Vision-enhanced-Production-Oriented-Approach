@@ -1029,6 +1029,7 @@ export default function Attempt2Page() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
+        signal: AbortSignal.timeout(180000),
       });
       if (!res.ok) throw new Error(`${res.status}`);
       const data = await res.json();

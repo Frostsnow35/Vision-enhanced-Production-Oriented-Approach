@@ -195,8 +195,20 @@ async def submit_attempt2(req: AttemptSubmitRequest, db: Session = Depends(get_d
             evaluation_criteria = t.evaluation_criteria or ""
             scene_context = f"场景：{scene_label}，角色：{task_roles}，目标：{task_goal}"
 
-    result = diagnose_attempt(attempt_text=diagnosis_text, scene_context=scene_context)
-    high_freq = _extract_high_freq_errors(diagnosis_text)
+    # 并行执行诊断 + 高频错误提取（异常降级为空结果，避免 500）
+    result = {"gaps": []}
+    high_freq = []
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        future_diag = executor.submit(diagnose_attempt, diagnosis_text, scene_context)
+        future_hf = executor.submit(_extract_high_freq_errors, diagnosis_text)
+        for future in as_completed([future_diag, future_hf]):
+            try:
+                if future == future_diag:
+                    result = future.result()
+                else:
+                    high_freq = future.result() or []
+            except Exception as e:
+                logger.warning(f"[attempt2] 并行任务失败: {e}")
     gaps = result.get("gaps", [])
 
     # ---- 音频 URL → 本地路径（供发音/副语言分析）----

@@ -820,7 +820,7 @@ export default function Attempt1Page() {
         localStorage.setItem("attempt1_audio_urls", JSON.stringify(audioUrls));
       }
       const taskId = (taskRef.current as any)?.task_id;
-      const res = await fetch(`${BASE_URL}/api/attempt1/submit`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ task_id: taskId ?? 0, attempt_text: conversationText || "[no speech]", attempt_number: 1, audio_urls: audioUrls }) });
+      const res = await fetch(`${BASE_URL}/api/attempt1/submit`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ task_id: taskId ?? 0, attempt_text: conversationText || "[no speech]", attempt_number: 1, audio_urls: audioUrls }), signal: AbortSignal.timeout(180000) });
       if (!res.ok) {
         const detail = await res.text().catch(() => t("common.error_unknown"));
         throw new Error(`服务器返回错误 (${res.status}): ${detail}`);

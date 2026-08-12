@@ -11,20 +11,36 @@ export const BASE_URL = "";
 const DEFAULT_TIMEOUT = 60000; // 60s，LLM 调用默认超时（文本模型通常 30-60s）
 
 /**
- * 通用 POST 请求封装（JSON 请求体 → JSON 响应），带超时。
+ * 通用 POST 请求封装（JSON 请求体 → JSON 响应），带超时 + 网络错误自动重试。
  */
 async function request<T>(path: string, body: Record<string, unknown>, timeoutMs = DEFAULT_TIMEOUT): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(timeoutMs),
-  });
-  if (!res.ok) {
-    const errText = await res.text().catch(() => "Unknown error");
-    throw new Error(`API error ${res.status}: ${errText}`);
+  const maxRetries = 2;
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const res = await fetch(`${BASE_URL}${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "Unknown error");
+        throw new Error(`API error ${res.status}: ${errText}`);
+      }
+      return await res.json();
+    } catch (err: any) {
+      lastError = err;
+      // 仅对瞬时网络错误（Failed to fetch）重试；HTTP 错误（4xx/5xx）直接抛出
+      const isNetwork = err?.name === "TypeError" || /failed to fetch|networkerror/i.test(err?.message || "");
+      if (attempt < maxRetries && isNetwork) {
+        await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+        continue;
+      }
+      throw err;
+    }
   }
-  return res.json();
+  throw lastError;
 }
 
 /**
@@ -153,13 +169,31 @@ export async function uploadImage(file: File): Promise<{ image_url: string }> {
   form.append("file", file);
   const url = `${BASE_URL}/api/upload/image`;
   console.log("[uploadImage] POST", url, "size:", file.size);
-  const res = await fetch(url, {
-    method: "POST",
-    body: form,
-    signal: AbortSignal.timeout(120000), // 120s，中国大陆到 Railway（美国）跨国上传需要较长时间
-  });
-  if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
-  return res.json();
+
+  const maxRetries = 3;
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        body: form,
+        signal: AbortSignal.timeout(120000), // 120s，中国大陆到 Railway（美国）跨国上传需要较长时间
+      });
+      if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
+      return await res.json();
+    } catch (err: any) {
+      lastError = err;
+      // 瞬时网络错误（Failed to fetch）自动重试，规避跨太平洋偶发断连
+      const isNetwork = err?.name === "TypeError" || /failed to fetch|networkerror/i.test(err?.message || "");
+      if (attempt < maxRetries - 1 && isNetwork) {
+        console.warn(`[uploadImage] 网络错误，第 ${attempt + 1}/${maxRetries} 次重试`, err.message);
+        await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastError;
 }
 
 // ---- 产出诊断 ----
