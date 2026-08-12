@@ -1,16 +1,12 @@
 /**
  * API 客户端 —— 封装对后端所有接口的 fetch 调用。
- * 生产环境使用相对路径（走 Next.js rewrite 代理到 Railway 后端），
- * 避免浏览器跨域 POST 被移动网络/浏览器拦截。
- * 本地开发直连 localhost:8000。
- * 可通过环境变量 NEXT_PUBLIC_API_BASE 强制覆盖。
+ * 所有请求使用相对路径，由 Next.js rewrite 代理到后端，
+ * 避免浏览器跨域请求被网络拦截。
  */
 export const PRODUCTION_BACKEND = "https://poa-backend-production-c371.up.railway.app";
-const LOCAL_BACKEND = "http://localhost:8000";
 
-// 生产环境用相对路径（同源请求 → Next.js rewrite 代理到后端）
-// 本地开发时 .env.local 中 NEXT_PUBLIC_API_BASE=http://localhost:8000
-export const BASE_URL = process.env.NEXT_PUBLIC_API_BASE || "";
+// 始终使用相对路径（同源请求 → Next.js rewrite → 后端）
+export const BASE_URL = "";
 
 const DEFAULT_TIMEOUT = 60000; // 60s，LLM 调用默认超时（文本模型通常 30-60s）
 
