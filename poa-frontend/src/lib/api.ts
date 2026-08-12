@@ -1,9 +1,12 @@
 /**
  * API 客户端 —— 封装对后端所有接口的 fetch 调用。
- * 后端默认地址 http://localhost:8000，可通过环境变量 NEXT_PUBLIC_API_BASE 覆盖。
+ * 生产环境自动指向 Railway 后端，本地开发可通过环境变量 NEXT_PUBLIC_API_BASE 覆盖。
  */
+const PRODUCTION_BACKEND = "https://poa-backend-production-c371.up.railway.app";
+const LOCAL_BACKEND = "http://localhost:8000";
 
-export const BASE_URL = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
+export const BASE_URL = process.env.NEXT_PUBLIC_API_BASE ??
+  (process.env.NODE_ENV === "production" ? PRODUCTION_BACKEND : LOCAL_BACKEND);
 
 /**
  * 通用 POST 请求封装（JSON 请求体 → JSON 响应）
