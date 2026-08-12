@@ -1,15 +1,16 @@
 "use client";
 
 import { useRef, useState, useCallback, useEffect } from "react";
-import { BASE_URL } from "./api";
+import { BASE_URL, PRODUCTION_BACKEND } from "./api";
 
 /**
  * 构建 WebSocket URL（从 REST API BASE_URL 推导）。
  * http:// → ws:// , https:// → wss://
+ * 生产环境（Vercel rewrite 模式，BASE_URL=""）回退到直连 Railway。
  */
 function wsUrl(path: string): string {
-  const base = BASE_URL.replace(/^http/, "ws");
-  return `${base}${path}`;
+  const base = BASE_URL || PRODUCTION_BACKEND;
+  return `${base.replace(/^http/, "ws")}${path}`;
 }
 
 const TARGET_RATE = 16000;

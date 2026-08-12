@@ -1,12 +1,15 @@
 /**
  * API 客户端 —— 封装对后端所有接口的 fetch 调用。
- * 生产环境自动指向 Railway 后端，本地开发可通过环境变量 NEXT_PUBLIC_API_BASE 覆盖。
+ * 生产环境（Vercel）通过 Next.js rewrite 代理到 Railway，避免大陆用户直连 railway.app 被 GFW 阻断。
+ * 本地开发直连 localhost:8000。
+ * 可通过环境变量 NEXT_PUBLIC_API_BASE 强制覆盖。
  */
-const PRODUCTION_BACKEND = "https://poa-backend-production-c371.up.railway.app";
+export const PRODUCTION_BACKEND = "https://poa-backend-production-c371.up.railway.app";
 const LOCAL_BACKEND = "http://localhost:8000";
 
+// 生产环境使用相对路径（走 Next.js rewrite），本地开发直连后端
 export const BASE_URL = process.env.NEXT_PUBLIC_API_BASE ??
-  (process.env.NODE_ENV === "production" ? PRODUCTION_BACKEND : LOCAL_BACKEND);
+  (process.env.NODE_ENV === "production" ? "" : LOCAL_BACKEND);
 
 const DEFAULT_TIMEOUT = 60000; // 60s，LLM 调用默认超时（文本模型通常 30-60s）
 
