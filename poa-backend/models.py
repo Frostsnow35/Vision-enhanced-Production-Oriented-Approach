@@ -39,6 +39,8 @@ class Scenario(Base):
     image_hash = Column(String(32), unique=True, nullable=True)
     # 场景标签，例如 "机场check-in" / "餐厅点餐"
     scene_label = Column(String(200), nullable=False)
+    # 英译文：{ "scene_label": "English version" }
+    translations = Column(JSON, nullable=True, default=dict)
     # 记录创建时间，默认取当前 UTC 时间
     created_at = Column(DateTime, default=_utcnow)
 
@@ -73,6 +75,8 @@ class POATask(Base):
     opening_line = Column(Text, nullable=True)
     # AI 收尾语，由 VLM 在任务生成时产出；用于 chatTurn is_final 提前识别 + Plan A 自动收尾
     closing_line = Column(Text, nullable=True)
+    # 英译文：{ "roles": "...", "goal": "...", ... }
+    translations = Column(JSON, nullable=True, default=dict)
     created_at = Column(DateTime, default=_utcnow)
 
     # 多对一：回到 Scenario
@@ -131,6 +135,8 @@ class Gap(Base):
     explanation = Column(Text, nullable=True)
     # 建议的参考表达（更自然/准确的英文正确说法）
     reference_expression = Column(Text, nullable=True)
+    # 英译文：{ "label": "...", "evidence_sentence": "...", "explanation": "...", "reference_expression": "..." }
+    translations = Column(JSON, nullable=True, default=dict)
 
     # 多对一：回到 Attempt
     attempt = relationship("Attempt", back_populates="gaps")
@@ -162,6 +168,8 @@ class InputPack(Base):
     demo_dialogue = Column(Text, nullable=True)
     # 策略提示：学习策略上的建议
     strategy_tip = Column(Text, nullable=True)
+    # 英译文：{ "scene_chunks": "...", "functional_sentences": "...", "demo_dialogue": "...", "strategy_tip": "..." }
+    translations = Column(JSON, nullable=True, default=dict)
 
     # 多对一：回到 Gap
     gap = relationship("Gap", back_populates="input_packs")
@@ -190,6 +198,8 @@ class Evaluation(Base):
     problem_improved = Column(Text, nullable=True)
     # 完整评价报告（综合评价文本）
     full_report = Column(Text, nullable=True)
+    # 英译文：{ "problem_improved": "...", "full_report": "..." }
+    translations = Column(JSON, nullable=True, default=dict)
     created_at = Column(DateTime, default=_utcnow)
 
     # 两个外键都指向 attempts 表，需显式指定 foreign_keys 消除歧义

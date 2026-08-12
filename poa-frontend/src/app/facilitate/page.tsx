@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { useTranslations } from "next-intl";
+import { useTranslations, useLocale } from "next-intl";
 import { Button } from "@/components/ui/button";
 import InlineLoadingHint from "@/components/InlineLoadingHint";
 import TaskGate from "@/components/TaskGate";
@@ -11,6 +11,7 @@ import * as echarts from "echarts";
 import HistoryTaskSelector from "@/components/HistoryTaskSelector";
 import { getScenarioHistory, isTaskSelectedInSession, markTaskSelectedInSession, type ScenarioHistoryItem } from "@/lib/store";
 import { isDeviceCheckPassed } from "@/lib/device-check";
+import { pickLocaleField, pickTranslation } from "@/lib/locale-utils";
 
 /* ============================================================
    类型
@@ -24,6 +25,7 @@ interface GapItem {
 interface PhraseItem {
   function: string;
   sentence: string;
+  function_en?: string;
 }
 
 interface Exercise {
@@ -33,11 +35,15 @@ interface Exercise {
   answer: string;
   explanation: string;
   gap_target?: string;
+  context_en?: string;
+  explanation_en?: string;
+  gap_target_en?: string;
 }
 
 interface DialogueData {
   title: string;
   lines: { speaker: string; text: string }[];
+  title_en?: string;
 }
 
 type DimScores = Record<string, number>;
@@ -185,6 +191,98 @@ const DIM_ADVICE: Record<DimKey, string> = {
   paralanguage: "注意疑问句升调和陈述句降调，练习语速变化和情感语调，可跟读示范音频。",
 };
 
+/** 维度提升建议（英文版） */
+const DIM_ADVICE_EN: Record<DimKey, string> = {
+  pronunciation: "Listen to model audio and shadow it, focusing on full vowels and final consonants. Record yourself for self-assessment.",
+  grammar: "Review tenses, subject-verb agreement, and preposition collocations. Self-correct while speaking.",
+  vocabulary: "Build a scene-specific word bank and fixed collocations. Use synonyms to avoid repeating basic words.",
+  function: "Complete all communicative points before pursuing complex expressions. List key steps before practicing.",
+  pragmatics: "Use polite forms such as 'I'd like' and 'Could you...' to strengthen politeness markers.",
+  turn_taking: "Use discourse markers like 'Well', 'Actually', and 'Sure' to open responses naturally, and mind turn-taking rhythm.",
+  paralanguage: "Notice rising intonation for questions and falling for statements. Practice pacing and emotional tone with model audio.",
+};
+
+/** 维度描述（英文版，键为 dim key） */
+const DIM_DESCRIPTIONS_EN: Record<DimKey, { description: string; levels: Record<number, string>; tips: string }> = {
+  pronunciation: {
+    description: "Assesses the accuracy of English pronunciation, including vowels, consonants, stress, and intonation.",
+    levels: {
+      1: "Pronunciation is difficult with many errors, hard to understand",
+      2: "Noticeable pronunciation errors, partially understandable",
+      3: "Mostly correct pronunciation with occasional small errors",
+      4: "Clear, accurate, and naturally fluent pronunciation",
+      5: "Standard pronunciation, near-native level",
+    },
+    tips: "Listen to model audio, shadow it, pay attention to stress and intonation, and record yourself to compare.",
+  },
+  grammar: {
+    description: "Assesses grammatical accuracy, including tense, voice, and subject-verb agreement.",
+    levels: {
+      1: "Frequent grammar errors that seriously affect understanding",
+      2: "Many grammar errors that affect fluency",
+      3: "Mostly correct grammar with occasional small errors",
+      4: "Accurate grammar with fluent expression",
+      5: "Flawless and flexible grammar use",
+    },
+    tips: "Self-correct during practice, keep grammar notes, and review regularly.",
+  },
+  vocabulary: {
+    description: "Assesses the appropriateness, richness, and accuracy of vocabulary use.",
+    levels: {
+      1: "Limited vocabulary and monotonous expression",
+      2: "Basic vocabulary is acceptable but not rich enough",
+      3: "Appropriate vocabulary choices that convey basic meaning",
+      4: "Rich and appropriately used vocabulary",
+      5: "Precise and idiomatic vocabulary",
+    },
+    tips: "Build a scene vocabulary bank, learn synonym substitution, and pay attention to collocations.",
+  },
+  function: {
+    description: "Assesses the ability to fulfill specific communicative functions in English, such as requesting, suggesting, and apologizing.",
+    levels: {
+      1: "Difficulty fulfilling basic communicative functions",
+      2: "Partially fulfills communicative functions but in limited ways",
+      3: "Fulfills basic communicative functions",
+      4: "Effectively fulfills multiple communicative functions",
+      5: "Flexibly and naturally fulfills various communicative functions",
+    },
+    tips: "Learn common expressions for each communicative function and practice them purposefully.",
+  },
+  pragmatics: {
+    description: "Assesses politeness, appropriateness, and cultural adaptability of language use.",
+    levels: {
+      1: "Direct and blunt expression, lacking politeness",
+      2: "Basic politeness but not natural enough",
+      3: "Polite and appropriate expression",
+      4: "Naturally fluent, polite, and appropriate expression",
+      5: "Idiomatic expression that adapts flexibly to various social situations",
+    },
+    tips: "Learn tactful expressions, pay attention to polite forms, and understand cultural differences.",
+  },
+  turn_taking: {
+    description: "Assesses responsiveness in dialogue, including topic continuation and transition.",
+    levels: {
+      1: "Difficulty responding and maintaining dialogue",
+      2: "Can respond, but dialogue is not natural enough",
+      3: "Responds naturally and maintains dialogue",
+      4: "Responds actively and drives the dialogue forward",
+      5: "Flexible, natural responses with smooth and efficient dialogue",
+    },
+    tips: "Practice discourse markers, listen attentively, and learn to transition topics naturally.",
+  },
+  paralanguage: {
+    description: "Assesses the use of non-verbal elements such as intonation, pace, and pauses.",
+    levels: {
+      1: "Monotonous intonation and inappropriate pace",
+      2: "Mostly correct intonation but lacking variation",
+      3: "Natural intonation and appropriate pace",
+      4: "Varied intonation with powerful expression",
+      5: "Perfect use of paralinguistic elements that enhance expression",
+    },
+    tips: "Notice rising intonation for questions and falling for statements, practice pacing, and imitate native speakers' rhythm.",
+  },
+};
+
 const TAB_ICONS: Record<TabKey, string> = {
   assessment: "📊",
   phrases: "💬",
@@ -197,16 +295,17 @@ const TAB_ICONS: Record<TabKey, string> = {
    Mock 学习材料（LLM 不可用时的兜底）
    ============================================================ */
 const DEFAULT_PHRASES: PhraseItem[] = [
-  { function: "礼貌请求", sentence: "I'd like a large latte, please." },
-  { function: "委婉询问", sentence: "Could I have that with oat milk instead?" },
-  { function: "确认信息", sentence: "So that's a medium iced latte — correct?" },
-  { function: "回应提议", sentence: "Yes, for here, please. / To go, thanks." },
-  { function: "表达感谢", sentence: "Thank you so much! Have a great day!" },
-  { function: "请求重复", sentence: "Sorry, could you say that again?" },
+  { function: "礼貌请求", sentence: "I'd like a large latte, please.", function_en: "Polite request" },
+  { function: "委婉询问", sentence: "Could I have that with oat milk instead?", function_en: "Tactful inquiry" },
+  { function: "确认信息", sentence: "So that's a medium iced latte — correct?", function_en: "Confirming information" },
+  { function: "回应提议", sentence: "Yes, for here, please. / To go, thanks.", function_en: "Responding to an offer" },
+  { function: "表达感谢", sentence: "Thank you so much! Have a great day!", function_en: "Expressing thanks" },
+  { function: "请求重复", sentence: "Sorry, could you say that again?", function_en: "Asking for repetition" },
 ];
 
 const DEFAULT_DIALOGUE: DialogueData = {
   title: "咖啡店点单 — 示范对话",
+  title_en: "Coffee Shop Ordering — Demo Dialogue",
   lines: [
     { speaker: "Barista", text: "Hi there! What can I get for you today?" },
     { speaker: "Customer", text: "Hi! I'd like a medium iced latte, please." },
@@ -225,6 +324,7 @@ const DEFAULT_EXERCISES: Exercise[] = [
   {
     id: 1,
     context: "你走进一家咖啡店，想点一杯大杯冰拿铁并把牛奶换成燕麦奶。你应该怎么说？",
+    context_en: "You walk into a coffee shop and want to order a large iced latte with oat milk instead of regular milk. What should you say?",
     options: [
       { key: "A", text: "I want a large iced latte. No milk." },
       { key: "B", text: "I'd like a large iced latte with oat milk, please." },
@@ -232,10 +332,12 @@ const DEFAULT_EXERCISES: Exercise[] = [
     ],
     answer: "B",
     explanation: "B 使用 'I'd like...' + 'please'，是最礼貌得体的表达。A 的 'No milk' 会让人误以为要黑咖啡；C 的祈使句 'Give me' 过于直接生硬。",
+    explanation_en: "B uses 'I'd like...' + 'please', the most polite and appropriate form. A's 'No milk' may be mistaken for black coffee; C's imperative 'Give me' is too direct and blunt.",
   },
   {
     id: 2,
     context: "咖啡师问 'For here or to go?'，你想在这里喝。以下哪种回应最自然？",
+    context_en: "The barista asks 'For here or to go?' and you want to drink here. Which response is most natural?",
     options: [
       { key: "A", text: "Here." },
       { key: "B", text: "I'll stay here." },
@@ -243,10 +345,12 @@ const DEFAULT_EXERCISES: Exercise[] = [
     ],
     answer: "C",
     explanation: "C 重复关键词 'for here' 表示确认，并加上 'please' 保持礼貌。A 太简短冷淡；B 的 'stay here' 意思不准确。",
+    explanation_en: "C repeats the key phrase 'for here' to confirm and adds 'please' to stay polite. A is too brief and cold; B's 'stay here' is inaccurate.",
   },
   {
     id: 3,
     context: "你没听清咖啡师说的话，想请对方重复一遍。你应该怎么说？",
+    context_en: "You didn't hear the barista clearly and want them to repeat. What should you say?",
     options: [
       { key: "A", text: "What?" },
       { key: "B", text: "Can you say it again?" },
@@ -254,6 +358,7 @@ const DEFAULT_EXERCISES: Exercise[] = [
     ],
     answer: "C",
     explanation: "C 用 'Sorry' 开头表达歉意，用 'Could' 表示礼貌请求，结尾加 'please'。A 的 'What?' 很粗鲁；B 缺少礼貌标记。",
+    explanation_en: "C opens with 'Sorry' to apologize, uses 'Could' for a polite request, and ends with 'please'. A's 'What?' is rude; B lacks politeness markers.",
   },
 ];
 
@@ -317,6 +422,7 @@ const copyToClipboard = async (text: string, successMsg: string, errorMsg: strin
 export default function FacilitatePage() {
   const router = useRouter();
   const t = useTranslations();
+  const locale = useLocale();
 
   // ---- 所有 useState 必须在早期返回之前 ----
   const [initDone, setInitDone] = useState(false);
@@ -545,6 +651,11 @@ export default function FacilitatePage() {
               if (typeof commentVal === "string" && commentVal.trim()) {
                 filteredComments[dim] = commentVal;
               }
+              // 同时捕获 _en 后缀的英文评论
+              const commentEnVal = rawComments[`${dim}_en`] ?? (chineseName ? rawComments[`${chineseName}_en`] : undefined);
+              if (typeof commentEnVal === "string" && commentEnVal.trim()) {
+                filteredComments[`${dim}_en`] = commentEnVal;
+              }
             }
             if (Object.keys(filtered).length > 0) {
               setScores(filtered);
@@ -753,7 +864,7 @@ export default function FacilitatePage() {
                   className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-4 py-2 text-sm font-medium text-amber-700 border border-amber-200 hover:bg-amber-200 transition-colors"
                 >
                   <span className="text-amber-500">•</span>
-                  {g.label}
+                  {pickTranslation(g, "label", locale)}
                 </span>
               ))}
             </div>
@@ -804,6 +915,7 @@ export default function FacilitatePage() {
               expandedDim={expandedDim}
               setExpandedDim={setExpandedDim}
               onComplete={() => markTabComplete(setProgress, "assessment")}
+              locale={locale}
             />
           )}
           {tab === "phrases" && (
@@ -815,6 +927,7 @@ export default function FacilitatePage() {
                 learnedPhrases={progress.phrasesLearned}
                 onLearn={learnPhrase}
                 onComplete={() => markTabComplete(setProgress, "phrases")}
+                locale={locale}
               />
             )
           )}
@@ -825,6 +938,7 @@ export default function FacilitatePage() {
               <DialogueTab
                 dialogue={dialogue ?? DEFAULT_DIALOGUE}
                 onComplete={() => markTabComplete(setProgress, "dialogue")}
+                locale={locale}
               />
             )
           )}
@@ -837,6 +951,7 @@ export default function FacilitatePage() {
                 state={exerciseState}
                 onSelect={selectOption}
                 onComplete={() => markTabComplete(setProgress, "exercises")}
+                locale={locale}
               />
             )
           )}
@@ -880,6 +995,7 @@ function AssessmentTab({
   expandedDim,
   setExpandedDim,
   onComplete,
+  locale,
 }: {
   scores: DimScores | null;
   comments: DimComments | null;
@@ -888,6 +1004,7 @@ function AssessmentTab({
   expandedDim: string | null;
   setExpandedDim: (dim: string | null) => void;
   onComplete: () => void;
+  locale: string;
 }) {
   const t = useTranslations();
   const chartRef = useRef<HTMLDivElement>(null);
@@ -1067,7 +1184,7 @@ function AssessmentTab({
                           {(scoreMap[dim] ?? 0).toFixed(1)} / 5.0
                         </span>
                       </div>
-                      <p className="text-xs text-amber-700 mt-1">{comments?.[dim] ?? DIM_ADVICE[dim as DimKey]}</p>
+                      <p className="text-xs text-amber-700 mt-1">{pickLocaleField(comments, dim, locale) || (locale === "en" ? DIM_ADVICE_EN[dim as DimKey] : DIM_ADVICE[dim as DimKey])}</p>
                     </div>
                   </div>
                   <button
@@ -1155,7 +1272,8 @@ function AssessmentTab({
    ============================================================ */
 function DimensionDetail({ dim, score }: { dim: string; score: number }) {
   const t = useTranslations();
-  const info = DIM_DESCRIPTIONS[dim as DimKey];
+  const locale = useLocale();
+  const info = locale === "en" ? DIM_DESCRIPTIONS_EN[dim as DimKey] : DIM_DESCRIPTIONS[dim as DimKey];
   if (!info) return null;
 
   return (
@@ -1202,11 +1320,13 @@ function PhrasesTab({
   learnedPhrases,
   onLearn,
   onComplete,
+  locale,
 }: {
   phrases: PhraseItem[];
   learnedPhrases: string[];
   onLearn: (sentence: string) => void;
   onComplete: () => void;
+  locale: string;
 }) {
   const t = useTranslations();
 
@@ -1246,7 +1366,7 @@ function PhrasesTab({
                           : "bg-primary/10 text-primary"
                       }`}
                     >
-                      {p.function}
+                      {pickLocaleField(p, "function", locale)}
                     </span>
                     {isLearned && (
                       <span className="text-xs text-green-600 flex items-center gap-1">
@@ -1297,9 +1417,11 @@ function PhrasesTab({
 function DialogueTab({
   dialogue,
   onComplete,
+  locale,
 }: {
   dialogue: DialogueData;
   onComplete: () => void;
+  locale: string;
 }) {
   const t = useTranslations();
   const [playingLine, setPlayingLine] = useState<number | null>(null);
@@ -1324,7 +1446,7 @@ function DialogueTab({
       </div>
 
       <div className="rounded-xl bg-primary/5 p-6 border border-primary/10">
-        <h3 className="text-sm font-medium text-foreground mb-6">{dialogue.title}</h3>
+        <h3 className="text-sm font-medium text-foreground mb-6">{pickLocaleField(dialogue, "title", locale)}</h3>
         <div className="space-y-4">
           {dialogue.lines.map((line, i) => {
             const isLeft = i % 2 === 0;
@@ -1392,11 +1514,13 @@ function ExercisesTab({
   state,
   onSelect,
   onComplete,
+  locale,
 }: {
   exercises: Exercise[];
   state: Record<number, { selected: string | null; revealed: boolean }>;
   onSelect: (exId: number, key: string) => void;
   onComplete: () => void;
+  locale: string;
 }) {
   const t = useTranslations();
   const completedCount = Object.values(state).filter((s) => s?.revealed).length;
@@ -1463,7 +1587,7 @@ function ExercisesTab({
                   </span>
                   {ex.gap_target && (
                     <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-primary/10 text-primary border border-primary/20">
-                      {t("facilitate.targeting", { gap: ex.gap_target })}
+                      {t("facilitate.targeting", { gap: pickLocaleField(ex, "gap_target", locale) })}
                     </span>
                   )}
                   {revealed && (
@@ -1478,7 +1602,7 @@ function ExercisesTab({
                     </span>
                   )}
                 </div>
-                <p className="text-base text-foreground">{ex.context}</p>
+                <p className="text-base text-foreground">{pickLocaleField(ex, "context", locale)}</p>
               </div>
 
               <div className="space-y-2">
@@ -1551,7 +1675,7 @@ function ExercisesTab({
                   >
                     {isCorrect ? t("facilitate.excellent") : t("facilitate.correct_answer") + ex.answer}
                   </p>
-                  <p className="text-sm text-muted-foreground">{ex.explanation}</p>
+                  <p className="text-sm text-muted-foreground">{pickLocaleField(ex, "explanation", locale)}</p>
                 </div>
               )}
             </div>

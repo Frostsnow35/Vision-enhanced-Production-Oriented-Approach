@@ -36,7 +36,11 @@
     "report_error": "报告生成出错，请稍后重试",
     "record_expired": "该学习记录已过期或被删除",
     "record_not_found": "未找到该学习记录，请从历史记录中选择",
-    "copy_success": "已复制到剪贴板！"
+    "copy_success": "已复制到剪贴板！",
+    "loading_tip_1": "稍等，AI 正在快马加鞭整理你的内容...",
+    "loading_tip_2": "💡 内容正在生成中",
+    "loading_tip_3": "别急，好内容值得等一等 ✨",
+    "loading_tip_4": "📚 正在为你定制个性化建议"
   },
   "nav": {
     "home": "首页",
@@ -418,6 +422,60 @@
   },
   "lang": {
     "switch_to_en": "EN",
-    "switch_to_zh": "中"
+    "switch_to_zh": "中",
+    "switch_title_en": "切换到英文",
+    "switch_title_zh": "切换到中文"
+  },
+  "device_check": {
+    "title": "设备检测",
+    "subtitle": "确保摄像头、麦克风正常工作后再开始对话",
+    "close": "关闭",
+    "camera_label": "摄像头",
+    "mic_label": "麦克风",
+    "camera_checking": "正在请求摄像头...",
+    "camera_not_available": "摄像头不可用",
+    "camera_waiting": "等待开始调试",
+    "camera_ready": "摄像头就绪",
+    "status_normal": "正常工作",
+    "status_fail": "未通过",
+    "status_checking": "检测中...",
+    "status_idle": "未开始",
+    "mic_volume": "麦克风音量",
+    "spectrum_hint": "说话时观察频谱跳动是否明显",
+    "reset": "重置",
+    "full_page": "完整检测页",
+    "done_start": "✓ 完成，开始任务",
+    "start_check": "开始调试",
+    "recheck": "重新检测",
+    "permission_denied": "浏览器拒绝了摄像头/麦克风权限。请在地址栏左侧的锁形图标中允许权限后重试。",
+    "no_device": "未检测到可用的摄像头或麦克风设备。请检查硬件连接。",
+    "device_occupied": "摄像头/麦克风被其它程序占用。请关闭其它应用后重试。",
+    "overconstrained": "当前设备不满足所需参数。",
+    "security_error": "浏览器安全策略阻止了设备访问。",
+    "unknown_error": "未知错误"
+  },
+  "history_task": {
+    "no_records": "暂无学习记录",
+    "no_records_hint": "请先上传一张场景照片，开始学习",
+    "upload_start": "上传场景照片开始学习",
+    "select_task": "选择学习任务",
+    "select_task_hint": "请选择之前的学习任务继续，或上传新照片开始新任务",
+    "upload_new": "上传新照片开始新任务",
+    "continue_task": "继续此任务 →"
+  },
+  "report_list": {
+    "no_records": "暂无学习记录",
+    "no_records_hint": "请先完成一次学习任务，才能查看学习报告",
+    "upload_start": "上传场景照片开始学习",
+    "evidence_chain": "学习证据链",
+    "select_report": "选择学习报告",
+    "select_report_hint": "请选择要查看的学习任务报告",
+    "view_report": "查看报告 →",
+    "upload_new": "上传新照片开始新任务",
+    "select_task_first": "请先选择一个任务"
+  },
+  "gap_list": {
+    "title": "第 {attempt} 次作答诊断 — 发现 {count} 项不足",
+    "source_text": "原文: "
   }
 }

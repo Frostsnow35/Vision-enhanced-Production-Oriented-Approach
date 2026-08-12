@@ -2,9 +2,10 @@
 
 import { useState, useEffect, use } from "react";
 import { useRouter } from "next/navigation";
-import { useTranslations } from "next-intl";
+import { useTranslations, useLocale } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { BASE_URL, buildImageUrl } from "@/lib/api";
+import { pickLocaleField, pickTranslation } from "@/lib/locale-utils";
 import { getScenarioHistory, selectScenario, type ScenarioHistoryItem } from "@/lib/store";
 import HistoryTaskSelector from "@/components/HistoryTaskSelector";
 import ClickableEnglish from "@/components/ClickableEnglish";
@@ -94,9 +95,10 @@ function TimelineNode({
 /* ============================================================ */
 function SceneContent({ scenario, historyItem }: { scenario: Record<string, any> | null; historyItem: ScenarioHistoryItem | null }) {
   const t = useTranslations();
+  const locale = useLocale();
   const imgPath = scenario?.image_path || historyItem?.imageUrl || "";
   const imgUrl = buildImageUrl(imgPath);
-  const sceneLabel = scenario?.scene_label || historyItem?.sceneLabel || t("report.unknown_scene");
+  const sceneLabel = pickLocaleField(scenario, "scene_label", locale) || historyItem?.sceneLabel || t("report.unknown_scene");
 
   return (
     <div className="space-y-4">
@@ -146,8 +148,9 @@ function SceneContent({ scenario, historyItem }: { scenario: Record<string, any>
 /* ============================================================ */
 function TaskContent({ task, historyItem }: { task: Record<string, any> | null; historyItem: ScenarioHistoryItem | null }) {
   const t = useTranslations();
-  const roles = task?.roles || historyItem?.roles || "";
-  const goal = task?.goal || historyItem?.goal || "";
+  const locale = useLocale();
+  const roles = pickLocaleField(task, "roles", locale) || historyItem?.roles || "";
+  const goal = pickLocaleField(task, "goal", locale) || historyItem?.goal || "";
   
   const parseRoles = (raw: string) => {
     const splitRe = /(?:；|;)\s*B[:：]\s*/i;
@@ -183,7 +186,9 @@ function TaskContent({ task, historyItem }: { task: Record<string, any> | null; 
       {task?.context && (
         <div className="space-y-2">
           <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t("report.context")}</p>
-          <p className="text-sm leading-relaxed text-muted-foreground bg-muted/30 rounded-lg p-3">{task.context}</p>
+          <p className="text-sm leading-relaxed text-muted-foreground bg-muted/30 rounded-lg p-3">
+            {pickLocaleField(task, "context", locale)}
+          </p>
         </div>
       )}
 
@@ -191,7 +196,7 @@ function TaskContent({ task, historyItem }: { task: Record<string, any> | null; 
         <div className="space-y-2">
           <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t("report.criteria")}</p>
           <div className="space-y-2">
-            {(task.success_criteria as string).split(/\d+\./).filter(Boolean).map((item, i) => (
+            {(pickLocaleField(task, "success_criteria", locale) as string).split(/\d+\./).filter(Boolean).map((item, i) => (
               <div key={i} className="flex items-start gap-2 text-sm">
                 <span className="flex-shrink-0 mt-1 size-1.5 rounded-full bg-primary" />
                 <span className="text-muted-foreground">{item.trim()}</span>
@@ -248,6 +253,7 @@ function AttemptContent({ attempt }: { attempt: Record<string, any> | null }) {
 /* ============================================================ */
 function DiagnosisContent({ gaps }: { gaps: Record<string, any>[] }) {
   const t = useTranslations();
+  const locale = useLocale();
   if (gaps.length === 0) return <p className="text-sm text-muted-foreground">{t("report.no_diagnosis")}</p>;
   
   return (
@@ -259,12 +265,14 @@ function DiagnosisContent({ gaps }: { gaps: Record<string, any>[] }) {
               {index + 1}
             </span>
             <div className="flex-1">
-              <p className="text-sm font-medium text-amber-800">{gap.label || gap.description}</p>
+              <p className="text-sm font-medium text-amber-800">
+                {pickTranslation(gap, "label", locale) || pickTranslation(gap, "description", locale)}
+              </p>
               {gap.suggestion && (
-                <p className="mt-1 text-xs text-amber-600">{t("report.suggestion_prefix")}<ClickableEnglish text={gap.suggestion} /></p>
+                <p className="mt-1 text-xs text-amber-600">{t("report.suggestion_prefix")}<ClickableEnglish text={pickTranslation(gap, "suggestion", locale)} /></p>
               )}
               {gap.explanation && (
-                <p className="mt-1 text-xs text-amber-600"><ClickableEnglish text={gap.explanation} /></p>
+                <p className="mt-1 text-xs text-amber-600"><ClickableEnglish text={pickTranslation(gap, "explanation", locale)} /></p>
               )}
             </div>
           </div>
@@ -284,13 +292,24 @@ function parseJsonField(val: any): any {
 
 function FacilitationContent({ packs }: { packs: Record<string, any>[] }) {
   const t = useTranslations();
+  const locale = useLocale();
   if (packs.length === 0) return <p className="text-sm text-muted-foreground">{t("report.no_learning_material")}</p>;
 
   return (
     <div className="space-y-4">
       {packs.map((pack, index) => {
-        const phrases = parseJsonField(pack.scene_chunks);
-        const dialogue = parseJsonField(pack.demo_dialogue);
+        // Locale-aware array fields: prefer translations column, then _en suffix, then original
+        let rawChunks = pack.scene_chunks;
+        let rawDialogue = pack.demo_dialogue;
+        if (locale === "en") {
+          const tr = pack.translations as Record<string, any> | undefined;
+          if (tr?.scene_chunks) rawChunks = tr.scene_chunks;
+          else if (pack.scene_chunks_en) rawChunks = pack.scene_chunks_en;
+          if (tr?.demo_dialogue) rawDialogue = tr.demo_dialogue;
+          else if (pack.demo_dialogue_en) rawDialogue = pack.demo_dialogue_en;
+        }
+        const phrases = parseJsonField(rawChunks);
+        const dialogue = parseJsonField(rawDialogue);
         return (
         <div key={index} className="card p-4">
           <p className="text-xs font-semibold uppercase tracking-wider text-primary mb-3">{t("report.learning_material", { n: index + 1 })}</p>
@@ -301,8 +320,8 @@ function FacilitationContent({ packs }: { packs: Record<string, any>[] }) {
               <div className="space-y-1.5">
                 {phrases.map((p: any, i: number) => (
                   <div key={i} className="flex items-start gap-2 rounded bg-muted/30 px-3 py-1.5">
-                    <span className="text-[10px] font-medium text-primary shrink-0 mt-0.5">{p.function}</span>
-                    <span className="text-xs text-card-foreground"><ClickableEnglish text={p.sentence} /></span>
+                    <span className="text-[10px] font-medium text-primary shrink-0 mt-0.5">{pickTranslation(p, "function", locale)}</span>
+                    <span className="text-xs text-card-foreground"><ClickableEnglish text={pickTranslation(p, "sentence", locale)} /></span>
                   </div>
                 ))}
               </div>
@@ -316,7 +335,7 @@ function FacilitationContent({ packs }: { packs: Record<string, any>[] }) {
                 {dialogue.map((d: any, i: number) => (
                   <div key={i} className="flex gap-2 text-xs">
                     <span className="font-medium text-primary shrink-0">{d.speaker}:</span>
-                    <span className="text-card-foreground"><ClickableEnglish text={d.text} /></span>
+                    <span className="text-card-foreground"><ClickableEnglish text={pickTranslation(d, "text", locale)} /></span>
                   </div>
                 ))}
               </div>
@@ -348,6 +367,7 @@ function renderChange(change: number | undefined) {
 
 function EvaluationContent({ evaluation }: { evaluation: Record<string, any> | null }) {
   const t = useTranslations();
+  const locale = useLocale();
   if (!evaluation) return <p className="text-sm text-muted-foreground">{t("report.no_evaluation")}</p>;
 
   const dims = evaluation.dimension_scores ?? {};
@@ -364,6 +384,16 @@ function EvaluationContent({ evaluation }: { evaluation: Record<string, any> | n
         return cb - ca;
       })
     : entries;
+
+  /**
+   * Get locale-aware dimension label.
+   * If the dimension value object has a `comment_en` field, use the English comment as label in en mode.
+   * Otherwise fall back to the dimension key itself (which is the label in Chinese).
+   */
+  const dimLabel = (key: string, val: Record<string, any>): string => {
+    if (locale === "en" && val?.comment_en) return val.comment_en;
+    return key;
+  };
 
   return (
     <div className="space-y-4">
@@ -388,7 +418,7 @@ function EvaluationContent({ evaluation }: { evaluation: Record<string, any> | n
               return (
                 <div key={key} className="space-y-1">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-muted-foreground">{key}</span>
+                    <span className="text-muted-foreground">{dimLabel(key, value as Record<string, any>)}</span>
                     {isComparisonItem ? (
                       <span className="font-medium text-card-foreground">
                         {toFixed((value as any).attempt1, 1)} → {toFixed((value as any).attempt2, 1)}{t("report.score")}
@@ -434,7 +464,7 @@ function EvaluationContent({ evaluation }: { evaluation: Record<string, any> | n
         <div className="space-y-2">
           <p className="text-xs font-medium text-muted-foreground">{t("report.overall_eval")}</p>
           <pre className="whitespace-pre-wrap rounded-lg bg-muted/30 p-4 text-sm text-card-foreground">
-            <ClickableEnglish text={evaluation.full_report} />
+            <ClickableEnglish text={pickTranslation(evaluation, "full_report", locale)} />
           </pre>
         </div>
       )}
@@ -443,7 +473,7 @@ function EvaluationContent({ evaluation }: { evaluation: Record<string, any> | n
         <div className="rounded-lg bg-green-50/50 border border-green-100 p-4">
           <p className="text-xs font-medium text-green-700 mb-2">{t("report.improvement")}</p>
           <pre className="whitespace-pre-wrap text-xs text-green-600">
-            <ClickableEnglish text={evaluation.problem_improved} />
+            <ClickableEnglish text={pickTranslation(evaluation, "problem_improved", locale)} />
           </pre>
         </div>
       )}
@@ -456,6 +486,7 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
   const { id } = use(params);
   const router = useRouter();
   const t = useTranslations();
+  const locale = useLocale();
 
   // 折叠状态
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -639,7 +670,7 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
   }
 
   // 使用历史记录或后端报告数据
-  const sceneLabel = (historyItem as any)?.sceneLabel || report?.scenario?.scene_label || t("report.unknown_scene");
+  const sceneLabel = (historyItem as any)?.sceneLabel || pickLocaleField(report?.scenario, "scene_label", locale) || t("report.unknown_scene");
   const createdAt = report?.scenario?.created_at?.slice(0, 10) || (historyItem as any)?.createdAt?.slice(0, 10) || "";
 
   return (

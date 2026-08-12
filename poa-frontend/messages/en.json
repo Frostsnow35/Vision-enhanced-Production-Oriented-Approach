@@ -36,7 +36,11 @@
     "report_error": "Report generation error. Please try again later.",
     "record_expired": "This learning record has expired or been deleted.",
     "record_not_found": "Learning record not found. Please select from history.",
-    "copy_success": "Copied to clipboard!"
+    "copy_success": "Copied to clipboard!",
+    "loading_tip_1": "Hang tight, AI is quickly organizing your content...",
+    "loading_tip_2": "Content is being generated...",
+    "loading_tip_3": "Good content is worth the wait!",
+    "loading_tip_4": "Personalizing recommendations for you..."
   },
   "nav": {
     "home": "Home",
@@ -411,6 +415,60 @@
   },
   "lang": {
     "switch_to_en": "EN",
-    "switch_to_zh": "中"
+    "switch_to_zh": "中",
+    "switch_title_en": "Switch to English",
+    "switch_title_zh": "Switch to Chinese"
+  },
+  "device_check": {
+    "title": "Device Check",
+    "subtitle": "Ensure your camera and microphone are working before starting the conversation",
+    "close": "Close",
+    "camera_label": "Camera",
+    "mic_label": "Microphone",
+    "camera_checking": "Requesting camera access...",
+    "camera_not_available": "Camera unavailable",
+    "camera_waiting": "Waiting to start debug",
+    "camera_ready": "Camera Ready",
+    "status_normal": "Working",
+    "status_fail": "Failed",
+    "status_checking": "Checking...",
+    "status_idle": "Not started",
+    "mic_volume": "Microphone Volume",
+    "spectrum_hint": "Speak to observe the spectrum activity",
+    "reset": "Reset",
+    "full_page": "Full Check Page",
+    "done_start": "\u2713 Done, Start Task",
+    "start_check": "Start Check",
+    "recheck": "Recheck",
+    "permission_denied": "Browser denied camera/microphone permission. Please allow access via the lock icon in the address bar and retry.",
+    "no_device": "No camera or microphone detected. Please check your hardware connections.",
+    "device_occupied": "Camera/microphone is in use by another application. Please close other apps and retry.",
+    "overconstrained": "Current device does not meet the required specifications.",
+    "security_error": "Browser security policy blocked device access.",
+    "unknown_error": "Unknown error"
+  },
+  "history_task": {
+    "no_records": "No learning records yet",
+    "no_records_hint": "Please upload a scene photo to start learning",
+    "upload_start": "Upload Scene Photo to Start",
+    "select_task": "Select a Learning Task",
+    "select_task_hint": "Choose a previous learning task to continue, or upload a new photo to start a new task",
+    "upload_new": "Upload New Photo to Start",
+    "continue_task": "Continue This Task →"
+  },
+  "report_list": {
+    "no_records": "No learning records yet",
+    "no_records_hint": "Please complete a learning task first to view your report",
+    "upload_start": "Upload Scene Photo to Start",
+    "evidence_chain": "Evidence Chain",
+    "select_report": "Select a Report",
+    "select_report_hint": "Choose a learning task report to view",
+    "view_report": "View Report →",
+    "upload_new": "Upload New Photo to Start",
+    "select_task_first": "Please select a task first"
+  },
+  "gap_list": {
+    "title": "Attempt {attempt} Diagnosis — {count} gap(s) found",
+    "source_text": "Original: "
   }
 }

@@ -240,6 +240,7 @@ def _generate_turn_feedback(user_text: str, ai_text: str, task_context: Dict[str
         return {
             "scores": {"grammar": 0, "vocabulary": 0, "coherence": 0},
             "short_comment": "没有听清，请再试一次。",
+            "short_comment_en": "Sorry, I didn't catch that. Please try again.",
         }
     if len(user_text.strip()) < 3:
         return {}
@@ -301,6 +302,14 @@ def _generate_turn_feedback(user_text: str, ai_text: str, task_context: Dict[str
         result: Dict[str, Any] = {"short_comment": comment}
         if scores:
             result["scores"] = scores
+        # 翻译短评为英文（失败静默降级，不影响流程）
+        try:
+            from services.ai_service import _translate_texts
+            tr = _translate_texts({"short_comment": comment})
+            if tr.get("short_comment"):
+                result["short_comment_en"] = tr["short_comment"]
+        except Exception as e:
+            logger.warning(f"[chat] turn_feedback 翻译失败: {e}")
         return result
     except Exception as e:
         logger.warning(f"[chat] turn_feedback 生成失败: {e}")

@@ -240,6 +240,7 @@ export interface ChatStartResponse {
 export interface TurnFeedback {
   scores?: { grammar: number; vocabulary: number; coherence: number };  // 三维文本评分（0-100）
   short_comment: string;   // 15-80 字短评
+  short_comment_en?: string;  // 英文短评（英文环境显示）
 }
 
 export interface ChatTurnResponse {

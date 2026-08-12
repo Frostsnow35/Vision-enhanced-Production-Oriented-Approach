@@ -185,6 +185,11 @@ class GapItem(BaseModel):
     evidence_sentence: Optional[str] = None
     explanation: Optional[str] = None
     reference_expression: Optional[str] = None
+    translations: Optional[Dict[str, str]] = None
+    label_en: Optional[str] = None
+    evidence_sentence_en: Optional[str] = None
+    explanation_en: Optional[str] = None
+    reference_expression_en: Optional[str] = None
 
 
 class HighFreqError(BaseModel):
@@ -192,6 +197,8 @@ class HighFreqError(BaseModel):
     phrase: str
     occurrence: int = 1
     suggestion: str = ""
+    phrase_en: Optional[str] = None
+    suggestion_en: Optional[str] = None
 
 
 class AttemptSubmitResponse(BaseModel):
@@ -211,11 +218,14 @@ class ChunkItem(BaseModel):
     chunk: str
     meaning: str
     usage: str
+    meaning_en: Optional[str] = None
+    usage_en: Optional[str] = None
 
 
 class FunctionSentence(BaseModel):
     function: str
     sentence: str
+    function_en: Optional[str] = None
 
 
 class InputPackGenerateResponse(BaseModel):
@@ -224,6 +234,8 @@ class InputPackGenerateResponse(BaseModel):
     functional_sentences: List[FunctionSentence]
     demo_dialogue: str
     strategy_tip: str
+    demo_dialogue_en: Optional[str] = None
+    strategy_tip_en: Optional[str] = None
 
 
 # --- Generate Exercises ---
@@ -245,6 +257,9 @@ class ExerciseItem(BaseModel):
     options: List[OptionItem] = []                 # 选择题的选项（填空题为空列表）
     answer: str                                   # 正确答案
     feedback: str                                 # 答题反馈
+    gap_target_en: Optional[str] = None
+    question_en: Optional[str] = None
+    feedback_en: Optional[str] = None
 
 
 class ExercisesGenerateResponse(BaseModel):

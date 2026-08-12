@@ -346,6 +346,54 @@ _NO_VALID_INPUT = {"error": "no_valid_input", "message": "未检测到有效语�
 
 
 # ============================================================
+# 中文 → 英文翻译（批量子字段翻译，单次 LLM 调用降低成本）
+# ============================================================
+_TRANSLATE_PROMPT = """Translate the following Chinese text to natural, fluent English. 
+Return a JSON object with the SAME keys, values translated to English.
+JSON arrays should keep their structure; only translate Chinese strings inside.
+Do NOT output anything other than the JSON object.
+
+Example input: {"scene_label": "机场登机柜台", "roles": "你是乘客，对方是地勤"}
+Example output: {"scene_label": "Airport Check-in Counter", "roles": "You are a passenger; the other person is the ground staff"}"""
+
+
+def _translate_texts(texts: Dict[str, Any]) -> Dict[str, str]:
+    """
+    批量翻译中文文本到英文。
+    过滤空值和非字符串值，单次 LLM 调用翻译所有字段。
+    失败时返回空 dict（不影响主流程）。
+    """
+    if not texts:
+        return {}
+
+    # 过滤：只翻译有内容的字符串
+    to_translate = {}
+    for k, v in texts.items():
+        if v and isinstance(v, str) and v.strip():
+            to_translate[k] = v
+
+    if not to_translate:
+        return {}
+
+    try:
+        logger.info(f"[translate] 翻译 {len(to_translate)} 个字段")
+        raw = _call_doubao([
+            {"role": "system", "content": _TRANSLATE_PROMPT},
+            {"role": "user", "content": json.dumps(to_translate, ensure_ascii=False)},
+        ], max_tokens=2000, timeout=60, max_retries=1, use_stream=True)
+        result = _parse_json(raw)
+        if isinstance(result, dict):
+            # 只保留字符串类型的值
+            translations = {k: str(v) for k, v in result.items() if isinstance(v, str) and v.strip()}
+            logger.info(f"[translate] 成功翻译 {len(translations)} 个字段")
+            return translations
+        logger.warning(f"[translate] 返回格式异常: {type(result)}")
+    except Exception as e:
+        logger.warning(f"[translate] 翻译失败（不影响主流程）: {e}")
+    return {}
+
+
+# ============================================================
 # Prompt 模板
 # ============================================================
 _SCENE_PROMPT = """根据照片内容，直接输出以下JSON（只输出JSON，禁止任何额外文字）：
@@ -470,6 +518,15 @@ def analyze_scenario(image_path: str) -> Dict[str, Any]:
     if not sanitized_opening:
         logger.info(f"  [analyze_scenario] opening_line 清空（原始: {raw_opening[:60]!r}），前端将降级到 generate_opening")
     logger.info(f"  scene_label={result['scene_label']}")
+
+    # 批量翻译场景分析结果中的中文字段为英文（opening_line/closing_line 为英文对话内容，不翻译）
+    translate_fields = ["scene_label", "roles", "goal", "context_constraints", "evaluation_criteria", "variant_plot"]
+    translations = _translate_texts({k: result[k] for k in translate_fields if result.get(k)})
+    result["translations"] = translations
+    # 同时添加 _en 后缀字段方便前端直接使用
+    for k, v in translations.items():
+        result[f"{k}_en"] = v
+
     return result
 
 
@@ -488,22 +545,46 @@ def get_or_analyze_scenario(image_path: str, db: Session) -> Dict[str, Any]:
         t = db.query(POATask).filter(POATask.scenario_id == ex.id).order_by(POATask.created_at.desc()).first()
         if t:
             logger.info(f"[get_or_analyze] cache hit scenario_id={ex.id} task_id={t.id}")
-            return {"scenario_id": ex.id, "task_id": t.id, "scene_label": ex.scene_label, "roles": t.roles or "", "goal": t.goal or "",
+            result = {"scenario_id": ex.id, "task_id": t.id, "scene_label": ex.scene_label, "roles": t.roles or "", "goal": t.goal or "",
                     "context_constraints": t.context_constraints or "", "evaluation_criteria": t.evaluation_criteria or "",
                     "variant_plot": t.variant_plot or "",
                     "opening_line": t.opening_line or "", "closing_line": t.closing_line or ""}
+            # 合并 DB 中存储的英译文
+            st = ex.translations or {}
+            pt = t.translations or {}
+            all_translations = {**st, **pt}
+            # 旧缓存无翻译时，惰性翻译回填（保证英文切换始终有内容）
+            if not all_translations:
+                try:
+                    translate_fields = ["scene_label", "roles", "goal", "context_constraints",
+                                        "evaluation_criteria", "variant_plot"]
+                    lazy = _translate_texts({k: result[k] for k in translate_fields if result.get(k)})
+                    all_translations = lazy
+                    if lazy:
+                        ex.translations = {k: v for k, v in lazy.items() if k == "scene_label"}
+                        t.translations = {k: v for k, v in lazy.items() if k != "scene_label"}
+                        db.commit()
+                except Exception as e:
+                    logger.warning(f"[get_or_analyze] 惰性翻译失败（不影响流程）: {e}")
+            result["translations"] = all_translations
+            for k, v in all_translations.items():
+                result[f"{k}_en"] = v
+            return result
 
     result = analyze_scenario(image_path)
     scenario_id = None
     task_id = None
+    translations = result.get("translations", {})
     try:
-        s = Scenario(image_path=image_path, image_hash=h, scene_label=result["scene_label"])
+        s = Scenario(image_path=image_path, image_hash=h, scene_label=result["scene_label"],
+                     translations={k: translations[k] for k in ["scene_label"] if k in translations})
         db.add(s); db.flush()
         scenario_id = s.id
         t = POATask(scenario_id=s.id, roles=result["roles"], goal=result["goal"],
                      context_constraints=result["context_constraints"],
                      evaluation_criteria=result["evaluation_criteria"], variant_plot=result["variant_plot"],
-                     opening_line=result.get("opening_line", ""), closing_line=result.get("closing_line", ""))
+                     opening_line=result.get("opening_line", ""), closing_line=result.get("closing_line", ""),
+                     translations={k: v for k, v in translations.items() if k != "scene_label"})
         db.add(t); db.flush()
         db.commit()
         task_id = t.id
@@ -618,6 +699,36 @@ def diagnose_attempt(attempt_text: str, scene_context: str = "") -> Dict[str, An
             parsed["gaps"] = []
         if "high_freq_errors" not in parsed or not isinstance(parsed["high_freq_errors"], list):
             parsed["high_freq_errors"] = []
+        # 批量翻译中文字段（label/explanation/suggestion），英文原文字段（evidence_sentence/reference_expression/phrase）不翻译
+        translate_fields: Dict[str, str] = {}
+        gaps = parsed.get("gaps", [])
+        for i, gap in enumerate(gaps):
+            if isinstance(gap, dict):
+                if gap.get("label"):
+                    translate_fields[f"gap_{i}_label"] = gap["label"]
+                if gap.get("explanation"):
+                    translate_fields[f"gap_{i}_explanation"] = gap["explanation"]
+        hf_errors = parsed.get("high_freq_errors", [])
+        for j, he in enumerate(hf_errors):
+            if isinstance(he, dict) and he.get("suggestion"):
+                translate_fields[f"hf_{j}_suggestion"] = he["suggestion"]
+
+        if translate_fields:
+            translations = _translate_texts(translate_fields)
+            for i, gap in enumerate(gaps):
+                if isinstance(gap, dict):
+                    gap_tr = {}
+                    if f"gap_{i}_label" in translations:
+                        gap_tr["label"] = translations[f"gap_{i}_label"]
+                        gap["label_en"] = translations[f"gap_{i}_label"]
+                    if f"gap_{i}_explanation" in translations:
+                        gap_tr["explanation"] = translations[f"gap_{i}_explanation"]
+                        gap["explanation_en"] = translations[f"gap_{i}_explanation"]
+                    if gap_tr:
+                        gap["translations"] = gap_tr
+            for j, he in enumerate(hf_errors):
+                if isinstance(he, dict) and f"hf_{j}_suggestion" in translations:
+                    he["suggestion_en"] = translations[f"hf_{j}_suggestion"]
         return parsed
 
     except Exception as e:
@@ -722,6 +833,41 @@ def generate_input_pack(gaps: List[Dict[str, Any]]) -> Dict[str, Any]:
         ])
         result = _parse_json(raw)
         logger.info(f"  chunks={len(result.get('scene_chunks',[]))}")
+        # 批量翻译中文字段（meaning/usage/function/strategy_tip），英文内容（chunk/sentence/demo_dialogue）不翻译
+        translate_fields: Dict[str, str] = {}
+        if result.get("strategy_tip"):
+            translate_fields["strategy_tip"] = result["strategy_tip"]
+        # 翻译 scene_chunks 中的 meaning/usage（中文释义）
+        sc = result.get("scene_chunks", [])
+        if sc and isinstance(sc, list):
+            for i, chunk in enumerate(sc):
+                if isinstance(chunk, dict):
+                    for fk in ["meaning", "usage"]:
+                        if chunk.get(fk):
+                            translate_fields[f"scene_chunks_{i}_{fk}"] = chunk[fk]
+        # 翻译 functional_sentences 中的 function（中文功能名）
+        fs = result.get("functional_sentences", [])
+        if fs and isinstance(fs, list):
+            for i, sent in enumerate(fs):
+                if isinstance(sent, dict) and sent.get("function"):
+                    translate_fields[f"functional_sentences_{i}_function"] = sent["function"]
+        translations = _translate_texts(translate_fields)
+        # 回填翻译结果（demo_dialogue 为英文对话，无需翻译）
+        result["translations"] = translations
+        result["strategy_tip_en"] = translations.get("strategy_tip", "")
+        if sc and isinstance(sc, list):
+            for i, chunk in enumerate(sc):
+                if isinstance(chunk, dict):
+                    for fk in ["meaning", "usage"]:
+                        en_key = f"scene_chunks_{i}_{fk}"
+                        if en_key in translations:
+                            chunk[f"{fk}_en"] = translations[en_key]
+        if fs and isinstance(fs, list):
+            for i, sent in enumerate(fs):
+                if isinstance(sent, dict):
+                    fn_key = f"functional_sentences_{i}_function"
+                    if fn_key in translations:
+                        sent["function_en"] = translations[fn_key]
         return result
     except Exception as e:
         logger.error(f"  LLM failed: {e}")
@@ -741,6 +887,27 @@ def generate_exercises(gaps: List[Dict[str, Any]]) -> Dict[str, Any]:
         ], max_tokens=800)
         result = _parse_json(raw)
         logger.info(f"  exercises={len(result.get('exercises',[]))}")
+        # 批量翻译练习题为英文
+        exs = result.get("exercises", [])
+        translate_fields: Dict[str, str] = {}
+        if exs and isinstance(exs, list):
+            for i, ex in enumerate(exs):
+                if isinstance(ex, dict):
+                    for fk in ["question", "feedback"]:
+                        if ex.get(fk):
+                            translate_fields[f"exercises_{i}_{fk}"] = ex[fk]
+                    # 翻译 gap_target（中文不足标签）
+                    if ex.get("gap_target"):
+                        translate_fields[f"exercises_{i}_gap_target"] = ex["gap_target"]
+        translations = _translate_texts(translate_fields)
+        result["translations"] = translations
+        if exs and isinstance(exs, list):
+            for i, ex in enumerate(exs):
+                if isinstance(ex, dict):
+                    for fk in ["question", "feedback", "gap_target"]:
+                        en_key = f"exercises_{i}_{fk}"
+                        if en_key in translations:
+                            ex[f"{fk}_en"] = translations[en_key]
         return result
     except Exception as e:
         logger.error(f"  LLM failed: {e}")

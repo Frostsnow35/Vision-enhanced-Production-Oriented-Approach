@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations, useLocale } from "next-intl";
 import { Button } from "@/components/ui/button";
 import {
   getScenarioHistory,
@@ -11,24 +12,27 @@ import {
 import { buildImageUrl } from "@/lib/api";
 import TaskGate from "@/components/TaskGate";
 
-function formatTime(iso: string): string {
-  const d = new Date(iso);
-  const now = new Date();
-  const diff = now.getTime() - d.getTime();
-  if (diff < 60000) return "刚刚";
-  if (diff < 3600000) return `${Math.floor(diff / 60000)} 分钟前`;
-  if (diff < 86400000) return `${Math.floor(diff / 3600000)} 小时前`;
-  return d.toLocaleDateString("zh-CN");
-}
-
 export default function ReportListPage() {
   const router = useRouter();
+  const locale = useLocale();
+  const t = useTranslations("report_list");
+  const th = useTranslations("home");
   const [history, setHistory] = useState<ScenarioHistoryItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   useEffect(() => {
     setHistory(getScenarioHistory());
   }, []);
+
+  function formatTime(iso: string): string {
+    const d = new Date(iso);
+    const now = new Date();
+    const diff = now.getTime() - d.getTime();
+    if (diff < 60000) return th("just_now");
+    if (diff < 3600000) return th("minutes_ago", { min: Math.floor(diff / 60000) });
+    if (diff < 86400000) return th("hours_ago", { h: Math.floor(diff / 3600000) });
+    return new Intl.DateTimeFormat(locale).format(d);
+  }
 
   function handleSelect(id: string) {
     setSelectedId(id);
@@ -55,10 +59,10 @@ export default function ReportListPage() {
               <polyline points="14 2 14 8 20 8" />
             </svg>
           </div>
-          <h2 className="text-xl font-bold text-card-foreground">暂无学习记录</h2>
-          <p className="text-sm text-muted-foreground">请先完成一次学习任务，才能查看学习报告</p>
+          <h2 className="text-xl font-bold text-card-foreground">{t("no_records")}</h2>
+          <p className="text-sm text-muted-foreground">{t("no_records_hint")}</p>
           <Button size="lg" className="mt-4" onClick={handleStartFresh}>
-            上传场景照片开始学习
+            {t("upload_start")}
           </Button>
         </div>
       </div>
@@ -82,14 +86,14 @@ export default function ReportListPage() {
               <line x1="16" y1="13" x2="8" y2="13" />
               <line x1="16" y1="17" x2="8" y2="17" />
             </svg>
-            <span className="text-xs font-semibold text-primary">学习证据链</span>
+            <span className="text-xs font-semibold text-primary">{t("evidence_chain")}</span>
           </div>
           
           <h1 className="text-3xl font-bold tracking-tight text-card-foreground sm:text-4xl mb-2">
-            选择学习报告
+            {t("select_report")}
           </h1>
           <p className="text-muted-foreground">
-            请选择要查看的学习任务报告
+            {t("select_report_hint")}
           </p>
         </header>
 
@@ -151,15 +155,15 @@ export default function ReportListPage() {
         {/* 操作按钮 */}
         <div className="flex gap-3">
           <Button variant="outline" className="flex-1" onClick={handleStartFresh}>
-            上传新照片开始新任务
+            {t("upload_new")}
           </Button>
           {selectedId ? (
             <Button className="flex-1" onClick={handleViewReport}>
-              查看报告 →
+              {t("view_report")}
             </Button>
           ) : (
             <Button className="flex-1" disabled>
-              请先选择一个任务
+              {t("select_task_first")}
             </Button>
           )}
         </div>

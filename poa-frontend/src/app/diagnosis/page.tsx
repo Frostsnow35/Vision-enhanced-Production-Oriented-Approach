@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { useTranslations } from "next-intl";
+import { useTranslations, useLocale } from "next-intl";
 import { Button } from "@/components/ui/button";
 import HistoryTaskSelector from "@/components/HistoryTaskSelector";
 import ClickableEnglish from "@/components/ClickableEnglish";
@@ -14,6 +14,7 @@ import {
   type ScenarioHistoryItem,
 } from "@/lib/store";
 import { BASE_URL } from "@/lib/api";
+import { pickTranslation, pickLocaleField } from "@/lib/locale-utils";
 
 /* ============================================================
    类型定义
@@ -23,12 +24,16 @@ interface GapItem {
   evidence_sentence: string | null;
   explanation: string | null;
   reference_expression?: string | null;
+  translations?: Record<string, string>;
+  label_en?: string;
+  explanation_en?: string;
 }
 
 interface HighFreqError {
   phrase: string;
   occurrence: number;
   suggestion: string;
+  suggestion_en?: string;
 }
 
 interface DimensionScore {
@@ -61,6 +66,7 @@ function SkeletonCard({ className = "" }: { className?: string }) {
 export default function DiagnosisPage() {
   const router = useRouter();
   const t = useTranslations();
+  const locale = useLocale();
   const funTips: string[] = Array.isArray(t.raw("diagnosis.fun_tips")) ? t.raw("diagnosis.fun_tips") : [];
   const [initDone, setInitDone] = useState(false);
   const [hasHistory, setHasHistory] = useState(false);
@@ -262,7 +268,7 @@ export default function DiagnosisPage() {
               <div
                 key={i}
                 className="group relative inline-flex items-center gap-2 rounded-full border border-amber-300 bg-amber-100/70 px-3 py-1.5 text-sm dark:border-amber-700 dark:bg-amber-900/30"
-                title={e.suggestion}
+                title={pickLocaleField(e, "suggestion", locale)}
               >
                 <span className="font-mono font-semibold text-amber-900 dark:text-amber-200">
                   {e.phrase}
@@ -272,7 +278,7 @@ export default function DiagnosisPage() {
                 </span>
                 {e.suggestion && (
                   <span className="ml-1 max-w-xs truncate text-xs text-amber-700/80 dark:text-amber-300/70">
-                    {e.suggestion}
+                    {pickLocaleField(e, "suggestion", locale)}
                   </span>
                 )}
               </div>
@@ -312,7 +318,7 @@ export default function DiagnosisPage() {
                 {i + 1}
               </span>
               <h3 className="text-lg font-semibold text-card-foreground">
-                {gap.label}
+                {pickTranslation(gap, "label", locale)}
               </h3>
             </div>
             {/* 原句 vs 参考表达对照 */}
@@ -347,7 +353,7 @@ export default function DiagnosisPage() {
             {/* 解释 */}
             {gap.explanation && (
               <p className="mt-4 text-sm leading-relaxed text-card-foreground">
-                {gap.explanation}
+                {pickTranslation(gap, "explanation", locale)}
               </p>
             )}
           </div>

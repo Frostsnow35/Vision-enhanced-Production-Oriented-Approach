@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { useTranslations } from "next-intl";
+import { useTranslations, useLocale } from "next-intl";
 import { Button } from "@/components/ui/button";
 import * as echarts from "echarts";
 import { BASE_URL } from "@/lib/api";
@@ -11,6 +11,7 @@ import HistoryTaskSelector from "@/components/HistoryTaskSelector";
 import ClickableEnglish from "@/components/ClickableEnglish";
 import InlineLoadingHint from "@/components/InlineLoadingHint";
 import TaskGate from "@/components/TaskGate";
+import { pickLocaleField, pickTranslation } from "@/lib/locale-utils";
 
 /* ============================================================
    类型 & 常量
@@ -21,11 +22,13 @@ interface DimScore {
   change: number;
   weight?: number;
   explanation: string;
+  explanation_en?: string;
 }
 
 interface EvaluateData {
   dimension_scores: Record<string, DimScore>;
   overall_improvement: string;
+  overall_improvement_en?: string;
 }
 
 interface ComparisonItem {
@@ -56,13 +59,14 @@ function convertApiToEvaluateData(raw: any): EvaluateData | null {
       return {
         dimension_scores: dims,
         overall_improvement: raw.overall_improvement ?? "",
+        overall_improvement_en: raw.overall_improvement_en ?? undefined,
       };
     }
   }
 
   if (Array.isArray(raw.comparison) && raw.comparison.length > 0) {
     const dims: Record<string, DimScore> = {};
-    for (const item of raw.comparison as ComparisonItem[]) {
+    for (const item of raw.comparison as any[]) {
       if (!item.dimension) continue;
       dims[item.dimension] = {
         attempt1: item.attempt1_score ?? 0,
@@ -70,9 +74,10 @@ function convertApiToEvaluateData(raw: any): EvaluateData | null {
         change: parseFloat(item.change ?? "0") || 0,
         weight: item.weight,
         explanation: item.comment ?? "",
+        explanation_en: item.comment_en ?? undefined,
       };
     }
-    return { dimension_scores: dims, overall_improvement: "" };
+    return { dimension_scores: dims, overall_improvement: "", overall_improvement_en: raw.overall_improvement_en ?? undefined };
   }
 
   if (raw.dimension_scores && typeof raw.dimension_scores === "object") {
@@ -84,10 +89,11 @@ function convertApiToEvaluateData(raw: any): EvaluateData | null {
         change: val.change ?? 0,
         weight: val.weight,
         explanation: val.comment ?? val.explanation ?? "",
+        explanation_en: val.comment_en ?? val.explanation_en ?? undefined,
       };
     }
     if (Object.keys(dims).length > 0) {
-      return { dimension_scores: dims, overall_improvement: "" };
+      return { dimension_scores: dims, overall_improvement: "", overall_improvement_en: raw.overall_improvement_en ?? undefined };
     }
   }
 
@@ -100,6 +106,7 @@ function convertApiToEvaluateData(raw: any): EvaluateData | null {
 export default function EvaluatePage() {
   const router = useRouter();
   const t = useTranslations();
+  const locale = useLocale();
 
   // ---- DIM_LABELS (使用 t) ----
   const DIM_LABELS: Record<string, string> = useMemo(() => ({
@@ -347,10 +354,10 @@ export default function EvaluatePage() {
         </p>
       </header>
 
-      {data.overall_improvement ? (
+      {data.overall_improvement || data.overall_improvement_en ? (
         <div className="card p-5">
           <p className="text-sm font-semibold text-card-foreground">{t("evaluate.overall")}</p>
-          <p className="mt-1.5 text-sm text-muted-foreground">{data.overall_improvement}</p>
+          <p className="mt-1.5 text-sm text-muted-foreground">{pickLocaleField(data, "overall_improvement", locale)}</p>
         </div>
       ) : null}
 
@@ -378,7 +385,7 @@ export default function EvaluatePage() {
                   {item.improved ? "✅" : "❌"}
                 </span>
                 <h3 className="text-sm font-semibold text-card-foreground">
-                  {item.gap_label}
+                  {pickTranslation(item, "gap_label", locale)}
                 </h3>
                 <span
                   className={`ml-auto rounded-full px-2 py-0.5 text-xs font-medium ${
@@ -396,13 +403,13 @@ export default function EvaluatePage() {
                   {item.improved ? t("evaluate.improvement_evidence") : t("evaluate.problem_evidence")}
                 </p>
                 <p className="mt-1 text-sm text-card-foreground">
-                  {item.evidence}
+                  {pickLocaleField(item, "evidence", locale)}
                 </p>
               </div>
 
               <p className="text-xs text-muted-foreground">
                 <span className="font-medium">{t("evaluate.suggestion_prefix")}</span>
-                {item.suggestion}
+                {pickLocaleField(item, "suggestion", locale)}
               </p>
             </div>
           ))
@@ -461,7 +468,7 @@ export default function EvaluatePage() {
               </div>
 
               <p className="text-xs text-muted-foreground">
-                {s.explanation ? <ClickableEnglish text={s.explanation} /> : ""}
+                {s.explanation || s.explanation_en ? <ClickableEnglish text={pickLocaleField(s, "explanation", locale)} /> : ""}
               </p>
             </div>
           );

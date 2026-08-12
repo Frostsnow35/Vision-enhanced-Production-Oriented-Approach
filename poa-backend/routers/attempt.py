@@ -146,6 +146,7 @@ async def submit_attempt1(req: AttemptSubmitRequest, db: Session = Depends(get_d
                     evidence_sentence=gap_data.get("evidence_sentence"),
                     explanation=gap_data.get("explanation"),
                     reference_expression=gap_data.get("reference_expression"),
+                    translations=gap_data.get("translations") or {},
                 ))
             db.commit()
             logger.info(f"[attempt1] 已保存 Attempt(id={attempt_record.id}) + {len(gaps)} Gaps")
@@ -234,6 +235,7 @@ async def submit_attempt2(req: AttemptSubmitRequest, db: Session = Depends(get_d
                     evidence_sentence=gap_data.get("evidence_sentence"),
                     explanation=gap_data.get("explanation"),
                     reference_expression=gap_data.get("reference_expression"),
+                    translations=gap_data.get("translations") or {},
                 ))
             db.commit()
             logger.info(f"[attempt2] 已保存 Attempt(id={attempt_record.id}) + {len(gaps)} Gaps")

@@ -81,6 +81,43 @@ async def lifespan(app: FastAPI):
     except Exception:
         pass
 
+    # 双语 translations JSON 列迁移（英译功能）
+    try:
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE scenarios ADD COLUMN translations JSON"))
+            conn.commit()
+    except Exception:
+        pass
+    try:
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE poa_tasks ADD COLUMN translations JSON"))
+            conn.commit()
+    except Exception:
+        pass
+    try:
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE gaps ADD COLUMN translations JSON"))
+            conn.commit()
+    except Exception:
+        pass
+    try:
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE input_packs ADD COLUMN translations JSON"))
+            conn.commit()
+    except Exception:
+        pass
+    try:
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE evaluations ADD COLUMN translations JSON"))
+            conn.commit()
+    except Exception:
+        pass
+
     yield
 
 

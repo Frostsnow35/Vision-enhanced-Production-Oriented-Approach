@@ -332,6 +332,7 @@ JSON 结构:
   "exercises": [
     {
       "id": 1,
+      "gap_target": "该题针对的不足标签(必须对应上面诊断短板中的一个 label，原样引用)",
       "context": "语境描述(中文，必须基于当前场景)",
       "options": [
         {"key": "A", "text": "选项文本(英语)"},
@@ -349,7 +350,7 @@ JSON 结构:
 要求:
 1. phrases 必须针对学生的诊断短板，覆盖薄弱语言功能
 2. dialogue 必须严格贴合给定场景，台词自然地道，speaker 用场景角色名
-3. exercises 的每个问题必须与一个 Gap 对应，考察该薄弱点
+3. exercises 的每个问题必须与一个 Gap 对应，并填写 gap_target 为该 Gap 的 label
 4. 所有英语内容必须语法正确、语用得体
 5. 直接输出 JSON，不要任何说明文字"""
 
@@ -388,6 +389,7 @@ JSON 结构:
 
             if isinstance(phrases, list) and isinstance(dialogue, dict) and isinstance(exercises, list):
                 logger.info(f"[facilitate] 生成 {len(phrases)} 个词块, {len(dialogue.get('lines',[]))} 轮对话, {len(exercises)} 道练习")
+                _add_translations(result)
                 return result
 
             logger.warning(f"[facilitate] JSON 结构不完整，重试...")
@@ -397,3 +399,58 @@ JSON 结构:
     raise RuntimeError(
         f"LLM 生成失败（场景={scene_type}），已重试2次仍无法获取有效结果"
     )
+
+
+def _add_translations(result: Dict[str, Any]) -> None:
+    """
+    为促成材料的英文显示补充 _en 字段。
+    批量翻译中文字段（function/title/context/explanation/gap_target），
+    英文对话内容（sentence/lines/options）不翻译。失败时静默降级。
+    """
+    try:
+        from services.ai_service import _translate_texts
+
+        translate_fields: Dict[str, str] = {}
+
+        phrases = result.get("phrases", [])
+        if isinstance(phrases, list):
+            for i, p in enumerate(phrases):
+                if isinstance(p, dict) and p.get("function"):
+                    translate_fields[f"phrases_{i}_function"] = p["function"]
+
+        dialogue = result.get("dialogue", {})
+        if isinstance(dialogue, dict) and dialogue.get("title"):
+            translate_fields["dialogue_title"] = dialogue["title"]
+
+        exercises = result.get("exercises", [])
+        if isinstance(exercises, list):
+            for i, ex in enumerate(exercises):
+                if isinstance(ex, dict):
+                    for fk in ("context", "explanation", "gap_target"):
+                        if ex.get(fk):
+                            translate_fields[f"exercises_{i}_{fk}"] = ex[fk]
+
+        if not translate_fields:
+            return
+
+        translations = _translate_texts(translate_fields)
+
+        if isinstance(phrases, list):
+            for i, p in enumerate(phrases):
+                if isinstance(p, dict) and f"phrases_{i}_function" in translations:
+                    p["function_en"] = translations[f"phrases_{i}_function"]
+
+        if isinstance(dialogue, dict) and "dialogue_title" in translations:
+            dialogue["title_en"] = translations["dialogue_title"]
+
+        if isinstance(exercises, list):
+            for i, ex in enumerate(exercises):
+                if isinstance(ex, dict):
+                    for fk in ("context", "explanation", "gap_target"):
+                        en_key = f"exercises_{i}_{fk}"
+                        if en_key in translations:
+                            ex[f"{fk}_en"] = translations[en_key]
+
+        logger.info(f"[facilitate] 已补充 {len(translations)} 个英文字段")
+    except Exception as e:
+        logger.warning(f"[facilitate] 材料翻译失败（不影响流程）: {e}")

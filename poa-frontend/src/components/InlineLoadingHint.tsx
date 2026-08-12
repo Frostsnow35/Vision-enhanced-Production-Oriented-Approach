@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
 
 /**
  * 内联加载提示：在内容应出现位置显示"稍等"友好提示。
@@ -8,12 +9,6 @@ import { useEffect, useState } from "react";
  * - shimmer 动画
  * - props.show=false 时返回 null
  */
-const DEFAULT_TIPS = [
-  "稍等，AI 正在快马加鞭整理你的内容...",
-  "💡 内容正在生成中",
-  "别急，好内容值得等一等 ✨",
-  "📚 正在为你定制个性化建议",
-];
 
 export default function InlineLoadingHint({
   show = true,
@@ -24,19 +19,26 @@ export default function InlineLoadingHint({
   message?: string;
   height?: string;
 }) {
+  const t = useTranslations("common");
+  const TIPS = [
+    t("loading_tip_1"),
+    t("loading_tip_2"),
+    t("loading_tip_3"),
+    t("loading_tip_4"),
+  ];
   const [tipIndex, setTipIndex] = useState(0);
 
   useEffect(() => {
     if (!show || message) return;
     const id = setInterval(() => {
-      setTipIndex((i) => (i + 1) % DEFAULT_TIPS.length);
+      setTipIndex((i) => (i + 1) % TIPS.length);
     }, 2500);
     return () => clearInterval(id);
-  }, [show, message]);
+  }, [show, message, TIPS.length]);
 
   if (!show) return null;
 
-  const currentMessage = message ?? DEFAULT_TIPS[tipIndex];
+  const currentMessage = message ?? TIPS[tipIndex];
 
   return (
     <div

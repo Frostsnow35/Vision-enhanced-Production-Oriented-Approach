@@ -25,6 +25,7 @@ export default async function RootLayout({
   const cookieStore = await cookies();
   const locale = cookieStore.get("NEXT_LOCALE")?.value || "zh";
   const messages = await getMessages();
+  const t = await getTranslations("layout");
 
   const navItems = [
     { href: "/", label: "nav.home" },
@@ -67,7 +68,7 @@ export default async function RootLayout({
 
           <footer className="border-t border-border">
             <div className="mx-auto max-w-6xl px-4 py-6 text-center text-sm text-muted-foreground">
-              POA English Learning Loop Demo &copy; 2025
+              {t ? t("footer") : "POA English Learning Loop Demo"}
             </div>
           </footer>
         </NextIntlClientProvider>

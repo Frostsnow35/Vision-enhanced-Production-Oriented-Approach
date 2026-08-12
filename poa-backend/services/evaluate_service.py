@@ -368,6 +368,13 @@ def evaluate_single(
     comments = data.get("comments", {})
     logger.info(f"[evaluate_single] LLM 返回 {len(scores)} 个维度")
     result = {"dimension_scores": scores, "comments": comments}
+    # 翻译 comments（中文评语 → 英文）
+    try:
+        from services.ai_service import _translate_texts
+        comments_translations = _translate_texts(comments)
+        result["comments_en"] = comments_translations
+    except Exception as e:
+        logger.warning(f"[evaluate_single] 翻译失败（不影响流程）: {e}")
     if audio_result:
         result["audio_analysis"] = audio_result["raw_metrics"]
     return result
@@ -468,6 +475,17 @@ def evaluate_compare(
         "dimension_scores": dimension_scores,
         "comparison": comparison,
     }
+    # 翻译各维度的 comment（中文对比评语 → 英文）
+    try:
+        from services.ai_service import _translate_texts
+        comment_map = {item.get("dimension", f"dim_{i}"): item.get("comment", "") for i, item in enumerate(comparison)}
+        comment_translations = _translate_texts(comment_map)
+        for item in comparison:
+            dim = item.get("dimension", "")
+            if dim in comment_translations:
+                item["comment_en"] = comment_translations[dim]
+    except Exception as e:
+        logger.warning(f"[evaluate_compare] 翻译失败（不影响流程）: {e}")
     if audio1_result or audio2_result:
         result["audio_analysis"] = {}
         if audio1_result:
@@ -525,6 +543,30 @@ def evaluate_target_gaps(
     data = _parse_json(raw)
     if isinstance(data, list) and len(data) > 0:
         logger.info(f"[evaluate_target_gaps] LLM 返回 {len(data)} 条")
+        # 批量翻译靶向评估中的 gap_label/evidence/suggestion（单次 LLM 调用）
+        try:
+            from services.ai_service import _translate_texts
+            translate_fields: Dict[str, str] = {}
+            for i, item in enumerate(data):
+                if isinstance(item, dict):
+                    if item.get("gap_label"):
+                        translate_fields[f"gap_label_{i}"] = item["gap_label"]
+                    if item.get("evidence"):
+                        translate_fields[f"evidence_{i}"] = item["evidence"]
+                    if item.get("suggestion"):
+                        translate_fields[f"suggestion_{i}"] = item["suggestion"]
+            if translate_fields:
+                tr = _translate_texts(translate_fields)
+                for i, item in enumerate(data):
+                    if isinstance(item, dict):
+                        if f"gap_label_{i}" in tr:
+                            item["gap_label_en"] = tr[f"gap_label_{i}"]
+                        if f"evidence_{i}" in tr:
+                            item["evidence_en"] = tr[f"evidence_{i}"]
+                        if f"suggestion_{i}" in tr:
+                            item["suggestion_en"] = tr[f"suggestion_{i}"]
+        except Exception as e:
+            logger.warning(f"[evaluate_target_gaps] 翻译失败（不影响流程）: {e}")
         return data
     else:
         raise ValueError("LLM 返回格式不是列表")

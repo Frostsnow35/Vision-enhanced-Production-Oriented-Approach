@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { isDeviceCheckPassed, markDeviceCheckPassed, clearDeviceCheck } from "@/lib/device-check";
 
@@ -51,6 +52,7 @@ const MicIcon = ({ className }: { className?: string } = {}) => (
 );
 
 export default function DeviceCheckModal({ open, onClose, onPassed }: DeviceCheckModalProps) {
+  const t = useTranslations("device_check");
   const router = useRouter();
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -99,14 +101,14 @@ export default function DeviceCheckModal({ open, onClose, onPassed }: DeviceChec
     }
   }, [open, stopAll]);
 
-  const describeError = (err: any): string => {
+  const describeError = (err: any, translate: any): string => {
     const name = err?.name || "";
-    if (name === "NotAllowedError" || name === "PermissionDeniedError") return "浏览器拒绝了摄像头/麦克风权限。请在地址栏左侧的锁形图标中允许权限后重试。";
-    if (name === "NotFoundError" || name === "DevicesNotFoundError") return "未检测到可用的摄像头或麦克风设备。请检查硬件连接。";
-    if (name === "NotReadableError" || name === "TrackStartError") return "摄像头/麦克风被其它程序占用。请关闭其它应用后重试。";
-    if (name === "OverconstrainedError") return "当前设备不满足所需参数。";
-    if (name === "SecurityError") return "浏览器安全策略阻止了设备访问。";
-    return err?.message || "未知错误";
+    if (name === "NotAllowedError" || name === "PermissionDeniedError") return translate("permission_denied");
+    if (name === "NotFoundError" || name === "DevicesNotFoundError") return translate("no_device");
+    if (name === "NotReadableError" || name === "TrackStartError") return translate("device_occupied");
+    if (name === "OverconstrainedError") return translate("overconstrained");
+    if (name === "SecurityError") return translate("security_error");
+    return err?.message || translate("unknown_error");
   };
 
   const runCheck = async () => {
@@ -134,7 +136,7 @@ export default function DeviceCheckModal({ open, onClose, onPassed }: DeviceChec
       cameraOk = true;
     } catch (err: any) {
       setCameraState("fail");
-      setCameraError(describeError(err));
+      setCameraError(describeError(err, t));
     }
 
     // ---- 麦克风 ----
@@ -183,7 +185,7 @@ export default function DeviceCheckModal({ open, onClose, onPassed }: DeviceChec
       micOk = true;
     } catch (err: any) {
       setMicState("fail");
-      setMicError(describeError(err));
+      setMicError(describeError(err, t));
     }
 
     if (cameraOk && micOk) {
@@ -236,14 +238,14 @@ export default function DeviceCheckModal({ open, onClose, onPassed }: DeviceChec
         {/* Header */}
         <div className="relative flex items-center justify-between border-b border-border bg-gradient-to-r from-primary/10 via-primary/5 to-transparent px-6 py-4">
           <div>
-            <h2 className="text-lg font-bold text-foreground">设备检测</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">确保摄像头、麦克风正常工作后再开始对话</p>
+            <h2 className="text-lg font-bold text-foreground">{t("title")}</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">{t("subtitle")}</p>
           </div>
           <button
             onClick={handleClose}
             className="rounded-full p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-            title="关闭"
-            aria-label="关闭"
+            title={t("close")}
+            aria-label={t("close")}
           >
             <XIcon />
           </button>
@@ -263,13 +265,13 @@ export default function DeviceCheckModal({ open, onClose, onPassed }: DeviceChec
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-white/80">
                 <CameraIcon />
                 <span className="text-xs">
-                  {cameraState === "checking" ? "正在请求摄像头..." : cameraState === "fail" ? "摄像头不可用" : "等待开始调试"}
+                  {cameraState === "checking" ? t("camera_checking") : cameraState === "fail" ? t("camera_not_available") : t("camera_waiting")}
                 </span>
               </div>
             )}
             {cameraState === "pass" && (
               <div className="absolute left-2 top-2 flex items-center gap-1.5 rounded-md bg-emerald-500/90 px-2 py-1 text-[10px] font-semibold text-white">
-                <span className="size-1.5 rounded-full bg-white" /> 摄像头就绪
+                <span className="size-1.5 rounded-full bg-white" /> {t("camera_ready")}
               </div>
             )}
           </div>
@@ -289,10 +291,10 @@ export default function DeviceCheckModal({ open, onClose, onPassed }: DeviceChec
                     cameraState === "fail" ? "bg-rose-500" :
                     "bg-yellow-500 animate-pulse"
                   }`} />
-                  <span className="text-xs font-semibold text-foreground">摄像头</span>
+                  <span className="text-xs font-semibold text-foreground">{t("camera_label")}</span>
                 </div>
                 <p className="mt-1.5 text-[11px] text-muted-foreground leading-relaxed min-h-[2.5em]">
-                  {cameraState === "pass" ? "正常工作" : cameraState === "fail" ? (cameraError || "未通过") : (isChecking ? "检测中..." : "未开始")}
+                  {cameraState === "pass" ? t("status_normal") : cameraState === "fail" ? (cameraError || t("status_fail")) : (isChecking ? t("status_checking") : t("status_idle"))}
                 </p>
               </div>
               <div className={`rounded-lg border p-3 transition-colors ${
@@ -306,10 +308,10 @@ export default function DeviceCheckModal({ open, onClose, onPassed }: DeviceChec
                     micState === "fail" ? "bg-rose-500" :
                     "bg-yellow-500 animate-pulse"
                   }`} />
-                  <span className="text-xs font-semibold text-foreground">麦克风</span>
+                  <span className="text-xs font-semibold text-foreground">{t("mic_label")}</span>
                 </div>
                 <p className="mt-1.5 text-[11px] text-muted-foreground leading-relaxed min-h-[2.5em]">
-                  {micState === "pass" ? "正常工作" : micState === "fail" ? (micError || "未通过") : (isChecking ? "检测中..." : "未开始")}
+                  {micState === "pass" ? t("status_normal") : micState === "fail" ? (micError || t("status_fail")) : (isChecking ? t("status_checking") : t("status_idle"))}
                 </p>
               </div>
             </div>
@@ -317,7 +319,7 @@ export default function DeviceCheckModal({ open, onClose, onPassed }: DeviceChec
             {/* 麦克风频谱 */}
             <div className="rounded-lg border border-border bg-muted/20 p-3">
               <div className="flex items-center justify-between text-xs text-muted-foreground mb-2">
-                <span className="flex items-center gap-1.5"><MicIcon /> 麦克风音量</span>
+                <span className="flex items-center gap-1.5"><MicIcon /> {t("mic_volume")}</span>
                 <span className="font-mono">{Math.round(level * 100)}%</span>
               </div>
               <div className="flex h-12 items-end gap-1">
@@ -332,7 +334,7 @@ export default function DeviceCheckModal({ open, onClose, onPassed }: DeviceChec
                   />
                 ))}
               </div>
-              <p className="mt-2 text-[10px] text-muted-foreground/70">说话时观察频谱跳动是否明显</p>
+              <p className="mt-2 text-[10px] text-muted-foreground/70">{t("spectrum_hint")}</p>
             </div>
           </div>
         </div>
@@ -344,7 +346,7 @@ export default function DeviceCheckModal({ open, onClose, onPassed }: DeviceChec
             disabled={isChecking}
             className="text-xs text-muted-foreground hover:text-foreground underline disabled:opacity-50"
           >
-            重置
+            {t("reset")}
           </button>
           <div className="flex items-center gap-2">
             <Button
@@ -353,7 +355,7 @@ export default function DeviceCheckModal({ open, onClose, onPassed }: DeviceChec
               onClick={handleGoFullPage}
               className="text-xs"
             >
-              完整检测页
+              {t("full_page")}
             </Button>
             {allPassed ? (
               <Button
@@ -361,7 +363,7 @@ export default function DeviceCheckModal({ open, onClose, onPassed }: DeviceChec
                 size="lg"
                 className="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold shadow-lg shadow-emerald-500/30 hover:shadow-xl hover:shadow-emerald-500/40 transition-all px-6"
               >
-                ✓ 完成，开始任务
+                {t("done_start")}
               </Button>
             ) : (
               <button
@@ -372,14 +374,11 @@ export default function DeviceCheckModal({ open, onClose, onPassed }: DeviceChec
                 <span className="absolute inset-0 rounded-2xl bg-primary/40 blur-xl opacity-60 group-hover:opacity-100 animate-pulse" />
                 <span className="relative flex items-center gap-3">
                   {isChecking ? (
-                    <>
-                      <span className="size-5 rounded-full border-2 border-white/30 border-t-white animate-spin" />
-                      检测中...
-                    </>
+                    <span className="size-5 rounded-full border-2 border-white/30 border-t-white animate-spin" />
                   ) : (
                     <>
                       <PlayIcon className="size-5" />
-                      {hasResult ? "重新检测" : "开始调试"}
+                      {hasResult ? t("recheck") : t("start_check")}
                     </>
                   )}
                 </span>

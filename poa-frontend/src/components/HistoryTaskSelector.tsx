@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations, useLocale } from "next-intl";
 import { Button } from "@/components/ui/button";
 import {
   getScenarioHistory,
@@ -18,21 +19,14 @@ interface Props {
   reloadOnSelect?: boolean;
 }
 
-function formatTime(iso: string): string {
-  const d = new Date(iso);
-  const now = new Date();
-  const diff = now.getTime() - d.getTime();
-  if (diff < 60000) return "刚刚";
-  if (diff < 3600000) return `${Math.floor(diff / 60000)} 分钟前`;
-  if (diff < 86400000) return `${Math.floor(diff / 3600000)} 小时前`;
-  return d.toLocaleDateString("zh-CN");
-}
-
 export default function HistoryTaskSelector({ 
   onSelected, 
   autoRedirectIfEmpty = false,
   reloadOnSelect = false,
 }: Props) {
+  const t = useTranslations("history_task");
+  const ht = useTranslations("home");
+  const locale = useLocale();
   const router = useRouter();
   const [history, setHistory] = useState<ScenarioHistoryItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -40,6 +34,17 @@ export default function HistoryTaskSelector({
   useEffect(() => {
     setHistory(getScenarioHistory());
   }, []);
+
+  function formatTime(iso: string): string {
+    const d = new Date(iso);
+    const now = new Date();
+    const diff = now.getTime() - d.getTime();
+    if (diff < 60000) return ht("just_now");
+    if (diff < 3600000) return ht("minutes_ago", { min: Math.floor(diff / 60000) });
+    if (diff < 86400000) return ht("hours_ago", { h: Math.floor(diff / 3600000) });
+    const dateLocale = locale === "en" ? "en-US" : "zh-CN";
+    return d.toLocaleDateString(dateLocale);
+  }
 
   function handleSelect(id: string) {
     setSelectedId(id);
@@ -67,11 +72,11 @@ export default function HistoryTaskSelector({
     return (
       <div className="flex flex-col items-center justify-center py-20 space-y-6">
         <div className="text-center space-y-2">
-          <h2 className="text-xl font-bold text-card-foreground">暂无学习记录</h2>
-          <p className="text-sm text-muted-foreground">请先上传一张场景照片，开始学习</p>
+          <h2 className="text-xl font-bold text-card-foreground">{t("no_records")}</h2>
+          <p className="text-sm text-muted-foreground">{t("no_records_hint")}</p>
         </div>
         <Button size="lg" onClick={handleStartFresh}>
-          上传场景照片开始学习
+          {t("upload_start")}
         </Button>
       </div>
     );
@@ -80,9 +85,9 @@ export default function HistoryTaskSelector({
   return (
     <div className="space-y-6">
       <div className="text-center space-y-1">
-        <h2 className="text-xl font-bold text-card-foreground">选择学习任务</h2>
+        <h2 className="text-xl font-bold text-card-foreground">{t("select_task")}</h2>
         <p className="text-sm text-muted-foreground">
-          请选择之前的学习任务继续，或上传新照片开始新任务
+          {t("select_task_hint")}
         </p>
       </div>
 
@@ -144,11 +149,11 @@ export default function HistoryTaskSelector({
       {/* 操作按钮 */}
       <div className="flex gap-3">
         <Button variant="outline" className="flex-1" onClick={handleStartFresh}>
-          上传新照片开始新任务
+          {t("upload_new")}
         </Button>
         {selectedId && (
           <Button className="flex-1" onClick={handleContinue}>
-            继续此任务 →
+            {t("continue_task")}
           </Button>
         )}
       </div>

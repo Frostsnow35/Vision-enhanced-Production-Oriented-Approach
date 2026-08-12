@@ -2,9 +2,10 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { useTranslations } from "next-intl";
+import { useTranslations, useLocale } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { BASE_URL, chatStart, chatTurn, type TurnFeedback } from "@/lib/api";
+import { pickLocaleField } from "@/lib/locale-utils";
 import { playAiAudio } from "@/lib/audio";
 import RecordingWaveform from "@/components/RecordingWaveform";
 import { getScenarioHistory, isTaskSelectedInSession, markTaskSelectedInSession, type ScenarioHistoryItem } from "@/lib/store";
@@ -60,12 +61,12 @@ type SpeechProcessingStage =
   | "ai_speaking"
   | "wrapping_up";
 
-function parseRoles(raw: string): { user: string; ai: string } {
+function parseRoles(raw: string, fallback: string): { user: string; ai: string } {
   const splitRe = /(?:；|;)\s*B[:：]\s*/i;
   const parts = raw.split(splitRe);
   return {
-    user: parts[0]?.replace(/^A[:：]\s*/i, "").trim() || "未指定",
-    ai: parts[1]?.trim() || "未指定",
+    user: parts[0]?.replace(/^A[:：]\s*/i, "").trim() || fallback,
+    ai: parts[1]?.trim() || fallback,
   };
 }
 
@@ -75,6 +76,7 @@ function parseRoles(raw: string): { user: string; ai: string } {
 export default function Attempt1Page() {
   const router = useRouter();
   const t = useTranslations();
+  const locale = useLocale();
 
   // ---- stageToLabel（使用 t）----
   const stageToLabel = useCallback((stage: SpeechProcessingStage): string => {
@@ -844,7 +846,7 @@ export default function Attempt1Page() {
   };
 
   const formatTime = (s: number) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
-  const { user, ai } = task ? parseRoles(task.roles) : { user: "", ai: "" };
+  const { user, ai } = task ? parseRoles(task.roles, t("common.not_specified")) : { user: "", ai: "" };
 
   // ---- dimLabels (使用 t) ----
   const dimLabels = useMemo(() => ({
@@ -1146,7 +1148,7 @@ export default function Attempt1Page() {
                             </div>
                           )}
                           {fb.short_comment && (
-                            <span className="text-[9px] text-muted-foreground/70 truncate">{fb.short_comment}</span>
+                            <span className="text-[9px] text-muted-foreground/70 truncate">{pickLocaleField(fb, "short_comment", locale)}</span>
                           )}
                         </div>
                         );

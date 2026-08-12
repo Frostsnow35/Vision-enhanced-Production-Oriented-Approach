@@ -2,9 +2,10 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
-import { useTranslations } from "next-intl";
+import { useTranslations, useLocale } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { usePOA, getScenarioHistory, isTaskSelectedInSession, markTaskSelectedInSession, type ScenarioHistoryItem } from "@/lib/store";
+import { pickLocaleField } from "@/lib/locale-utils";
 import HistoryTaskSelector from "@/components/HistoryTaskSelector";
 
 /* ============================================================
@@ -14,7 +15,7 @@ import HistoryTaskSelector from "@/components/HistoryTaskSelector";
    输出：
      { user: "顾客（Customer）—— 有乳糖不耐受", ai: "咖啡师（Barista）—— 高峰期忙碌" }
    ============================================================ */
-function parseRoles(raw: string, fallback = "未指定"): { user: string; ai: string } {
+function parseRoles(raw: string, fallback = "Not specified"): { user: string; ai: string } {
   const splitRe = /(?:；|;)\s*B[:：]\s*/i;
   const parts = raw.split(splitRe);
   return {

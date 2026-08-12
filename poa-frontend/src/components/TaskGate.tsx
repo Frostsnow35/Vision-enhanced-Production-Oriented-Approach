@@ -3,6 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import HistoryTaskSelector from "./HistoryTaskSelector";
 import { isTaskSelectedInSession } from "@/lib/store";
+import { useTranslations } from "next-intl";
 
 function getCurrentTaskFromStorage(): boolean {
   try {
@@ -17,6 +18,7 @@ function getCurrentTaskFromStorage(): boolean {
 
 export default function TaskGate({ children }: { children: ReactNode }) {
   const [hasTask, setHasTask] = useState<boolean | null>(null);
+  const t = useTranslations("common");
 
   useEffect(() => {
     const exists = getCurrentTaskFromStorage() && isTaskSelectedInSession();
@@ -26,7 +28,7 @@ export default function TaskGate({ children }: { children: ReactNode }) {
   if (hasTask === null) {
     return (
       <div className="flex items-center justify-center py-20">
-        <span className="text-muted-foreground">加载中...</span>
+        <span className="text-muted-foreground">{t("loading")}</span>
       </div>
     );
   }

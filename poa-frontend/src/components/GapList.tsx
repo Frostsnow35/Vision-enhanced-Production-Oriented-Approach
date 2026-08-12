@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import type { GapItem } from "@/lib/api";
 
 export function GapList({
@@ -9,10 +10,12 @@ export function GapList({
   gaps: GapItem[];
   attempt: number;
 }) {
+  const t = useTranslations("gap_list");
+
   return (
     <div className="rounded-lg border border-border bg-card p-8 shadow-sm space-y-4">
       <h2 className="text-xl font-semibold text-card-foreground">
-        第 {attempt} 次作答诊断 — 发现 {gaps.length} 项不足
+        {t("title", { attempt, count: gaps.length })}
       </h2>
       <div className="space-y-4">
         {gaps.map((g, i) => (
@@ -27,7 +30,7 @@ export function GapList({
             </div>
             {g.evidence_sentence && (
               <p className="text-sm">
-                <span className="text-muted-foreground">原文: </span>
+                <span className="text-muted-foreground">{t("source_text")}</span>
                 <span className="italic text-card-foreground">
                   "{g.evidence_sentence}"
                 </span>

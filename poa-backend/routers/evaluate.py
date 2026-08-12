@@ -106,6 +106,7 @@ async def eval_compare(req: EvaluateCompareRequest, db: Session = Depends(get_db
                 "attempt2_score": a2,
                 "change": f"{'+' if change >= 0 else ''}{change}",
                 "comment": a2_result.get("comments", {}).get(d, ""),
+                "comment_en": a2_result.get("comments_en", {}).get(d, ""),
             })
             dim_scores[d] = {"attempt1": a1, "attempt2": a2, "change": change}
 
