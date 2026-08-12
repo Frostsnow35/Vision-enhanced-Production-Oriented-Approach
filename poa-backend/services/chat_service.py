@@ -259,7 +259,7 @@ def _generate_turn_feedback(user_text: str, ai_text: str, task_context: Dict[str
                 {"role": "user", "content": prompt},
             ],
         }
-        with httpx.Client(timeout=8.0) as client:
+        with httpx.Client(timeout=12.0) as client:
             resp = client.post(
                 DOUBAO_CHAT_URL,
                 headers={
