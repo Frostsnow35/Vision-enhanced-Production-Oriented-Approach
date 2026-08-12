@@ -75,10 +75,10 @@ export default function ScenarioPage() {
 
   // ---- 图片压缩（Canvas API，上传前缩放以减少 VLM 推理时间）----
   async function compressImage(file: File): Promise<File> {
-    const MAX_DIM = 1024;
-    const QUALITY = 0.8;
-    // 小文件不压缩
-    if (file.size < 200 * 1024) return file;
+    const MAX_DIM = 800;
+    const QUALITY = 0.6;
+    // 小文件不压缩（中国大陆到 Railway 美国跨国传输，减小体积是关键）
+    if (file.size < 150 * 1024) return file;
 
     return new Promise((resolve) => {
       const img = new Image();
@@ -134,7 +134,7 @@ export default function ScenarioPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ image_path: image_url }),
-        signal: AbortSignal.timeout(200000),
+        signal: AbortSignal.timeout(300000),
       });
       if (!res.ok) {
         let msg = `${t("common.server_error")} (${res.status})`;
@@ -200,7 +200,7 @@ export default function ScenarioPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ image_path: item.imageUrl }),
-        signal: AbortSignal.timeout(200000),
+        signal: AbortSignal.timeout(300000),
       });
       if (!res.ok) {
         let msg = `${t("common.server_error")} (${res.status})`;

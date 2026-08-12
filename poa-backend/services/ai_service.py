@@ -23,8 +23,8 @@ logger = logging.getLogger("ai_service")
 
 CHAT_URL = f"{DOUBAO_BASE_URL}/chat/completions"
 _TIMEOUT = 120  # 文本模型默认超时
-_VISION_TIMEOUT = 120  # 视觉模型超时（Seed 2.0 Lite 推理快）
-_RETRY_COUNT = 2  # 指数退避重试次数
+_VISION_TIMEOUT = 180  # 视觉模型超时（跨太平洋 US→北京，base64 传输耗时）
+_RETRY_COUNT = 2  # 指数退避重试次数（默认，视觉调用可覆盖为更少）
 _RETRY_BACKOFF = 2.0  # 首次退避秒数
 _MAX_TOKENS = 1000
 
@@ -32,14 +32,16 @@ _MAX_TOKENS = 1000
 # 通用 LLM 调用
 # ============================================================
 def _call_doubao(messages: List[Dict[str, Any]], max_tokens: int = _MAX_TOKENS, model: str = "",
-                 timeout: float = _TIMEOUT) -> str:
+                 timeout: float = _TIMEOUT, max_retries: int | None = None) -> str:
     """调用豆包 API，返回 content。model 为空时使用默认模型。失败抛 RuntimeError。"""
     body = {"model": model or DOUBAO_MODEL_ID, "messages": messages, "max_tokens": max_tokens}
     headers = {"Authorization": f"Bearer {DOUBAO_API_KEY}", "Content-Type": "application/json"}
 
+    retries = _RETRY_COUNT if max_retries is None else max_retries
+
     # 指数退避重试：处理超时、429 限流、5xx 服务端错误
     last_error = ""
-    for attempt in range(1 + _RETRY_COUNT):
+    for attempt in range(1 + retries):
         t0 = time.time()
         try:
             resp = requests.post(CHAT_URL, headers=headers, json=body, timeout=timeout)
@@ -71,8 +73,8 @@ def _call_doubao(messages: List[Dict[str, Any]], max_tokens: int = _MAX_TOKENS, 
             # 429 限流 / 5xx 服务端错误 → 可重试
             if status in (429, 500, 502, 503, 504):
                 last_error = f"HTTP {status}: {resp.text[:200]}"
-                logger.warning(f"  [LLM] attempt {attempt+1}/{1+_RETRY_COUNT} {last_error} ({elapsed:.1f}s)")
-                if attempt < _RETRY_COUNT:
+                logger.warning(f"  [LLM] attempt {attempt+1}/{1+retries} {last_error} ({elapsed:.1f}s)")
+                if attempt < retries:
                     wait = _RETRY_BACKOFF * (2 ** attempt)
                     logger.info(f"  [LLM] 等待 {wait:.0f}s 后重试...")
                     time.sleep(wait)
@@ -84,15 +86,15 @@ def _call_doubao(messages: List[Dict[str, Any]], max_tokens: int = _MAX_TOKENS, 
         except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
             elapsed = time.time() - t0
             last_error = str(e)
-            logger.warning(f"  [LLM] attempt {attempt+1}/{1+_RETRY_COUNT} {last_error} ({elapsed:.1f}s)")
-            if attempt < _RETRY_COUNT:
+            logger.warning(f"  [LLM] attempt {attempt+1}/{1+retries} {last_error} ({elapsed:.1f}s)")
+            if attempt < retries:
                 wait = _RETRY_BACKOFF * (2 ** attempt)
                 logger.info(f"  [LLM] 等待 {wait:.0f}s 后重试...")
                 time.sleep(wait)
                 continue
-            raise RuntimeError(f"API 调用超时/连接失败（已重试{_RETRY_COUNT}次）: {last_error}")
+            raise RuntimeError(f"API 调用超时/连接失败（已重试{retries}次）: {last_error}")
 
-    raise RuntimeError(f"API 调用失败（已重试{_RETRY_COUNT}次）: {last_error}")
+    raise RuntimeError(f"API 调用失败（已重试{retries}次）: {last_error}")
 
 
 def _parse_json(raw: str) -> Any:
@@ -323,7 +325,7 @@ def analyze_scenario(image_path: str) -> Dict[str, Any]:
         raw = _call_doubao([{"role": "user", "content": [
             {"type": "text", "text": _SCENE_PROMPT},
             {"type": "image_url", "image_url": {"url": data_url}},
-        ]}], model=DOUBAO_VISION_MODEL_ID, timeout=_VISION_TIMEOUT, max_tokens=500)
+        ]}], model=DOUBAO_VISION_MODEL_ID, timeout=_VISION_TIMEOUT, max_tokens=500, max_retries=0)
     except Exception as e:
         raise RuntimeError(f"视觉模型调用失败: API请求失败 {e}")
 
