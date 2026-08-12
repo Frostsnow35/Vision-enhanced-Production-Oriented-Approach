@@ -14,10 +14,9 @@ import threading
 import logging
 from typing import Any, Dict
 
-from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
+from fastapi import APIRouter
 
-from config import get_db, UPLOAD_DIR, BACKEND_PUBLIC_URL
+from config import UPLOAD_DIR
 from schemas import ScenarioAnalyzeRequest
 
 logger = logging.getLogger("poa.scenario")
@@ -38,18 +37,6 @@ def _evict_expired_tasks():
         logger.info(f"[async] 清理 {len(expired)} 个过期任务")
 
 
-def _build_public_url(file_path: str) -> str:
-    """根据本地文件路径构造公网可访问的图片 URL（供 Ark VLM 下载）。"""
-    if not BACKEND_PUBLIC_URL:
-        return ""
-    norm = file_path.replace("\\", "/")
-    marker = "uploads/"
-    idx = norm.find(marker)
-    if idx >= 0:
-        return f"{BACKEND_PUBLIC_URL}/{norm[idx:]}"
-    return ""
-
-
 def _resolve_image_path(raw_path: str) -> str:
     """将前端传入的 URL 路径解析为服务器本地文件路径。"""
     image_path = raw_path
@@ -62,13 +49,13 @@ def _resolve_image_path(raw_path: str) -> str:
     return image_path
 
 
-def _run_analysis_bg(task_id: str, image_path: str, image_url: str):
+def _run_analysis_bg(task_id: str, image_path: str):
     """后台线程：执行 VLM 场景分析，完成后写入 _analysis_tasks。"""
     from config import SessionLocal
     from services.ai_service import get_or_analyze_scenario
     db = SessionLocal()
     try:
-        result = get_or_analyze_scenario(image_path=image_path, db=db, image_url=image_url)
+        result = get_or_analyze_scenario(image_path=image_path, db=db)
         _analysis_tasks[task_id] = {"status": "completed", "result": result, "_created": time.time()}
         logger.info(f"[async] task={task_id[:8]} 完成")
 
@@ -98,13 +85,12 @@ async def analyze_scene(req: ScenarioAnalyzeRequest):
     _evict_expired_tasks()
 
     image_path = _resolve_image_path(req.image_path)
-    image_url = _build_public_url(image_path)
 
     task_id = str(uuid.uuid4())
     _analysis_tasks[task_id] = {"status": "processing", "_created": time.time()}
     logger.info(f"[async] task={task_id[:8]} 已创建, image_path={image_path[:60]}")
 
-    thread = threading.Thread(target=_run_analysis_bg, args=(task_id, image_path, image_url), daemon=True)
+    thread = threading.Thread(target=_run_analysis_bg, args=(task_id, image_path), daemon=True)
     thread.start()
 
     return {"task_id": task_id, "status": "processing"}

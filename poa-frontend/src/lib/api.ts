@@ -82,7 +82,7 @@ export async function analyzeScenario(image_path: string): Promise<
   | { mode: "async"; task_id: string }
   | { mode: "sync"; result: ScenarioResult }
 > {
-  const data = await request<any>("/api/scenario/analyze", { image_path }, 30000);
+  const data = await request<any>("/api/scenario/analyze", { image_path }, 180000);
 
   // 新版异步响应：{task_id: "uuid", status: "processing"}
   if (typeof data.task_id === "string" && data.status === "processing") {

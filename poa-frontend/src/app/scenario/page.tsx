@@ -180,9 +180,15 @@ export default function ScenarioPage() {
     if (submitting) return;
     if (!uploadedFile) return;
     setSubmitting(true);
+    const tStart = Date.now();
+    console.log("[scenario] 开始上传图片...", uploadedFile.name, uploadedFile.size);
     try {
       const { image_url } = await uploadImage(uploadedFile);
+      console.log(`[scenario] 上传完成 (${Date.now() - tStart}ms), image_url=${image_url}`);
+
+      const tAnalyze = Date.now();
       const response = await analyzeScenario(image_url);
+      console.log(`[scenario] analyzeScenario 返回 (${Date.now() - tAnalyze}ms), mode=${response.mode}`);
 
       let result: ScenarioResult;
       if (response.mode === "sync") {
@@ -190,11 +196,14 @@ export default function ScenarioPage() {
         result = response.result;
       } else {
         // 新版后端（异步）：轮询等待
+        console.log(`[scenario] 开始轮询 task_id=${response.task_id}`);
         result = await waitForAnalysis(response.task_id);
+        console.log(`[scenario] 轮询完成 (${Date.now() - tStart}ms 总耗时)`);
       }
 
       handleAnalysisResult(result, image_url);
     } catch (err: any) {
+      console.error(`[scenario] 失败 (${Date.now() - tStart}ms):`, err.name, err.message);
       if (err.name === "TimeoutError" || err.name === "AbortError") {
         addToast(t("scenario.timeout"), "error");
       } else {

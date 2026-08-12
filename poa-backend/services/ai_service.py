@@ -307,38 +307,26 @@ _INPUTPACK_PROMPT = """你是英语教学材料设计师。根据学生的不足
 # ============================================================
 # 1. 场景分析
 # ============================================================
-def analyze_scenario(image_path: str, image_url: str = "") -> Dict[str, Any]:
-    logger.info(f"[analyze_scenario] path={image_path} url={image_url[:80] if image_url else '(none)'}")
+def analyze_scenario(image_path: str) -> Dict[str, Any]:
+    logger.info(f"[analyze_scenario] path={image_path}")
     if not os.path.isfile(image_path):
         raise RuntimeError(f"视觉模型调用失败: 文件不存在 {image_path}")
 
-    # 优先使用公网 URL 传图（避免跨太平洋传输 base64 大体积数据）
-    # Ark API 兼容 OpenAI Vision，支持 image_url 传真实 URL
-    img_content: Dict[str, Any]
-    if image_url:
-        img_content = {"type": "image_url", "image_url": {"url": image_url}}
-        logger.info(f"  [analyze_scenario] 使用公网 URL 传图（跳过 base64 编码）")
-    else:
-        try:
-            ext = os.path.splitext(image_path)[-1].lower()
-            mime = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}.get(ext, "image/jpeg")
-            with open(image_path, "rb") as f:
-                b64 = base64.b64encode(f.read()).decode()
-            data_url = f"data:{mime};base64,{b64}"
-            img_content = {"type": "image_url", "image_url": {"url": data_url}}
-        except OSError as e:
-            raise RuntimeError(f"视觉模型调用失败: 读取图片失败 {e}")
+    try:
+        ext = os.path.splitext(image_path)[-1].lower()
+        mime = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}.get(ext, "image/jpeg")
+        with open(image_path, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode()
+        data_url = f"data:{mime};base64,{b64}"
+    except OSError as e:
+        raise RuntimeError(f"视觉模型调用失败: 读取图片失败 {e}")
 
     try:
         raw = _call_doubao([{"role": "user", "content": [
             {"type": "text", "text": _SCENE_PROMPT},
-            img_content,
+            {"type": "image_url", "image_url": {"url": data_url}},
         ]}], model=DOUBAO_VISION_MODEL_ID, timeout=_VISION_TIMEOUT, max_tokens=500, max_retries=0)
     except Exception as e:
-        # 公网 URL 模式失败时，自动回退到 base64 模式
-        if image_url:
-            logger.warning(f"  [analyze_scenario] 公网 URL 模式失败，回退 base64: {e}")
-            return analyze_scenario(image_path, image_url="")
         raise RuntimeError(f"视觉模型调用失败: API请求失败 {e}")
 
     try:
@@ -379,12 +367,12 @@ def analyze_scenario(image_path: str, image_url: str = "") -> Dict[str, Any]:
 # ============================================================
 # 1b. 缓存查询
 # ============================================================
-def get_or_analyze_scenario(image_path: str, db: Session, image_url: str = "") -> Dict[str, Any]:
+def get_or_analyze_scenario(image_path: str, db: Session) -> Dict[str, Any]:
     try:
         with open(image_path, "rb") as f:
             h = hashlib.md5(f.read()).hexdigest()
     except OSError:
-        return analyze_scenario(image_path, image_url)
+        return analyze_scenario(image_path)
 
     ex = db.query(Scenario).filter(Scenario.image_hash == h).first()
     if ex:
@@ -396,7 +384,7 @@ def get_or_analyze_scenario(image_path: str, db: Session, image_url: str = "") -
                     "variant_plot": t.variant_plot or "",
                     "opening_line": t.opening_line or "", "closing_line": t.closing_line or ""}
 
-    result = analyze_scenario(image_path, image_url)
+    result = analyze_scenario(image_path)
     scenario_id = None
     try:
         s = Scenario(image_path=image_path, image_hash=h, scene_label=result["scene_label"])
