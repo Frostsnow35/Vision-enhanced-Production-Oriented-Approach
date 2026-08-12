@@ -40,7 +40,7 @@ export default async function RootLayout({
   return (
     <html lang={locale} className="h-full antialiased">
       <body className="flex min-h-full flex-col bg-background text-foreground">
-        <NextIntlClientProvider messages={messages}>
+        <NextIntlClientProvider locale={locale} messages={messages}>
           <header className="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/60">
             <nav className="mx-auto flex max-w-6xl items-center gap-6 overflow-x-auto px-4 py-2">
               <Link href="/" className="flex items-center gap-2 shrink-0">
