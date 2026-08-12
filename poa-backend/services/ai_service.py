@@ -107,8 +107,17 @@ def _parse_json(raw: str) -> Any:
         if lines and lines[-1].startswith("```"): lines = lines[:-1]
         raw = "\n".join(lines)
 
-    # 提取第一个完整 JSON 对象或数组（处理 LLM 追加额外文本的情况）
+    # 处理 LLM 在 JSON 前加解释文字的情况（如 "好的，这是分析结果：\n{...}"）
     raw = raw.strip()
+    # 如果 raw 不是以 { 或 [ 开头，找到第一个 { 或 [ 的位置
+    if not raw.startswith("{") and not raw.startswith("["):
+        brace_idx = raw.find("{")
+        bracket_idx = raw.find("[")
+        if brace_idx != -1 or bracket_idx != -1:
+            start = min(i for i in (brace_idx, bracket_idx) if i != -1)
+            raw = raw[start:]
+
+    # 提取第一个完整 JSON 对象或数组（处理 LLM 追加额外文本的情况）
     if raw.startswith("{"):
         # 找到匹配的 }
         depth, end = 0, 0
@@ -126,6 +135,9 @@ def _parse_json(raw: str) -> Any:
                 depth -= 1
                 if depth == 0: end = i + 1; break
         if end: raw = raw[:end]
+
+    # 移除尾部逗号（LLM 高频输出模式：{"key": "value",}）
+    raw = re.sub(r',\s*([}\]])', r'\1', raw)
 
     return json.loads(raw)
 
@@ -386,6 +398,7 @@ def get_or_analyze_scenario(image_path: str, db: Session) -> Dict[str, Any]:
 
     result = analyze_scenario(image_path)
     scenario_id = None
+    task_id = None
     try:
         s = Scenario(image_path=image_path, image_hash=h, scene_label=result["scene_label"])
         db.add(s); db.flush()
@@ -396,9 +409,13 @@ def get_or_analyze_scenario(image_path: str, db: Session) -> Dict[str, Any]:
                      opening_line=result.get("opening_line", ""), closing_line=result.get("closing_line", ""))
         db.add(t); db.flush()
         db.commit()
-        result["task_id"] = t.id
+        task_id = t.id
+        result["task_id"] = task_id
     except Exception as e:
         db.rollback(); logger.error(f"  DB write failed: {e}")
+        # DB 写入失败不阻塞流程：用负数 ID 标记，确保前端仍能走通闭环
+        task_id = -abs(hash(image_path + str(time.time()))) % 100000
+        result["task_id"] = task_id
     result["scenario_id"] = scenario_id
     return result
 

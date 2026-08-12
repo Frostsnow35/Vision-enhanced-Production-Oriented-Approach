@@ -214,7 +214,8 @@ def _call_llm(messages: List[Dict[str, str]], timeout: int = 60) -> str:
 
 
 def _parse_json(raw: str) -> Dict[str, Any]:
-    """解析 LLM 返回的 JSON，自动处理 markdown 代码块包裹。"""
+    """解析 LLM 返回的 JSON，自动处理 markdown 代码块、前缀文本、尾部逗号。"""
+    import re
     raw = raw.strip()
     if raw.startswith("```"):
         lines = raw.split("\n")
@@ -223,6 +224,29 @@ def _parse_json(raw: str) -> Dict[str, Any]:
         if lines and lines[-1].startswith("```"):
             lines = lines[:-1]
         raw = "\n".join(lines)
+
+    # 处理 LLM 在 JSON 前加解释文字的情况
+    raw = raw.strip()
+    if not raw.startswith("{") and not raw.startswith("["):
+        brace_idx = raw.find("{")
+        bracket_idx = raw.find("[")
+        if brace_idx != -1 or bracket_idx != -1:
+            start = min(i for i in (brace_idx, bracket_idx) if i != -1)
+            raw = raw[start:]
+
+    # 提取第一个完整 JSON 对象
+    if raw.startswith("{"):
+        depth, end = 0, 0
+        for i, ch in enumerate(raw):
+            if ch == "{": depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0: end = i + 1; break
+        if end: raw = raw[:end]
+
+    # 移除尾部逗号
+    raw = re.sub(r',\s*([}\]])', r'\1', raw)
+
     return json.loads(raw)
 
 

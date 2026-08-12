@@ -38,7 +38,7 @@ def _evict_expired_tasks():
 
 
 def _resolve_image_path(raw_path: str) -> str:
-    """将前端传入的 URL 路径解析为服务器本地文件路径。"""
+    """将前端传入的 URL 路径解析为服务器本地文件路径。文件不存在时抛出 ValueError。"""
     image_path = raw_path
     if image_path.startswith("/"):
         image_path = image_path[1:]
@@ -46,6 +46,8 @@ def _resolve_image_path(raw_path: str) -> str:
         resolved = os.path.join(UPLOAD_DIR, image_path.replace("uploads/", "", 1) if "uploads/" in image_path else image_path)
         if os.path.isfile(resolved):
             image_path = resolved
+    if not os.path.isfile(image_path):
+        raise ValueError(f"图片文件不存在: {raw_path} (尝试路径: {image_path})")
     return image_path
 
 
