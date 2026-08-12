@@ -1205,7 +1205,7 @@ export default function Attempt1Page() {
           </button>
           {showHint && micReady && <span className="hidden sm:inline text-xs text-muted-foreground/60 animate-in fade-in duration-300">{t("attempt.or_space_toggle")}</span>}
           <div className="flex-1" />
-          <Button size="sm" variant="outline" onClick={handleSubmit} disabled={submitting || history.length < MIN_USER_TURNS}>{submitting ? t("attempt.submitting") : t("attempt.submit_diagnosis")}</Button>
+          <Button size="sm" variant="outline" onClick={handleSubmit} disabled={submitting || history.length < MIN_USER_TURNS || (turnLimitReached && !isFinal)}>{submitting ? t("attempt.submitting") : t("attempt.submit_diagnosis")}</Button>
           {turnLimitReached && (
             <span className="ml-2 text-xs text-muted-foreground">{t("attempt.turn_limit_reached")}</span>
           )}

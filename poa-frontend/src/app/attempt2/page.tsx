@@ -1526,7 +1526,7 @@ export default function Attempt2Page() {
                       : t("attempt.click_speak")}
           </button>
           <div className="flex-1" />
-          <Button size="sm" variant="outline" onClick={handleSubmit} disabled={submitting || history.length < MIN_USER_TURNS}>
+          <Button size="sm" variant="outline" onClick={handleSubmit} disabled={submitting || history.length < MIN_USER_TURNS || (turnLimitReached && !isFinal)}>
             {submitting ? t("attempt.submitting") : t("attempt.view_evaluation")}
           </Button>
         </div>
