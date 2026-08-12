@@ -15,7 +15,7 @@ import requests
 import httpx
 from sqlalchemy.orm import Session
 
-from config import DOUBAO_API_KEY, DOUBAO_BASE_URL, ARK_MODEL_ID, DOUBAO_MODEL_ID, DOUBAO_VISION_MODEL_ID
+from config import DOUBAO_API_KEY, DOUBAO_BASE_URL, ARK_MODEL_ID, DOUBAO_MODEL_ID, DOUBAO_VISION_MODEL_ID, BACKEND_PUBLIC_URL
 from models import Scenario, POATask
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s", datefmt="%H:%M:%S")
@@ -312,22 +312,39 @@ def analyze_scenario(image_path: str) -> Dict[str, Any]:
     if not os.path.isfile(image_path):
         raise RuntimeError(f"视觉模型调用失败: 文件不存在 {image_path}")
 
-    try:
-        ext = os.path.splitext(image_path)[-1].lower()
-        mime = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}.get(ext, "image/jpeg")
-        with open(image_path, "rb") as f:
-            b64 = base64.b64encode(f.read()).decode()
-        data_url = f"data:{mime};base64,{b64}"
-    except OSError as e:
-        raise RuntimeError(f"视觉模型调用失败: 读取图片失败 {e}")
+    # 优先使用公网 URL（请求体仅几十字节），避免 base64 MB 级跨太平洋传输
+    filename = os.path.basename(image_path)
+    image_url = f"{BACKEND_PUBLIC_URL}/uploads/images/{filename}" if BACKEND_PUBLIC_URL else ""
 
-    try:
-        raw = _call_doubao([{"role": "user", "content": [
-            {"type": "text", "text": _SCENE_PROMPT},
-            {"type": "image_url", "image_url": {"url": data_url}},
-        ]}], model=DOUBAO_VISION_MODEL_ID, timeout=_VISION_TIMEOUT, max_tokens=500, max_retries=0)
-    except Exception as e:
-        raise RuntimeError(f"视觉模型调用失败: API请求失败 {e}")
+    raw = None
+    if image_url:
+        try:
+            raw = _call_doubao([{"role": "user", "content": [
+                {"type": "text", "text": _SCENE_PROMPT},
+                {"type": "image_url", "image_url": {"url": image_url}},
+            ]}], model=DOUBAO_VISION_MODEL_ID, timeout=_VISION_TIMEOUT, max_tokens=500, max_retries=0)
+            logger.info(f"[analyze_scenario] URL 模式成功 url={image_url[:80]}...")
+        except Exception as e:
+            logger.warning(f"[analyze_scenario] URL 模式失败: {e}，降级 base64")
+
+    # base64 降级
+    if raw is None:
+        try:
+            ext = os.path.splitext(image_path)[-1].lower()
+            mime = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}.get(ext, "image/jpeg")
+            with open(image_path, "rb") as f:
+                b64 = base64.b64encode(f.read()).decode()
+            data_url = f"data:{mime};base64,{b64}"
+        except OSError as e:
+            raise RuntimeError(f"视觉模型调用失败: 读取图片失败 {e}")
+
+        try:
+            raw = _call_doubao([{"role": "user", "content": [
+                {"type": "text", "text": _SCENE_PROMPT},
+                {"type": "image_url", "image_url": {"url": data_url}},
+            ]}], model=DOUBAO_VISION_MODEL_ID, timeout=_VISION_TIMEOUT, max_tokens=500, max_retries=0)
+        except Exception as e:
+            raise RuntimeError(f"视觉模型调用失败: API请求失败 {e}")
 
     try:
         p = _parse_json(raw)
