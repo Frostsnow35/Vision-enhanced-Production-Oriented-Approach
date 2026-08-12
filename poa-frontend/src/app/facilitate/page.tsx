@@ -568,25 +568,18 @@ export default function FacilitatePage() {
 
   // ---- 练习处理 ----
   const selectOption = (exId: number, key: string) => {
-    setExerciseState((prev) => ({
-      ...prev,
-      [exId]: { selected: key, revealed: true },
-    }));
-
-    const newState = {
-      ...exerciseState,
-      [exId]: { selected: key, revealed: true },
-    };
-
-    const completed = Object.values(newState).filter((s) => s?.revealed).length;
-    setProgress((prev) => {
-      const newProgress = {
+    setExerciseState((prev) => {
+      const newState = {
         ...prev,
-        exercisesCompleted: completed,
-        totalExercises: exercises.length,
+        [exId]: { selected: key, revealed: true },
       };
-      saveProgress(newProgress);
-      return newProgress;
+      const completed = Object.values(newState).filter((s) => s?.revealed).length;
+      setProgress((p) => {
+        const np = { ...p, exercisesCompleted: completed, totalExercises: exercises.length };
+        saveProgress(np);
+        return np;
+      });
+      return newState;
     });
   };
 

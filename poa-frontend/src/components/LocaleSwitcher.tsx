@@ -1,14 +1,16 @@
 "use client";
 
 import { useLocale } from "next-intl";
+import { useRouter } from "next/navigation";
 
 export default function LocaleSwitcher() {
   const locale = useLocale();
+  const router = useRouter();
 
   const toggleLocale = () => {
     const nextLocale = locale === "zh" ? "en" : "zh";
     document.cookie = `NEXT_LOCALE=${nextLocale};path=/;max-age=31536000`;
-    window.location.reload();
+    router.refresh();
   };
 
   return (

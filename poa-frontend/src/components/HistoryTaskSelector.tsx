@@ -122,7 +122,7 @@ export default function HistoryTaskSelector({
                 {item.sceneLabel}
               </p>
               <p className="text-xs text-muted-foreground/70 truncate">
-                {item.goal.slice(0, 60)}
+                {(item.goal ?? "").slice(0, 60)}
               </p>
               <p className="text-xs text-muted-foreground/50">
                 {formatTime(item.createdAt)}

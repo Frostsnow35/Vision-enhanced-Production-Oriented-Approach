@@ -357,6 +357,7 @@ export default function Attempt2Page() {
   const [aiSpeaking, setAiSpeaking] = useState(false);
   const [waitingForAiReply, setWaitingForAiReply] = useState(false);
   const startedRef = useRef(false);
+  const startAiOpeningRef = useRef<(() => Promise<void>) | null>(null);
   const [isFinal, setIsFinal] = useState(false);
   const [wrappingUp, setWrappingUp] = useState(false);
   const [replayAvailable, setReplayAvailable] = useState(false);
@@ -397,10 +398,9 @@ export default function Attempt2Page() {
     if (countdownKey === null) return;
     const tm = setTimeout(() => {
       setCountdownKey(null);
-      void startAiOpening();
+      void startAiOpeningRef.current?.();
     }, 3100);
     return () => clearTimeout(tm);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [countdownKey]);
 
   // 设备检测通过后的回调
@@ -459,6 +459,9 @@ export default function Attempt2Page() {
       setAiSpeaking(false);
     }
   };
+
+  // 同步 ref 以便 setTimeout 中始终调用最新版
+  useEffect(() => { startAiOpeningRef.current = startAiOpening; }, [startAiOpening]);
 
   // ---- 语音录制 ----
   const [recording, setRecording] = useState(false);

@@ -220,10 +220,6 @@ export default function Attempt1Page() {
     } catch (err) {
       console.error("麦克风获取失败:", err);
       setMicStatus("error");
-      if (cameraStreamRef.current) {
-        audioStreamRef.current = cameraStreamRef.current;
-        setMicStatus("ready");
-      }
     }
   }, []);
 
@@ -295,6 +291,7 @@ export default function Attempt1Page() {
   const [waitingForAiReply, setWaitingForAiReply] = useState(false);
   const [speechStage, setSpeechStage] = useState<SpeechProcessingStage>("idle");
   const startedRef = useRef(false);
+  const startAiOpeningRef = useRef<(() => Promise<void>) | null>(null);
   const [isFinal, setIsFinal] = useState(false);
   // ---- Plan A 自动收尾进行中：用于在 onstop 内串行化、防止重复触发 ----
   const [wrappingUp, setWrappingUp] = useState(false);
@@ -330,10 +327,9 @@ export default function Attempt1Page() {
     if (countdownKey === null) return;
     const tm = setTimeout(() => {
       setCountdownKey(null);
-      void startAiOpening();
+      void startAiOpeningRef.current?.();
     }, 3100);
     return () => clearTimeout(tm);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [countdownKey]);
 
   // 设备检测通过后的回调：记录通过状态但不关闭模态框（用户手动关闭）
@@ -385,6 +381,9 @@ export default function Attempt1Page() {
       setAiSpeaking(false);
     }
   };
+
+  // 同步 ref 以便 setTimeout 中始终调用最新版 startAiOpening
+  useEffect(() => { startAiOpeningRef.current = startAiOpening; }, [startAiOpening]);
 
   // ---- 录音 ----
   const [recording, setRecording] = useState(false);

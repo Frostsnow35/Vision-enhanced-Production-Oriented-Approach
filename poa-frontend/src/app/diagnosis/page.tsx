@@ -61,7 +61,7 @@ function SkeletonCard({ className = "" }: { className?: string }) {
 export default function DiagnosisPage() {
   const router = useRouter();
   const t = useTranslations();
-  const funTips: string[] = t.raw("diagnosis.fun_tips");
+  const funTips: string[] = Array.isArray(t.raw("diagnosis.fun_tips")) ? t.raw("diagnosis.fun_tips") : [];
   const [initDone, setInitDone] = useState(false);
   const [hasHistory, setHasHistory] = useState(false);
   const [gaps, setGaps] = useState<GapItem[] | null>(null);
@@ -131,6 +131,19 @@ export default function DiagnosisPage() {
         const data = await res.json();
         if (data.dimension_scores) {
           setDimensionScores(data.dimension_scores);
+          // 回写到 diagnosis localStorage，避免evaluate页因读不到分数而重新调用LLM得到不一致的结果
+          try {
+            const raw = localStorage.getItem("diagnosis");
+            if (raw) {
+              const stored = JSON.parse(raw);
+              if (Array.isArray(stored)) {
+                localStorage.setItem("diagnosis", JSON.stringify({ gaps: stored, dimension_scores: data.dimension_scores }));
+              } else {
+                stored.dimension_scores = data.dimension_scores;
+                localStorage.setItem("diagnosis", JSON.stringify(stored));
+              }
+            }
+          } catch { /* ignore */ }
         }
       }
     } catch { /* ignore */ }
