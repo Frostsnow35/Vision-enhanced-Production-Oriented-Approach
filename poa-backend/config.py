@@ -109,8 +109,8 @@ DOUBAO_BASE_URL = os.getenv("DOUBAO_BASE_URL", "https://ark.cn-beijing.volces.co
 ARK_API_KEY = os.getenv("ARK_API_KEY", DOUBAO_API_KEY)
 ARK_MODEL_ID = _normalize_ark_model_id(os.getenv("ARK_MODEL_ID", "doubao-1.5-vision-pro-32k"))
 
-# 视觉模型专用（Seed 2.0 Lite 多模态，比旧版 1.5 Vision Pro 快 3~5 倍）
-DOUBAO_VISION_MODEL_ID = _normalize_ark_model_id(os.getenv("DOUBAO_VISION_MODEL_ID", "doubao-seed-2-0-lite-260428"))
+# 视觉模型专用（Seed 2.0 Lite 不支持图片输入！回退到 ARK_MODEL_ID）
+DOUBAO_VISION_MODEL_ID = _normalize_ark_model_id(os.getenv("DOUBAO_VISION_MODEL_ID", ARK_MODEL_ID))
 
 # 服务端口
 PORT = int(os.getenv("PORT", "8000"))

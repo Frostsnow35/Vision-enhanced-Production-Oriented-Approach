@@ -23,7 +23,7 @@ logger = logging.getLogger("ai_service")
 
 CHAT_URL = f"{DOUBAO_BASE_URL}/chat/completions"
 _TIMEOUT = 120  # 文本模型默认超时
-_VISION_TIMEOUT = 180  # 视觉模型超时（跨太平洋 US→北京，base64 传输耗时）
+_VISION_TIMEOUT = 240  # 视觉模型超时（豆包 1.5 Vision Pro 实测 60~180s，留缓冲）
 _RETRY_COUNT = 2  # 指数退避重试次数（默认，视觉调用可覆盖为更少）
 _RETRY_BACKOFF = 2.0  # 首次退避秒数
 _MAX_TOKENS = 1000
@@ -325,7 +325,7 @@ def analyze_scenario(image_path: str) -> Dict[str, Any]:
         raw = _call_doubao([{"role": "user", "content": [
             {"type": "text", "text": _SCENE_PROMPT},
             {"type": "image_url", "image_url": {"url": data_url}},
-        ]}], model=DOUBAO_VISION_MODEL_ID, timeout=_VISION_TIMEOUT, max_tokens=500, max_retries=0)
+        ]}], model=ARK_MODEL_ID, timeout=_VISION_TIMEOUT, max_tokens=500, max_retries=1)
     except Exception as e:
         raise RuntimeError(f"视觉模型调用失败: API请求失败 {e}")
 
