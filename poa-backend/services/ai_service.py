@@ -25,7 +25,7 @@ logger = logging.getLogger("ai_service")
 
 CHAT_URL = f"{DOUBAO_BASE_URL}/chat/completions"
 _TIMEOUT = 120  # 文本模型默认超时
-_VISION_TIMEOUT = 420  # 视觉模型超时（doubao-1.5-vision-pro-32k 首 token 60~120s，总耗时可达 5~7min）
+_VISION_TIMEOUT = 240  # 视觉模型超时（Seed 2.0 Lite 首 token <60s，240s 充裕）
 _RETRY_COUNT = 2  # 指数退避重试次数（默认，视觉调用可覆盖为更少）
 _RETRY_BACKOFF = 2.0  # 首次退避秒数
 _MAX_TOKENS = 1000
