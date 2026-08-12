@@ -658,7 +658,7 @@ export default function Attempt1Page() {
           : newHistory;
         console.info("[attempt1] Plan A 触发：自动调用 chatTurn 让 AI 收尾");
         try {
-          const wrapUpUserText = "[system: conversation limit reached] " + WRAP_UP_HINT;
+          const wrapUpUserText = (browserTextRef.current || "") + " " + WRAP_UP_HINT;
           const data = await chatTurn(
             wrapUpUserText,
             historyForPlanA,
