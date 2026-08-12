@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { Upload } from "lucide-react";
-import { uploadImage, type ScenarioResult, BASE_URL, buildImageUrl } from "@/lib/api";
+import { uploadImage, type ScenarioResult, buildImageUrl, analyzeScenario, pollScenarioStatus } from "@/lib/api";
 import { usePOA, getScenarioHistory, addScenarioToHistory, removeScenarioFromHistory, selectScenario, createScenarioFromResult, type ScenarioHistoryItem } from "@/lib/store";
 
 /* ============================================================
@@ -123,6 +123,46 @@ export default function ScenarioPage() {
   function onFileInputChange(e: React.ChangeEvent<HTMLInputElement>) { const f = e.target.files?.[0]; if (f) handleFile(f); }
   function removeUpload() { if (previewUrl) URL.revokeObjectURL(previewUrl); setUploadedFile(null); setPreviewUrl(null); setUploadError(""); }
 
+  // ---- 轮询等待分析完成（每次请求短连接，适配移动端） ----
+  async function waitForAnalysis(taskId: string): Promise<ScenarioResult> {
+    const maxPolls = 100; // 100 * 3s = 300s max
+    for (let i = 0; i < maxPolls; i++) {
+      await new Promise(r => setTimeout(r, 3000));
+      const status = await pollScenarioStatus(taskId);
+      if (status.status === "completed" && status.result) {
+        return status.result;
+      }
+      if (status.status === "failed") {
+        throw new Error(status.error || t("scenario.analyze_failed", { error: t("common.error_unknown") }));
+      }
+      if (status.status === "not_found") {
+        throw new Error(t("common.server_error"));
+      }
+    }
+    throw new Error(t("scenario.timeout"));
+  }
+
+  // ---- 处理分析结果的公共逻辑 ----
+  function handleAnalysisResult(result: ScenarioResult, imageUrl: string) {
+    ["diagnosis", "diagnosis2", "conversationText", "conversationText2", "facilitate_progress"].forEach(k => localStorage.removeItem(k));
+    const currentTask = {
+      scene_label: result.scene_label,
+      roles: result.roles,
+      goal: result.goal,
+      evaluation_criteria: result.evaluation_criteria,
+      variant_plot: result.variant_plot,
+      opening_line: result.opening_line || "",
+      closing_line: result.closing_line || "",
+    };
+    localStorage.setItem("currentTask", JSON.stringify(currentTask));
+    const historyItem = createScenarioFromResult(result, imageUrl);
+    addScenarioToHistory(historyItem);
+    selectScenario(historyItem.id);
+    setScenarioResult(result);
+    addToast(t("scenario.analysis_done"), "success");
+    setTimeout(() => router.push("/task"), 600);
+  }
+
   // ---- 生成交际任务 ----
   async function handleGenerate() {
     if (submitting) return;
@@ -130,38 +170,9 @@ export default function ScenarioPage() {
     setSubmitting(true);
     try {
       const { image_url } = await uploadImage(uploadedFile);
-      const res = await fetch(`${BASE_URL}/api/scenario/analyze`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image_path: image_url }),
-        signal: AbortSignal.timeout(300000),
-      });
-      if (!res.ok) {
-        let msg = `${t("common.server_error")} (${res.status})`;
-        try { const errBody = await res.json(); if (errBody?.message) msg = errBody.message; } catch {}
-        throw new Error(msg);
-      }
-      const result: ScenarioResult = await res.json();
-      // 清空旧数据
-      ["diagnosis", "diagnosis2", "conversationText", "conversationText2", "facilitate_progress"].forEach(k => localStorage.removeItem(k));
-      // 将 opening_line/closing_line 合并到 currentTask 并存储
-      const currentTask = {
-        scene_label: result.scene_label,
-        roles: result.roles,
-        goal: result.goal,
-        evaluation_criteria: result.evaluation_criteria,
-        variant_plot: result.variant_plot,
-        opening_line: result.opening_line || "",
-        closing_line: result.closing_line || "",
-      };
-      localStorage.setItem("currentTask", JSON.stringify(currentTask));
-      // 添加到历史
-      const historyItem = createScenarioFromResult(result, image_url);
-      addScenarioToHistory(historyItem);
-      selectScenario(historyItem.id);
-      setScenarioResult(result);
-      addToast(t("scenario.analysis_done"), "success");
-      setTimeout(() => router.push("/task"), 600);
+      const { task_id } = await analyzeScenario(image_url);
+      const result = await waitForAnalysis(task_id);
+      handleAnalysisResult(result, image_url);
     } catch (err: any) {
       if (err.name === "TimeoutError" || err.name === "AbortError") {
         addToast(t("scenario.timeout"), "error");
@@ -195,37 +206,10 @@ export default function ScenarioPage() {
     if (submitting) return;
     setSubmitting(true);
     try {
-      ["diagnosis", "diagnosis2", "conversationText", "conversationText2", "facilitate_progress"].forEach(k => localStorage.removeItem(k));
-      const res = await fetch(`${BASE_URL}/api/scenario/analyze`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image_path: item.imageUrl }),
-        signal: AbortSignal.timeout(300000),
-      });
-      if (!res.ok) {
-        let msg = `${t("common.server_error")} (${res.status})`;
-        try { const errBody = await res.json(); if (errBody?.message) msg = errBody.message; } catch {}
-        throw new Error(msg);
-      }
-      const result: ScenarioResult = await res.json();
-      // 将 opening_line/closing_line 合并到 currentTask 并存储
-      const currentTask2 = {
-        scene_label: result.scene_label,
-        roles: result.roles,
-        goal: result.goal,
-        evaluation_criteria: result.evaluation_criteria,
-        variant_plot: result.variant_plot,
-        opening_line: result.opening_line || "",
-        closing_line: result.closing_line || "",
-      };
-      localStorage.setItem("currentTask", JSON.stringify(currentTask2));
-      const historyItem = createScenarioFromResult(result, item.imageUrl);
-      addScenarioToHistory(historyItem);
-      selectScenario(historyItem.id);
-      setScenarioResult(result);
+      const { task_id } = await analyzeScenario(item.imageUrl);
+      const result = await waitForAnalysis(task_id);
+      handleAnalysisResult(result, item.imageUrl);
       refreshHistory();
-      addToast(t("scenario.analysis_done"), "success");
-      setTimeout(() => router.push("/task"), 600);
     } catch (err: any) {
       if (err.name === "TimeoutError" || err.name === "AbortError") {
         addToast(t("scenario.timeout"), "error");

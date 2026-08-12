@@ -60,8 +60,20 @@ export interface ScenarioResult {
   closing_line?: string;
 }
 
-export async function analyzeScenario(image_path: string): Promise<ScenarioResult> {
-  return request<ScenarioResult>("/api/scenario/analyze", { image_path });
+export async function analyzeScenario(image_path: string): Promise<{ task_id: string; status: string }> {
+  return request<{ task_id: string; status: string }>("/api/scenario/analyze", { image_path });
+}
+
+export interface AnalyzeStatusResponse {
+  status: "processing" | "completed" | "failed" | "not_found";
+  result?: ScenarioResult;
+  error?: string;
+}
+
+export async function pollScenarioStatus(task_id: string): Promise<AnalyzeStatusResponse> {
+  const res = await fetch(`${BASE_URL}/api/scenario/status/${task_id}`);
+  if (!res.ok) throw new Error(`Poll failed: ${res.status}`);
+  return res.json();
 }
 
 // ---- 上传图片 ----
