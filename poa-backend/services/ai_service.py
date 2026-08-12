@@ -264,6 +264,8 @@ _TIMESTAMP_DATE_RE = _re.compile(r'\b\d{2,4}[-/]\d{1,2}[-/]\d{1,2}\b')
 _TIMESTAMP_TIME_RE = _re.compile(r'\b\d{1,2}:\d{2}(?::\d{2})?(?:\s*[APap][Mm])?\b')
 # 纯数字串（5位及以上连续数字）
 _PURE_NUMBER_RE = _re.compile(r'\b\d{5,}\b')
+# 中文字符（对话内容 opening_line / closing_line 必须为英文，含中文则视为非法）
+_CJK_RE = _re.compile(r'[\u4e00-\u9fff]')
 
 
 def _sanitize_opening_line(raw: str, closing_line: str = "") -> str:
@@ -279,6 +281,9 @@ def _sanitize_opening_line(raw: str, closing_line: str = "") -> str:
         return ""
     text = raw.strip()
     if not text:
+        return ""
+    # 0. 含中文字符 → 返回 ""（对话内容必须英文，前端降级到 generate_opening）
+    if _CJK_RE.search(text):
         return ""
     # 1. 数字串 + dash 组合
     if _DIGIT_DASH_RE.match(text):
@@ -321,6 +326,9 @@ def _sanitize_closing_line(raw: str) -> str:
         return ""
     text = raw.strip()
     if not text:
+        return ""
+    # 0. 含中文字符 → 返回 ""（对话内容必须英文）
+    if _CJK_RE.search(text):
         return ""
     if _DIGIT_DASH_RE.match(text):
         return ""
@@ -407,11 +415,11 @@ _SCENE_PROMPT = """根据照片内容，直接输出以下JSON（只输出JSON�
     "evaluation_criteria": ["维度1如'请求句式多样性'", "维度2如'信息确认的准确性'", "维度3如'回应的恰当性'"]
   },
   "variant_plot": "同场景同角色的新情节（仅改一个交际维度，如点单→纠正订单）",
-  "opening_line": "B的开场白（含场景专有词+?结尾问句引导）",
-  "closing_line": "B的场景化告别（≤30词）"
+  "opening_line": "B的开场白（必须用英文，含场景专有词+?结尾问句引导）",
+  "closing_line": "B的场景化告别（必须用英文，≤30词）"
 }
 
-规则: A必须是无专业背景的普通人，B是专业服务方。evaluation_criteria从A角度出发，禁用'准确性''流利度'等通用标签。禁用泛化开场白/告别。"""
+规则: A必须是无专业背景的普通人，B是专业服务方。evaluation_criteria从A角度出发，禁用'准确性''流利度'等通用标签。禁用泛化开场白/告别。opening_line和closing_line必须使用英文对话内容，不得输出中文。"""
 
 _DIAGNOSIS_PROMPT = """你是英语口语诊断专家。找出学生对话中的 Top 3 不足，返回 JSON:
 {"gaps":[{"label":"不足分类","evidence_sentence":"原文证据","explanation":"为什么需要改进及正确建议"}]}"""
@@ -549,6 +557,11 @@ def get_or_analyze_scenario(image_path: str, db: Session) -> Dict[str, Any]:
                     "context_constraints": t.context_constraints or "", "evaluation_criteria": t.evaluation_criteria or "",
                     "variant_plot": t.variant_plot or "",
                     "opening_line": t.opening_line or "", "closing_line": t.closing_line or ""}
+            # 清洗历史缓存中的中文开场白/告别（对话内容必须英文，命中旧脏数据时降级到 generate_opening）
+            if result["opening_line"] and _CJK_RE.search(result["opening_line"]):
+                result["opening_line"] = ""
+            if result["closing_line"] and _CJK_RE.search(result["closing_line"]):
+                result["closing_line"] = ""
             # 合并 DB 中存储的英译文
             st = ex.translations or {}
             pt = t.translations or {}
