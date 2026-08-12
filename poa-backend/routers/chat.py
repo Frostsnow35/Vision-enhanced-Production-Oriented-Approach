@@ -447,6 +447,7 @@ async def chat_turn(req: ChatTurnRequest):
         )
 
     # TTS 与实时短反馈并行执行
+    # TTS 必须等（用户需要听到语音），反馈给 3s 超时（宁缺毋滥，不能阻塞响应）
     turn_feedback: dict = {}
     ai_audio_url = ""
     try:
@@ -455,7 +456,10 @@ async def chat_turn(req: ChatTurnRequest):
             tts_future = pool.submit(lambda: text_to_speech(ai_text) if ai_text else "")
             fb_future = pool.submit(_generate_turn_feedback, user_text, ai_text, task_context)
             ai_audio_url = tts_future.result()
-            turn_feedback = fb_future.result()
+            try:
+                turn_feedback = fb_future.result(timeout=3.0)
+            except Exception:
+                pass  # 反馈超时或失败不阻塞响应
     except Exception as e:
         logger.warning(f"[chat/turn] TTS/反馈并行执行异常: {e}")
 
