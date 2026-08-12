@@ -13,7 +13,6 @@ import socket
 from typing import Any, Dict, List
 
 import requests
-from requests.adapters import HTTPAdapter
 import httpx
 from sqlalchemy.orm import Session
 
@@ -31,42 +30,45 @@ _RETRY_BACKOFF = 2.0  # 首次退避秒数
 _MAX_TOKENS = 1000
 
 # ============================================================
-# TCP Keepalive 适配器（防止跨太平洋长连接被中间网络设备断开）
+# TCP Keepalive —— 全局 monkey-patch socket.create_connection
+# 确保每个 TCP 连接都设置 keepalive（30s 空闲即探测），
+# 防止跨太平洋连接在 VLM 推理期间（60~120s 无数据）被中间网络设备断开。
 # ============================================================
+_orig_create_conn = socket.create_connection
 
-class _KeepAliveHTTPAdapter(HTTPAdapter):
-    """TCP keepalive HTTPAdapter —— 防跨太平洋空闲断连。
+def _patched_create_conn(address, timeout=None, source_address=None, **kwargs):
+    sock = _orig_create_conn(address, timeout=timeout, source_address=source_address, **kwargs)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+    # Linux: TCP_KEEPIDLE; macOS: TCP_KEEPALIVE
+    for name in ("TCP_KEEPIDLE", "TCP_KEEPALIVE"):
+        if hasattr(socket, name):
+            try:
+                sock.setsockopt(socket.IPPROTO_TCP, getattr(socket, name), 30)
+            except OSError:
+                pass
+            break
+    if hasattr(socket, "TCP_KEEPINTVL"):
+        try:
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 10)
+        except OSError:
+            pass
+    if hasattr(socket, "TCP_KEEPCNT"):
+        try:
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 3)
+        except OSError:
+            pass
+    return sock
 
-    VLM 推理期间（doubao-1.5-vision-pro-32k 首 token 需 60~120s），
-    连接长时间无数据，中间防火墙/NAT 判定空闲并断开。
-    TCP keepalive: 60s 空闲后发探测包 → 15s 间隔 × 5 次 → 告知设备连接存活。
-    """
-    def init_poolmanager(self, *args, **kwargs):
-        opts = [(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)]
-        # Linux: TCP_KEEPIDLE; macOS: TCP_KEEPALIVE（语义相同，值不同）
-        for name in ("TCP_KEEPIDLE", "TCP_KEEPALIVE"):
-            if hasattr(socket, name):
-                opts.append((socket.IPPROTO_TCP, getattr(socket, name), 60))
-                break
-        if hasattr(socket, "TCP_KEEPINTVL"):
-            opts.append((socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 15))
-        if hasattr(socket, "TCP_KEEPCNT"):
-            opts.append((socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 5))
-        kwargs.setdefault("socket_options", opts)
-        super().init_poolmanager(*args, **kwargs)
+socket.create_connection = _patched_create_conn
+logger.info("[LLM] TCP keepalive 全局 monkey-patch 已激活 (idle=30s, intvl=10s, cnt=3)")
 
-
+# ---- requests Session（连接池复用）----
 _doubao_session: requests.Session | None = None
 
 def _get_doubao_session() -> requests.Session:
-    """返回带 TCP keepalive 的 requests.Session（单例）。"""
     global _doubao_session
     if _doubao_session is None:
         _doubao_session = requests.Session()
-        adapter = _KeepAliveHTTPAdapter()
-        _doubao_session.mount("https://", adapter)
-        _doubao_session.mount("http://", adapter)
-        logger.info("[LLM] TCP keepalive session 已初始化")
     return _doubao_session
 
 
