@@ -322,7 +322,7 @@ def analyze_scenario(image_path: str) -> Dict[str, Any]:
             raw = _call_doubao([{"role": "user", "content": [
                 {"type": "text", "text": _SCENE_PROMPT},
                 {"type": "image_url", "image_url": {"url": image_url}},
-            ]}], model=DOUBAO_VISION_MODEL_ID, timeout=_VISION_TIMEOUT, max_tokens=500, max_retries=0)
+            ]}], model=ARK_MODEL_ID, timeout=_VISION_TIMEOUT, max_tokens=500, max_retries=0)
             logger.info(f"[analyze_scenario] URL 模式成功 url={image_url[:80]}...")
         except Exception as e:
             logger.warning(f"[analyze_scenario] URL 模式失败: {e}，降级 base64")
@@ -342,7 +342,7 @@ def analyze_scenario(image_path: str) -> Dict[str, Any]:
             raw = _call_doubao([{"role": "user", "content": [
                 {"type": "text", "text": _SCENE_PROMPT},
                 {"type": "image_url", "image_url": {"url": data_url}},
-            ]}], model=DOUBAO_VISION_MODEL_ID, timeout=_VISION_TIMEOUT, max_tokens=500, max_retries=0)
+            ]}], model=ARK_MODEL_ID, timeout=_VISION_TIMEOUT, max_tokens=500, max_retries=0)
         except Exception as e:
             raise RuntimeError(f"视觉模型调用失败: API请求失败 {e}")
 
