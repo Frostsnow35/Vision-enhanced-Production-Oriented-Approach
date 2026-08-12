@@ -12,7 +12,6 @@ import base64
 import socket
 from typing import Any, Dict, List
 
-import requests
 import httpx
 from sqlalchemy.orm import Session
 
@@ -62,14 +61,18 @@ def _patched_create_conn(address, timeout=None, source_address=None, **kwargs):
 socket.create_connection = _patched_create_conn
 logger.info("[LLM] TCP keepalive 全局 monkey-patch 已激活 (idle=30s, intvl=10s, cnt=3)")
 
-# ---- requests Session（连接池复用）----
-_doubao_session: requests.Session | None = None
+# ---- httpx HTTP/2 Client（协议级 PING 帧 + TCP keepalive 双重保活）----
+_httpx_client: httpx.Client | None = None
 
-def _get_doubao_session() -> requests.Session:
-    global _doubao_session
-    if _doubao_session is None:
-        _doubao_session = requests.Session()
-    return _doubao_session
+def _get_client() -> httpx.Client:
+    global _httpx_client
+    if _httpx_client is None:
+        _httpx_client = httpx.Client(
+            http2=True,
+            timeout=httpx.Timeout(connect=15.0, read=420.0, write=60.0, pool=10.0),
+        )
+        logger.info("[LLM] httpx HTTP/2 client 已初始化 (h2 PING 帧 + TCP keepalive 双重保活)")
+    return _httpx_client
 
 
 # ============================================================
@@ -77,42 +80,61 @@ def _get_doubao_session() -> requests.Session:
 # ============================================================
 def _call_doubao(messages: List[Dict[str, Any]], max_tokens: int = _MAX_TOKENS, model: str = "",
                  timeout: float = _TIMEOUT, max_retries: int | None = None) -> str:
-    """调用豆包 API（非流式 + TCP keepalive），返回 content。失败抛 RuntimeError。"""
+    """调用豆包 API（HTTP/2 + SSE 流式 + TCP keepalive 三重保活），返回 content。失败抛 RuntimeError。"""
     body = {
         "model": model or DOUBAO_MODEL_ID,
         "messages": messages,
         "max_tokens": max_tokens,
-        "stream": False,
+        "stream": True,
     }
     headers = {"Authorization": f"Bearer {DOUBAO_API_KEY}", "Content-Type": "application/json"}
 
     retries = _RETRY_COUNT if max_retries is None else max_retries
-    session = _get_doubao_session()
+    client = _get_client()
+    req_timeout = httpx.Timeout(connect=15.0, read=timeout, write=60.0, pool=10.0)
 
     last_error = ""
     for attempt in range(1 + retries):
         t0 = time.time()
         try:
-            resp = session.post(CHAT_URL, headers=headers, json=body,
-                               timeout=(15.0, timeout))  # connect=15s, read=timeout
-            status = resp.status_code
-            elapsed = time.time() - t0
+            full_content = ""
+            full_reasoning = ""
+            with client.stream("POST", CHAT_URL, headers=headers, json=body, timeout=req_timeout) as resp:
+                http_proto = resp.http_version
+                status = resp.status_code
+                if status != 200:
+                    text = resp.read().decode(errors="replace")[:300]
+                    elapsed = time.time() - t0
+                    if status in (429, 500, 502, 503, 504):
+                        last_error = f"HTTP {status}: {text}"
+                        logger.warning(f"  [LLM] attempt {attempt+1}/{1+retries} {last_error} ({elapsed:.1f}s)")
+                        if attempt < retries:
+                            wait = _RETRY_BACKOFF * (2 ** attempt)
+                            logger.info(f"  [LLM] 等待 {wait:.0f}s 后重试...")
+                            time.sleep(wait)
+                            continue
+                    resp.raise_for_status()
 
-            if status != 200:
-                text = resp.text[:300]
-                if status in (429, 500, 502, 503, 504):
-                    last_error = f"HTTP {status}: {text}"
-                    logger.warning(f"  [LLM] attempt {attempt+1}/{1+retries} {last_error} ({elapsed:.1f}s)")
-                    if attempt < retries:
-                        wait = _RETRY_BACKOFF * (2 ** attempt)
-                        logger.info(f"  [LLM] 等待 {wait:.0f}s 后重试...")
-                        time.sleep(wait)
+                for line in resp.iter_lines():
+                    if not line or not line.startswith("data: "):
                         continue
-                resp.raise_for_status()
+                    data_str = line[6:]
+                    if data_str == "[DONE]":
+                        break
+                    try:
+                        data = json.loads(data_str)
+                        choices = data.get("choices", [])
+                        if choices:
+                            delta = choices[0].get("delta", {})
+                            full_content += delta.get("content", "") or ""
+                            reasoning_delta = delta.get("reasoning_content", "") or ""
+                            full_reasoning += reasoning_delta
+                    except json.JSONDecodeError:
+                        continue
 
-            data = resp.json()
-            content = data["choices"][0]["message"]["content"].strip()
-            reasoning = data["choices"][0]["message"].get("reasoning_content", "").strip()
+            elapsed = time.time() - t0
+            content = full_content.strip()
+            reasoning = full_reasoning.strip()
 
             # 修复 thinking 模型输出的 content 为残片（如仅 "}"）的问题
             if len(content) < 20 and reasoning and len(reasoning) > len(content):
@@ -128,10 +150,10 @@ def _call_doubao(messages: List[Dict[str, Any]], max_tokens: int = _MAX_TOKENS, 
 
             import re as _re
             content = _re.sub(r'</?think[^>]*>', '', content)
-            logger.info(f"  [LLM] {status} {elapsed:.1f}s model={body['model'][:30]} len={len(content)}")
+            logger.info(f"  [LLM] {status} {elapsed:.1f}s model={body['model'][:30]} len={len(content)} proto={http_proto}")
             return content
 
-        except requests.exceptions.Timeout as e:
+        except httpx.TimeoutException as e:
             elapsed = time.time() - t0
             last_error = str(e)
             logger.warning(f"  [LLM] attempt {attempt+1}/{1+retries} Timeout ({elapsed:.1f}s): {last_error}")
@@ -142,7 +164,7 @@ def _call_doubao(messages: List[Dict[str, Any]], max_tokens: int = _MAX_TOKENS, 
                 continue
             raise RuntimeError(f"API 调用超时（已重试{retries}次）: {last_error}")
 
-        except requests.exceptions.RequestException as e:
+        except httpx.HTTPError as e:
             elapsed = time.time() - t0
             last_error = str(e)[:200]
             logger.warning(f"  [LLM] attempt {attempt+1}/{1+retries} error ({elapsed:.1f}s): {last_error}")
