@@ -8,19 +8,31 @@ const LOCAL_BACKEND = "http://localhost:8000";
 export const BASE_URL = process.env.NEXT_PUBLIC_API_BASE ??
   (process.env.NODE_ENV === "production" ? PRODUCTION_BACKEND : LOCAL_BACKEND);
 
+const DEFAULT_TIMEOUT = 60000; // 60s，LLM 调用默认超时（文本模型通常 30-60s）
+
 /**
- * 通用 POST 请求封装（JSON 请求体 → JSON 响应）
+ * 通用 POST 请求封装（JSON 请求体 → JSON 响应），带超时。
  */
-async function request<T>(path: string, body: Record<string, unknown>): Promise<T> {
+async function request<T>(path: string, body: Record<string, unknown>, timeoutMs = DEFAULT_TIMEOUT): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   if (!res.ok) {
     const errText = await res.text().catch(() => "Unknown error");
     throw new Error(`API error ${res.status}: ${errText}`);
   }
+  return res.json();
+}
+
+/**
+ * fetchWithTimeout —— 通用 GET 请求，带超时。
+ */
+async function fetchWithTimeout<T>(url: string, timeoutMs = 15000): Promise<T> {
+  const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+  if (!res.ok) throw new Error(`Request failed: ${res.status}`);
   return res.json();
 }
 
@@ -60,8 +72,29 @@ export interface ScenarioResult {
   closing_line?: string;
 }
 
-export async function analyzeScenario(image_path: string): Promise<{ task_id: string; status: string }> {
-  return request<{ task_id: string; status: string }>("/api/scenario/analyze", { image_path });
+/**
+ * 触发场景分析。
+ * - 新版后端（异步）：返回 {task_id: string, status: "processing"}
+ * - 旧版后端（同步）：直接返回 ScenarioResult
+ * 自动兼容两种模式。
+ */
+export async function analyzeScenario(image_path: string): Promise<
+  | { mode: "async"; task_id: string }
+  | { mode: "sync"; result: ScenarioResult }
+> {
+  const data = await request<any>("/api/scenario/analyze", { image_path }, 30000);
+
+  // 新版异步响应：{task_id: "uuid", status: "processing"}
+  if (typeof data.task_id === "string" && data.status === "processing") {
+    return { mode: "async", task_id: data.task_id };
+  }
+
+  // 旧版同步响应：{scene_label, roles, goal, ...}
+  if (data.scene_label) {
+    return { mode: "sync", result: data as ScenarioResult };
+  }
+
+  throw new Error("Unknown response format from /api/scenario/analyze");
 }
 
 export interface AnalyzeStatusResponse {
@@ -70,10 +103,29 @@ export interface AnalyzeStatusResponse {
   error?: string;
 }
 
+/**
+ * 轮询场景分析状态（带超时和重试，适配移动端弱网）。
+ */
 export async function pollScenarioStatus(task_id: string): Promise<AnalyzeStatusResponse> {
-  const res = await fetch(`${BASE_URL}/api/scenario/status/${task_id}`);
-  if (!res.ok) throw new Error(`Poll failed: ${res.status}`);
-  return res.json();
+  const maxRetries = 3;
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const data = await fetchWithTimeout<AnalyzeStatusResponse>(
+        `${BASE_URL}/api/scenario/status/${task_id}`,
+        10000, // 单次轮询 10s 超时
+      );
+      return data;
+    } catch (err: any) {
+      lastError = err;
+      if (attempt < maxRetries - 1) {
+        // 等待后重试
+        await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+      }
+    }
+  }
+  throw lastError || new Error("Poll failed after retries");
 }
 
 // ---- 上传图片 ----

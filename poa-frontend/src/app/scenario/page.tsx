@@ -75,10 +75,10 @@ export default function ScenarioPage() {
 
   // ---- 图片压缩（Canvas API，上传前缩放以减少 VLM 推理时间）----
   async function compressImage(file: File): Promise<File> {
-    const MAX_DIM = 800;
-    const QUALITY = 0.6;
+    const MAX_DIM = 640; // 640px 足够 VLM 场景识别，大幅减少上传体积和传输时间
+    const QUALITY = 0.5;
     // 小文件不压缩（中国大陆到 Railway 美国跨国传输，减小体积是关键）
-    if (file.size < 150 * 1024) return file;
+    if (file.size < 80 * 1024) return file;
 
     return new Promise((resolve) => {
       const img = new Image();
@@ -123,20 +123,32 @@ export default function ScenarioPage() {
   function onFileInputChange(e: React.ChangeEvent<HTMLInputElement>) { const f = e.target.files?.[0]; if (f) handleFile(f); }
   function removeUpload() { if (previewUrl) URL.revokeObjectURL(previewUrl); setUploadedFile(null); setPreviewUrl(null); setUploadError(""); }
 
-  // ---- 轮询等待分析完成（每次请求短连接，适配移动端） ----
+  // ---- 轮询等待分析完成（每次请求短连接 + 重试，适配移动端） ----
   async function waitForAnalysis(taskId: string): Promise<ScenarioResult> {
-    const maxPolls = 100; // 100 * 3s = 300s max
+    const maxPolls = 90; // 90 * 2s = 180s max
+    let consecutiveErrors = 0;
     for (let i = 0; i < maxPolls; i++) {
-      await new Promise(r => setTimeout(r, 3000));
-      const status = await pollScenarioStatus(taskId);
-      if (status.status === "completed" && status.result) {
-        return status.result;
-      }
-      if (status.status === "failed") {
-        throw new Error(status.error || t("scenario.analyze_failed", { error: t("common.error_unknown") }));
-      }
-      if (status.status === "not_found") {
-        throw new Error(t("common.server_error"));
+      await new Promise(r => setTimeout(r, 2000));
+      try {
+        const status = await pollScenarioStatus(taskId);
+        consecutiveErrors = 0;
+        if (status.status === "completed" && status.result) {
+          return status.result;
+        }
+        if (status.status === "failed") {
+          throw new Error(status.error || t("scenario.analyze_failed", { error: t("common.error_unknown") }));
+        }
+        if (status.status === "not_found") {
+          throw new Error(t("common.server_error"));
+        }
+      } catch (err: any) {
+        consecutiveErrors++;
+        if (consecutiveErrors >= 5) {
+          // 连续 5 次轮询失败（10s+），判定网络不可用
+          throw new Error(t("scenario.timeout"));
+        }
+        // 单次失败继续重试
+        console.warn(`[poll] attempt ${i + 1} failed, consecutive errors: ${consecutiveErrors}`, err.message);
       }
     }
     throw new Error(t("scenario.timeout"));
@@ -170,8 +182,17 @@ export default function ScenarioPage() {
     setSubmitting(true);
     try {
       const { image_url } = await uploadImage(uploadedFile);
-      const { task_id } = await analyzeScenario(image_url);
-      const result = await waitForAnalysis(task_id);
+      const response = await analyzeScenario(image_url);
+
+      let result: ScenarioResult;
+      if (response.mode === "sync") {
+        // 旧版后端（同步）：直接使用返回的完整结果
+        result = response.result;
+      } else {
+        // 新版后端（异步）：轮询等待
+        result = await waitForAnalysis(response.task_id);
+      }
+
       handleAnalysisResult(result, image_url);
     } catch (err: any) {
       if (err.name === "TimeoutError" || err.name === "AbortError") {
@@ -206,8 +227,15 @@ export default function ScenarioPage() {
     if (submitting) return;
     setSubmitting(true);
     try {
-      const { task_id } = await analyzeScenario(item.imageUrl);
-      const result = await waitForAnalysis(task_id);
+      const response = await analyzeScenario(item.imageUrl);
+
+      let result: ScenarioResult;
+      if (response.mode === "sync") {
+        result = response.result;
+      } else {
+        result = await waitForAnalysis(response.task_id);
+      }
+
       handleAnalysisResult(result, item.imageUrl);
       refreshHistory();
     } catch (err: any) {
