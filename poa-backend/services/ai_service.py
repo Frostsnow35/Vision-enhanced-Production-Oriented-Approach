@@ -15,7 +15,7 @@ from typing import Any, Dict, List
 import httpx
 from sqlalchemy.orm import Session
 
-from config import DOUBAO_API_KEY, DOUBAO_BASE_URL, DOUBAO_MODEL_ID, DOUBAO_VISION_MODEL_ID
+from config import DOUBAO_API_KEY, DOUBAO_BASE_URL, ARK_MODEL_ID, DOUBAO_MODEL_ID, DOUBAO_VISION_MODEL_ID
 from models import Scenario, POATask
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s", datefmt="%H:%M:%S")
@@ -61,46 +61,37 @@ def _patched_create_conn(address, timeout=None, source_address=None, **kwargs):
 socket.create_connection = _patched_create_conn
 logger.info("[LLM] TCP keepalive 全局 monkey-patch 已激活 (idle=30s, intvl=10s, cnt=3)")
 
-# ---- httpx HTTP/2 Client（协议级 PING 帧 + TCP keepalive 双重保活）----
-_httpx_client: httpx.Client | None = None
-
-def _get_client() -> httpx.Client:
-    global _httpx_client
-    if _httpx_client is None:
-        _httpx_client = httpx.Client(
-            http2=True,
-            timeout=httpx.Timeout(connect=15.0, read=420.0, write=60.0, pool=10.0),
-        )
-        logger.info("[LLM] httpx HTTP/2 client 已初始化 (h2 PING 帧 + TCP keepalive 双重保活)")
-    return _httpx_client
-
 
 # ============================================================
 # 通用 LLM 调用
 # ============================================================
 def _call_doubao(messages: List[Dict[str, Any]], max_tokens: int = _MAX_TOKENS, model: str = "",
                  timeout: float = _TIMEOUT, max_retries: int | None = None) -> str:
-    """调用豆包 API（HTTP/2 + SSE 流式 + TCP keepalive 三重保活），返回 content。失败抛 RuntimeError。"""
+    """调用豆包 API，返回 content。model 为空时使用默认模型。失败抛 RuntimeError。
+    
+    视觉/耗时调用使用 stream=True 以保持 TCP 连接活跃（防跨太平洋空闲断连）。
+    """
     body = {
         "model": model or DOUBAO_MODEL_ID,
         "messages": messages,
         "max_tokens": max_tokens,
-        "stream": True,
+        "stream": True,  # 流式响应：即使 VLM 推理期间无输出，连接也不会因空闲被杀
     }
     headers = {"Authorization": f"Bearer {DOUBAO_API_KEY}", "Content-Type": "application/json"}
 
     retries = _RETRY_COUNT if max_retries is None else max_retries
-    client = _get_client()
-    req_timeout = httpx.Timeout(connect=15.0, read=timeout, write=60.0, pool=10.0)
 
     last_error = ""
     for attempt in range(1 + retries):
         t0 = time.time()
         try:
+            # httpx.stream 返回的 response 需手动读取所有 chunk 并拼接
             full_content = ""
             full_reasoning = ""
-            with client.stream("POST", CHAT_URL, headers=headers, json=body, timeout=req_timeout) as resp:
-                http_proto = resp.http_version
+            with httpx.stream(
+                "POST", CHAT_URL, headers=headers, json=body,
+                timeout=httpx.Timeout(connect=15.0, read=timeout, write=60.0, pool=10.0),
+            ) as resp:
                 status = resp.status_code
                 if status != 200:
                     text = resp.read().decode(errors="replace")[:300]
@@ -115,10 +106,11 @@ def _call_doubao(messages: List[Dict[str, Any]], max_tokens: int = _MAX_TOKENS, 
                             continue
                     resp.raise_for_status()
 
+                # 逐行读取 SSE 流，拼接 content
                 for line in resp.iter_lines():
                     if not line or not line.startswith("data: "):
                         continue
-                    data_str = line[6:]
+                    data_str = line[6:]  # 去掉 "data: " 前缀
                     if data_str == "[DONE]":
                         break
                     try:
@@ -133,6 +125,7 @@ def _call_doubao(messages: List[Dict[str, Any]], max_tokens: int = _MAX_TOKENS, 
                         continue
 
             elapsed = time.time() - t0
+
             content = full_content.strip()
             reasoning = full_reasoning.strip()
 
@@ -150,13 +143,13 @@ def _call_doubao(messages: List[Dict[str, Any]], max_tokens: int = _MAX_TOKENS, 
 
             import re as _re
             content = _re.sub(r'</?think[^>]*>', '', content)
-            logger.info(f"  [LLM] {status} {elapsed:.1f}s model={body['model'][:30]} len={len(content)} proto={http_proto}")
+            logger.info(f"  [LLM] {status} {elapsed:.1f}s model={body['model'][:30]} len={len(content)}")
             return content
 
         except httpx.TimeoutException as e:
             elapsed = time.time() - t0
             last_error = str(e)
-            logger.warning(f"  [LLM] attempt {attempt+1}/{1+retries} Timeout ({elapsed:.1f}s): {last_error}")
+            logger.warning(f"  [LLM] attempt {attempt+1}/{1+retries} httpx.Timeout ({elapsed:.1f}s): {last_error}")
             if attempt < retries:
                 wait = _RETRY_BACKOFF * (2 ** attempt)
                 logger.info(f"  [LLM] 等待 {wait:.0f}s 后重试...")
@@ -167,7 +160,7 @@ def _call_doubao(messages: List[Dict[str, Any]], max_tokens: int = _MAX_TOKENS, 
         except httpx.HTTPError as e:
             elapsed = time.time() - t0
             last_error = str(e)[:200]
-            logger.warning(f"  [LLM] attempt {attempt+1}/{1+retries} error ({elapsed:.1f}s): {last_error}")
+            logger.warning(f"  [LLM] attempt {attempt+1}/{1+retries} httpx error ({elapsed:.1f}s): {last_error}")
             if attempt < retries:
                 wait = _RETRY_BACKOFF * (2 ** attempt)
                 logger.info(f"  [LLM] 等待 {wait:.0f}s 后重试...")
@@ -418,7 +411,7 @@ def analyze_scenario(image_path: str) -> Dict[str, Any]:
         raw = _call_doubao([{"role": "user", "content": [
             {"type": "text", "text": _SCENE_PROMPT},
             {"type": "image_url", "image_url": {"url": data_url}},
-        ]}], model=DOUBAO_VISION_MODEL_ID, timeout=_VISION_TIMEOUT, max_tokens=500, max_retries=0)
+        ]}], model=ARK_MODEL_ID, timeout=_VISION_TIMEOUT, max_tokens=500, max_retries=0)
     except Exception as e:
         raise RuntimeError(f"视觉模型调用失败: API请求失败 {e}")
 
