@@ -11,7 +11,6 @@ import time
 import base64
 from typing import Any, Dict, List
 
-import requests
 import httpx
 from sqlalchemy.orm import Session
 
@@ -31,101 +30,108 @@ _MAX_TOKENS = 1000
 # ============================================================
 # 通用 LLM 调用
 # ============================================================
-
-# 跨太平洋 TCP keepalive（Railway US → 豆包北京），防中间网络设备空闲断连
-import socket as _socket
-from requests.adapters import HTTPAdapter as _HTTPAdapter
-from urllib3.poolmanager import PoolManager as _PoolManager
-
-class _KeepAliveAdapter(_HTTPAdapter):
-    """TCP keepalive: 30s 空闲后开始探测，每 10s 一次，3 次失败断连。"""
-    def init_poolmanager(self, *args: Any, **kwargs: Any) -> None:
-        opts = [(self._socket.SOL_SOCKET, self._socket.SO_KEEPALIVE, 1)]
-        if hasattr(self._socket, "TCP_KEEPIDLE"):
-            opts.append((self._socket.IPPROTO_TCP, self._socket.TCP_KEEPIDLE, 30))
-        if hasattr(self._socket, "TCP_KEEPINTVL"):
-            opts.append((self._socket.IPPROTO_TCP, self._socket.TCP_KEEPINTVL, 10))
-        if hasattr(self._socket, "TCP_KEEPCNT"):
-            opts.append((self._socket.IPPROTO_TCP, self._socket.TCP_KEEPCNT, 3))
-        kwargs["socket_options"] = opts
-        super().init_poolmanager(*args, **kwargs)
-    _socket = _socket  # type: ignore[assignment]
-
-_DOUBAO_SESSION = None
-
-def _get_doubao_session() -> requests.Session:
-    """获取带 TCP keepalive 的持久化 Session。"""
-    global _DOUBAO_SESSION
-    if _DOUBAO_SESSION is None:
-        _DOUBAO_SESSION = requests.Session()
-        _DOUBAO_SESSION.mount("https://", _KeepAliveAdapter())
-        _DOUBAO_SESSION.mount("http://", _KeepAliveAdapter())
-    return _DOUBAO_SESSION
-
-
 def _call_doubao(messages: List[Dict[str, Any]], max_tokens: int = _MAX_TOKENS, model: str = "",
                  timeout: float = _TIMEOUT, max_retries: int | None = None) -> str:
-    """调用豆包 API，返回 content。model 为空时使用默认模型。失败抛 RuntimeError。"""
-    body = {"model": model or DOUBAO_MODEL_ID, "messages": messages, "max_tokens": max_tokens}
+    """调用豆包 API，返回 content。model 为空时使用默认模型。失败抛 RuntimeError。
+    
+    视觉/耗时调用使用 stream=True 以保持 TCP 连接活跃（防跨太平洋空闲断连）。
+    """
+    body = {
+        "model": model or DOUBAO_MODEL_ID,
+        "messages": messages,
+        "max_tokens": max_tokens,
+        "stream": True,  # 流式响应：即使 VLM 推理期间无输出，连接也不会因空闲被杀
+    }
     headers = {"Authorization": f"Bearer {DOUBAO_API_KEY}", "Content-Type": "application/json"}
 
     retries = _RETRY_COUNT if max_retries is None else max_retries
 
-    # 指数退避重试：处理超时、429 限流、5xx 服务端错误
     last_error = ""
-    session = _get_doubao_session()
     for attempt in range(1 + retries):
         t0 = time.time()
         try:
-            resp = session.post(CHAT_URL, headers=headers, json=body, timeout=timeout)
-            status = resp.status_code
+            # httpx.stream 返回的 response 需手动读取所有 chunk 并拼接
+            full_content = ""
+            full_reasoning = ""
+            with httpx.stream(
+                "POST", CHAT_URL, headers=headers, json=body,
+                timeout=httpx.Timeout(connect=15.0, read=timeout, write=60.0, pool=10.0),
+            ) as resp:
+                status = resp.status_code
+                if status != 200:
+                    text = resp.read().decode(errors="replace")[:300]
+                    elapsed = time.time() - t0
+                    if status in (429, 500, 502, 503, 504):
+                        last_error = f"HTTP {status}: {text}"
+                        logger.warning(f"  [LLM] attempt {attempt+1}/{1+retries} {last_error} ({elapsed:.1f}s)")
+                        if attempt < retries:
+                            wait = _RETRY_BACKOFF * (2 ** attempt)
+                            logger.info(f"  [LLM] 等待 {wait:.0f}s 后重试...")
+                            time.sleep(wait)
+                            continue
+                    resp.raise_for_status()
+
+                # 逐行读取 SSE 流，拼接 content
+                for line in resp.iter_lines():
+                    if not line or not line.startswith("data: "):
+                        continue
+                    data_str = line[6:]  # 去掉 "data: " 前缀
+                    if data_str == "[DONE]":
+                        break
+                    try:
+                        data = json.loads(data_str)
+                        choices = data.get("choices", [])
+                        if choices:
+                            delta = choices[0].get("delta", {})
+                            full_content += delta.get("content", "") or ""
+                            reasoning_delta = delta.get("reasoning_content", "") or ""
+                            full_reasoning += reasoning_delta
+                    except json.JSONDecodeError:
+                        continue
+
             elapsed = time.time() - t0
 
-            if status == 200:
-                msg = resp.json()["choices"][0]["message"]
-                content = (msg.get("content") or "").strip()
-                reasoning = (msg.get("reasoning_content") or "").strip()
+            content = full_content.strip()
+            reasoning = full_reasoning.strip()
 
-                # 修复 thinking 模型输出的 content 为残片（如仅 "}"）的问题
-                if len(content) < 20 and reasoning and len(reasoning) > len(content):
-                    import re as _re
-                    m = _re.search(r'\{[^{}]*"gaps"|\{[^{}]*"scores"|\{[^{}]*"comparison"|\{[^{}]*"scene_label"|\{[^{}]*"label"', reasoning)
-                    if m:
-                        tail = reasoning[m.start():]
-                        try:
-                            _parse_json(tail)
-                            content = tail
-                        except Exception:
-                            pass
-
+            # 修复 thinking 模型输出的 content 为残片（如仅 "}"）的问题
+            if len(content) < 20 and reasoning and len(reasoning) > len(content):
                 import re as _re
-                content = _re.sub(r'</?think[^>]*>', '', content)
-                logger.info(f"  [LLM] {status} {elapsed:.1f}s model={body['model'][:30]}")
-                return content
+                m = _re.search(r'\{[^{}]*"gaps"|\{[^{}]*"scores"|\{[^{}]*"comparison"|\{[^{}]*"scene_label"|\{[^{}]*"label"', reasoning)
+                if m:
+                    tail = reasoning[m.start():]
+                    try:
+                        _parse_json(tail)
+                        content = tail
+                    except Exception:
+                        pass
 
-            # 429 限流 / 5xx 服务端错误 → 可重试
-            if status in (429, 500, 502, 503, 504):
-                last_error = f"HTTP {status}: {resp.text[:200]}"
-                logger.warning(f"  [LLM] attempt {attempt+1}/{1+retries} {last_error} ({elapsed:.1f}s)")
-                if attempt < retries:
-                    wait = _RETRY_BACKOFF * (2 ** attempt)
-                    logger.info(f"  [LLM] 等待 {wait:.0f}s 后重试...")
-                    time.sleep(wait)
-                    continue
-                resp.raise_for_status()
-            else:
-                resp.raise_for_status()
+            import re as _re
+            content = _re.sub(r'</?think[^>]*>', '', content)
+            logger.info(f"  [LLM] {status} {elapsed:.1f}s model={body['model'][:30]} len={len(content)}")
+            return content
 
-        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+        except httpx.TimeoutException as e:
             elapsed = time.time() - t0
             last_error = str(e)
-            logger.warning(f"  [LLM] attempt {attempt+1}/{1+retries} {last_error} ({elapsed:.1f}s)")
+            logger.warning(f"  [LLM] attempt {attempt+1}/{1+retries} httpx.Timeout ({elapsed:.1f}s): {last_error}")
             if attempt < retries:
                 wait = _RETRY_BACKOFF * (2 ** attempt)
                 logger.info(f"  [LLM] 等待 {wait:.0f}s 后重试...")
                 time.sleep(wait)
                 continue
-            raise RuntimeError(f"API 调用超时/连接失败（已重试{retries}次）: {last_error}")
+            raise RuntimeError(f"API 调用超时（已重试{retries}次）: {last_error}")
+
+        except httpx.HTTPError as e:
+            elapsed = time.time() - t0
+            last_error = str(e)[:200]
+            logger.warning(f"  [LLM] attempt {attempt+1}/{1+retries} httpx error ({elapsed:.1f}s): {last_error}")
+            if attempt < retries:
+                wait = _RETRY_BACKOFF * (2 ** attempt)
+                logger.info(f"  [LLM] 等待 {wait:.0f}s 后重试...")
+                time.sleep(wait)
+                continue
+            raise RuntimeError(f"API 调用失败（已重试{retries}次）: {last_error}")
 
     raise RuntimeError(f"API 调用失败（已重试{retries}次）: {last_error}")
 
