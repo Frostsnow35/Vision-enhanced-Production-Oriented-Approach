@@ -125,7 +125,7 @@ export default function ScenarioPage() {
 
   // ---- 轮询等待分析完成（每次请求短连接 + 重试，适配移动端） ----
   async function waitForAnalysis(taskId: string): Promise<ScenarioResult> {
-    const maxPolls = 280; // 280 * 1.5s = 420s max，对齐后端 _VISION_TIMEOUT
+    const maxPolls = 100; // 100 * 1.5s = 150s max，对齐后端 _VISION_TIMEOUT（Seed 2.0 Mini 多模态 ~3s）
     let consecutiveErrors = 0;
     for (let i = 0; i < maxPolls; i++) {
       await new Promise(r => setTimeout(r, 1500));
