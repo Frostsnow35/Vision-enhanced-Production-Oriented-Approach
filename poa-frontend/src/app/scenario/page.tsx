@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { Upload } from "lucide-react";
-import { uploadImage, type ScenarioResult, buildImageUrl, analyzeScenario, analyzeScenarioDirect, pollScenarioStatus } from "@/lib/api";
+import { uploadImage, type ScenarioResult, buildImageUrl, analyzeScenario, pollScenarioStatus } from "@/lib/api";
 import { usePOA, getScenarioHistory, addScenarioToHistory, removeScenarioFromHistory, selectScenario, createScenarioFromResult, type ScenarioHistoryItem } from "@/lib/store";
 
 /* ============================================================
@@ -175,40 +175,14 @@ export default function ScenarioPage() {
     setTimeout(() => router.push("/task"), 600);
   }
 
-  // ---- File → base64 data URL ----
-  function fileToBase64DataUrl(file: File): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-  }
-
-  // ---- 生成交际任务（快速通道优先：Vercel Function 直连 Ark 北京，失败回退 Railway）----
+  // ---- 生成交际任务 ----
   async function handleGenerate() {
     if (submitting) return;
     if (!uploadedFile) return;
     setSubmitting(true);
     const tStart = Date.now();
-
-    // 第一步：尝试快速通道（Vercel Function → Ark API 北京，无跨太平洋跳跃）
+    console.log("[scenario] 开始上传图片...", uploadedFile.name, uploadedFile.size);
     try {
-      console.log("[scenario] 快速通道：Vercel Function 直连 Ark API（北京）...");
-      const base64 = await fileToBase64DataUrl(uploadedFile);
-      const result = await analyzeScenarioDirect(base64);
-      console.log(`[scenario] 快速通道成功 (${Date.now() - tStart}ms)`);
-      // 快速通道没有 Railway 上传，用本地 blob URL 作为 imageUrl
-      const localUrl = URL.createObjectURL(uploadedFile);
-      handleAnalysisResult(result, localUrl);
-      return;
-    } catch (fastPathErr: any) {
-      console.warn(`[scenario] 快速通道失败 (${Date.now() - tStart}ms):`, fastPathErr.message, "→ 回退 Railway rewrite");
-    }
-
-    // 第二步：回退到原有路径（上传到 Railway → 分析 → 轮询）
-    try {
-      console.log("[scenario] 回退路径：上传图片到 Railway...", uploadedFile.name, uploadedFile.size);
       const { image_url } = await uploadImage(uploadedFile);
       console.log(`[scenario] 上传完成 (${Date.now() - tStart}ms), image_url=${image_url}`);
 
