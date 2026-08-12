@@ -5,7 +5,8 @@ import "./globals.css";
 import { NavLinks } from "./nav-links";
 import { Providers } from "./providers";
 import { NextIntlClientProvider } from "next-intl";
-import { getLocale, getMessages, getTranslations } from "next-intl/server";
+import { getMessages, getTranslations } from "next-intl/server";
+import { cookies } from "next/headers";
 import LocaleSwitcher from "@/components/LocaleSwitcher";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -21,7 +22,8 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const locale = await getLocale();
+  const cookieStore = await cookies();
+  const locale = cookieStore.get("NEXT_LOCALE")?.value || "zh";
   const messages = await getMessages();
 
   const navItems = [
