@@ -75,8 +75,8 @@ export default function ScenarioPage() {
 
   // ---- 图片压缩（Canvas API，上传前缩放以减少 VLM 推理时间）----
   async function compressImage(file: File): Promise<File> {
-    const MAX_DIM = 640; // 640px 足够 VLM 场景识别，大幅减少上传体积和传输时间
-    const QUALITY = 0.5;
+    const MAX_DIM = 480; // 480px 足够场景识别，手机端加快上传+减少VLM处理数据量
+    const QUALITY = 0.4;
     // 小文件不压缩（中国大陆到 Railway 美国跨国传输，减小体积是关键）
     if (file.size < 80 * 1024) return file;
 
@@ -125,10 +125,10 @@ export default function ScenarioPage() {
 
   // ---- 轮询等待分析完成（每次请求短连接 + 重试，适配移动端） ----
   async function waitForAnalysis(taskId: string): Promise<ScenarioResult> {
-    const maxPolls = 120; // 120 * 2s = 240s max，对齐后端 _VISION_TIMEOUT
+    const maxPolls = 160; // 160 * 1.5s = 240s max，对齐后端 _VISION_TIMEOUT
     let consecutiveErrors = 0;
     for (let i = 0; i < maxPolls; i++) {
-      await new Promise(r => setTimeout(r, 2000));
+      await new Promise(r => setTimeout(r, 1500));
       try {
         const status = await pollScenarioStatus(taskId);
         consecutiveErrors = 0;
@@ -143,8 +143,8 @@ export default function ScenarioPage() {
         }
       } catch (err: any) {
         consecutiveErrors++;
-        if (consecutiveErrors >= 5) {
-          // 连续 5 次轮询失败（10s+），判定网络不可用
+        if (consecutiveErrors >= 8) {
+          // 连续 8 次轮询失败（12s+），判定网络不可用
           throw new Error(t("scenario.timeout"));
         }
         // 单次失败继续重试

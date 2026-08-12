@@ -31,6 +31,38 @@ _MAX_TOKENS = 1000
 # ============================================================
 # 通用 LLM 调用
 # ============================================================
+
+# 跨太平洋 TCP keepalive（Railway US → 豆包北京），防中间网络设备空闲断连
+import socket as _socket
+from requests.adapters import HTTPAdapter as _HTTPAdapter
+from urllib3.poolmanager import PoolManager as _PoolManager
+
+class _KeepAliveAdapter(_HTTPAdapter):
+    """TCP keepalive: 30s 空闲后开始探测，每 10s 一次，3 次失败断连。"""
+    def init_poolmanager(self, *args: Any, **kwargs: Any) -> None:
+        opts = [(self._socket.SOL_SOCKET, self._socket.SO_KEEPALIVE, 1)]
+        if hasattr(self._socket, "TCP_KEEPIDLE"):
+            opts.append((self._socket.IPPROTO_TCP, self._socket.TCP_KEEPIDLE, 30))
+        if hasattr(self._socket, "TCP_KEEPINTVL"):
+            opts.append((self._socket.IPPROTO_TCP, self._socket.TCP_KEEPINTVL, 10))
+        if hasattr(self._socket, "TCP_KEEPCNT"):
+            opts.append((self._socket.IPPROTO_TCP, self._socket.TCP_KEEPCNT, 3))
+        kwargs["socket_options"] = opts
+        super().init_poolmanager(*args, **kwargs)
+    _socket = _socket  # type: ignore[assignment]
+
+_DOUBAO_SESSION = None
+
+def _get_doubao_session() -> requests.Session:
+    """获取带 TCP keepalive 的持久化 Session。"""
+    global _DOUBAO_SESSION
+    if _DOUBAO_SESSION is None:
+        _DOUBAO_SESSION = requests.Session()
+        _DOUBAO_SESSION.mount("https://", _KeepAliveAdapter())
+        _DOUBAO_SESSION.mount("http://", _KeepAliveAdapter())
+    return _DOUBAO_SESSION
+
+
 def _call_doubao(messages: List[Dict[str, Any]], max_tokens: int = _MAX_TOKENS, model: str = "",
                  timeout: float = _TIMEOUT, max_retries: int | None = None) -> str:
     """调用豆包 API，返回 content。model 为空时使用默认模型。失败抛 RuntimeError。"""
@@ -41,10 +73,11 @@ def _call_doubao(messages: List[Dict[str, Any]], max_tokens: int = _MAX_TOKENS, 
 
     # 指数退避重试：处理超时、429 限流、5xx 服务端错误
     last_error = ""
+    session = _get_doubao_session()
     for attempt in range(1 + retries):
         t0 = time.time()
         try:
-            resp = requests.post(CHAT_URL, headers=headers, json=body, timeout=timeout)
+            resp = session.post(CHAT_URL, headers=headers, json=body, timeout=timeout)
             status = resp.status_code
             elapsed = time.time() - t0
 
@@ -337,7 +370,7 @@ def analyze_scenario(image_path: str) -> Dict[str, Any]:
         raw = _call_doubao([{"role": "user", "content": [
             {"type": "text", "text": _SCENE_PROMPT},
             {"type": "image_url", "image_url": {"url": data_url}},
-        ]}], model=ARK_MODEL_ID, timeout=_VISION_TIMEOUT, max_tokens=500, max_retries=1)
+        ]}], model=ARK_MODEL_ID, timeout=_VISION_TIMEOUT, max_tokens=500, max_retries=0)
     except Exception as e:
         raise RuntimeError(f"视觉模型调用失败: API请求失败 {e}")
 
