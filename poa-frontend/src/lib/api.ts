@@ -71,6 +71,7 @@ export async function uploadImage(file: File): Promise<{ image_url: string }> {
   const res = await fetch(`${BASE_URL}/api/upload/image`, {
     method: "POST",
     body: form,
+    signal: AbortSignal.timeout(120000), // 120s，中国大陆到 Railway（美国）跨国上传需要较长时间
   });
   if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
   return res.json();
