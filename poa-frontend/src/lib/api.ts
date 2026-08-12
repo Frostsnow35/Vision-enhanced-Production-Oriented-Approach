@@ -154,7 +154,9 @@ export async function pollScenarioStatus(task_id: string): Promise<AnalyzeStatus
 export async function uploadImage(file: File): Promise<{ image_url: string }> {
   const form = new FormData();
   form.append("file", file);
-  const res = await fetch(`${BASE_URL}/api/upload/image`, {
+  const url = `${BASE_URL}/api/upload/image`;
+  console.log("[uploadImage] POST", url, "size:", file.size);
+  const res = await fetch(url, {
     method: "POST",
     body: form,
     signal: AbortSignal.timeout(120000), // 120s，中国大陆到 Railway（美国）跨国上传需要较长时间
