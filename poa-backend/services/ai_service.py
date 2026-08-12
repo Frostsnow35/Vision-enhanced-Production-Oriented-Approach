@@ -66,16 +66,17 @@ logger.info("[LLM] TCP keepalive 全局 monkey-patch 已激活 (idle=30s, intvl=
 # 通用 LLM 调用
 # ============================================================
 def _call_doubao(messages: List[Dict[str, Any]], max_tokens: int = _MAX_TOKENS, model: str = "",
-                 timeout: float = _TIMEOUT, max_retries: int | None = None) -> str:
+                 timeout: float = _TIMEOUT, max_retries: int | None = None,
+                 use_stream: bool = True) -> str:
     """调用豆包 API，返回 content。model 为空时使用默认模型。失败抛 RuntimeError。
     
-    视觉/耗时调用使用 stream=True 以保持 TCP 连接活跃（防跨太平洋空闲断连）。
+    use_stream=False 用于多模态（图片）调用，Ark API 多模态可能不支持 SSE 流式。
     """
     body = {
         "model": model or DOUBAO_MODEL_ID,
         "messages": messages,
         "max_tokens": max_tokens,
-        "stream": True,  # 流式响应：即使 VLM 推理期间无输出，连接也不会因空闲被杀
+        "stream": use_stream,
     }
     headers = {"Authorization": f"Bearer {DOUBAO_API_KEY}", "Content-Type": "application/json"}
 
@@ -85,62 +86,84 @@ def _call_doubao(messages: List[Dict[str, Any]], max_tokens: int = _MAX_TOKENS, 
     for attempt in range(1 + retries):
         t0 = time.time()
         try:
-            # httpx.stream 返回的 response 需手动读取所有 chunk 并拼接
-            full_content = ""
-            full_reasoning = ""
-            with httpx.stream(
-                "POST", CHAT_URL, headers=headers, json=body,
-                timeout=httpx.Timeout(connect=15.0, read=timeout, write=60.0, pool=10.0),
-            ) as resp:
-                status = resp.status_code
-                if status != 200:
-                    text = resp.read().decode(errors="replace")[:300]
-                    elapsed = time.time() - t0
-                    if status in (429, 500, 502, 503, 504):
-                        last_error = f"HTTP {status}: {text}"
-                        logger.warning(f"  [LLM] attempt {attempt+1}/{1+retries} {last_error} ({elapsed:.1f}s)")
-                        if attempt < retries:
-                            wait = _RETRY_BACKOFF * (2 ** attempt)
-                            logger.info(f"  [LLM] 等待 {wait:.0f}s 后重试...")
-                            time.sleep(wait)
+            if use_stream:
+                # 流式响应：httpx.stream 逐行读取 SSE
+                full_content = ""
+                full_reasoning = ""
+                with httpx.stream(
+                    "POST", CHAT_URL, headers=headers, json=body,
+                    timeout=httpx.Timeout(connect=15.0, read=timeout, write=60.0, pool=10.0),
+                ) as resp:
+                    status = resp.status_code
+                    if status != 200:
+                        text = resp.read().decode(errors="replace")[:300]
+                        elapsed = time.time() - t0
+                        if status in (429, 500, 502, 503, 504):
+                            last_error = f"HTTP {status}: {text}"
+                            logger.warning(f"  [LLM] attempt {attempt+1}/{1+retries} {last_error} ({elapsed:.1f}s)")
+                            if attempt < retries:
+                                wait = _RETRY_BACKOFF * (2 ** attempt)
+                                logger.info(f"  [LLM] 等待 {wait:.0f}s 后重试...")
+                                time.sleep(wait)
+                                continue
+                        resp.raise_for_status()
+
+                    for line in resp.iter_lines():
+                        if not line or not line.startswith("data: "):
                             continue
-                    resp.raise_for_status()
+                        data_str = line[6:]
+                        if data_str == "[DONE]":
+                            break
+                        try:
+                            data = json.loads(data_str)
+                            choices = data.get("choices", [])
+                            if choices:
+                                delta = choices[0].get("delta", {})
+                                full_content += delta.get("content", "") or ""
+                                reasoning_delta = delta.get("reasoning_content", "") or ""
+                                full_reasoning += reasoning_delta
+                        except json.JSONDecodeError:
+                            continue
 
-                # 逐行读取 SSE 流，拼接 content
-                for line in resp.iter_lines():
-                    if not line or not line.startswith("data: "):
-                        continue
-                    data_str = line[6:]  # 去掉 "data: " 前缀
-                    if data_str == "[DONE]":
-                        break
-                    try:
-                        data = json.loads(data_str)
-                        choices = data.get("choices", [])
-                        if choices:
-                            delta = choices[0].get("delta", {})
-                            full_content += delta.get("content", "") or ""
-                            reasoning_delta = delta.get("reasoning_content", "") or ""
-                            full_reasoning += reasoning_delta
-                    except json.JSONDecodeError:
-                        continue
+                elapsed = time.time() - t0
+                content = full_content.strip()
+                reasoning = full_reasoning.strip()
 
-            elapsed = time.time() - t0
+                if len(content) < 20 and reasoning and len(reasoning) > len(content):
+                    import re as _re
+                    m = _re.search(r'\{[^{}]*"gaps"|\{[^{}]*"scores"|\{[^{}]*"comparison"|\{[^{}]*"scene_label"|\{[^{}]*"label"', reasoning)
+                    if m:
+                        tail = reasoning[m.start():]
+                        try:
+                            _parse_json(tail)
+                            content = tail
+                        except Exception:
+                            pass
+            else:
+                # 非流式：标准 POST → JSON 响应（多模态调用用这个）
+                with httpx.Client(
+                    timeout=httpx.Timeout(connect=15.0, read=timeout, write=60.0, pool=10.0),
+                ) as client:
+                    resp = client.post(CHAT_URL, headers=headers, json=body)
+                    status = resp.status_code
+                    if status != 200:
+                        text = resp.text[:300]
+                        elapsed = time.time() - t0
+                        if status in (429, 500, 502, 503, 504):
+                            last_error = f"HTTP {status}: {text}"
+                            logger.warning(f"  [LLM] attempt {attempt+1}/{1+retries} {last_error} ({elapsed:.1f}s)")
+                            if attempt < retries:
+                                wait = _RETRY_BACKOFF * (2 ** attempt)
+                                logger.info(f"  [LLM] 等待 {wait:.0f}s 后重试...")
+                                time.sleep(wait)
+                                continue
+                        resp.raise_for_status()
+                    data = resp.json()
+                    content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                    reasoning = data.get("choices", [{}])[0].get("message", {}).get("reasoning_content", "")
+                    elapsed = time.time() - t0
 
-            content = full_content.strip()
-            reasoning = full_reasoning.strip()
-
-            # 修复 thinking 模型输出的 content 为残片（如仅 "}"）的问题
-            if len(content) < 20 and reasoning and len(reasoning) > len(content):
-                import re as _re
-                m = _re.search(r'\{[^{}]*"gaps"|\{[^{}]*"scores"|\{[^{}]*"comparison"|\{[^{}]*"scene_label"|\{[^{}]*"label"', reasoning)
-                if m:
-                    tail = reasoning[m.start():]
-                    try:
-                        _parse_json(tail)
-                        content = tail
-                    except Exception:
-                        pass
-
+            content = content.strip() if isinstance(content, str) else str(content)
             import re as _re
             content = _re.sub(r'</?think[^>]*>', '', content)
             logger.info(f"  [LLM] {status} {elapsed:.1f}s model={body['model'][:30]} len={len(content)}")
@@ -411,7 +434,7 @@ def analyze_scenario(image_path: str) -> Dict[str, Any]:
         raw = _call_doubao([{"role": "user", "content": [
             {"type": "text", "text": _SCENE_PROMPT},
             {"type": "image_url", "image_url": {"url": data_url}},
-        ]}], model=ARK_MODEL_ID, timeout=_VISION_TIMEOUT, max_tokens=500, max_retries=0)
+        ]}], model=ARK_MODEL_ID, timeout=_VISION_TIMEOUT, max_tokens=500, max_retries=0, use_stream=False)
     except Exception as e:
         raise RuntimeError(f"视觉模型调用失败: API请求失败 {e}")
 
