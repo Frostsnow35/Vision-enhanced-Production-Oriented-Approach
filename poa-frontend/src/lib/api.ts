@@ -100,6 +100,25 @@ export async function analyzeScenario(image_path: string): Promise<
   throw new Error("Unknown response format from /api/scenario/analyze");
 }
 
+/**
+ * 快速通道：Vercel Function 直接调用 Ark API（北京），绕过 Railway（美国）。
+ * 路径: 手机 → Vercel 边缘(亚洲) → Ark API(北京)，无跨太平洋跳跃。
+ * 失败时自动抛错，调用方应回退到 analyzeScenario（Railway 路径）。
+ */
+export async function analyzeScenarioDirect(imageBase64: string): Promise<ScenarioResult> {
+  const res = await fetch("/api/proxy/scenario/analyze", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ image_base64: imageBase64 }),
+    signal: AbortSignal.timeout(120000),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
 export interface AnalyzeStatusResponse {
   status: "processing" | "completed" | "failed" | "not_found";
   result?: ScenarioResult;
