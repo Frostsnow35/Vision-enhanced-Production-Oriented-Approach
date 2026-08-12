@@ -7,9 +7,9 @@
 export const PRODUCTION_BACKEND = "https://poa-backend-production-c371.up.railway.app";
 const LOCAL_BACKEND = "http://localhost:8000";
 
-// 生产环境使用相对路径（走 Next.js rewrite），本地开发直连后端
+// 生产环境直连后端 Railway URL（CORS 已开放 *），本地开发直连 localhost
 export const BASE_URL = process.env.NEXT_PUBLIC_API_BASE ??
-  (process.env.NODE_ENV === "production" ? "" : LOCAL_BACKEND);
+  (process.env.NODE_ENV === "production" ? PRODUCTION_BACKEND : LOCAL_BACKEND);
 
 const DEFAULT_TIMEOUT = 60000; // 60s，LLM 调用默认超时（文本模型通常 30-60s）
 
