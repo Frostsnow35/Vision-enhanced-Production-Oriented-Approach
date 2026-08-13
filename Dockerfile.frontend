@@ -22,6 +22,10 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
 
+# 运行时后端地址：route handler 反向代理 /api/* 需要在运行时读取 BACKEND_URL
+ARG BACKEND_URL=https://poa-backend-production-97b8.up.railway.app
+ENV BACKEND_URL=${BACKEND_URL}
+
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public

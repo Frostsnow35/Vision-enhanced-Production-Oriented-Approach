@@ -11,11 +11,10 @@ const BACKEND_URL =
 const nextConfig: NextConfig = {
   output: "standalone",
   async rewrites() {
+    // 注意：/api/* 不走 rewrite（Next.js 16 external rewrite 生产环境会 500），
+    // 改由 src/app/api/[...path]/route.ts 统一反向代理。
+    // /uploads、/samples 为静态资源 GET，仍用 rewrite 转发。
     return [
-      {
-        source: "/api/:path*",
-        destination: `${BACKEND_URL}/api/:path*`,
-      },
       {
         source: "/uploads/:path*",
         destination: `${BACKEND_URL}/uploads/:path*`,
