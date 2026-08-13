@@ -3,7 +3,7 @@
  * 所有请求使用相对路径，由 Next.js rewrite 代理到后端，
  * 避免浏览器跨域请求被网络拦截。
  */
-export const PRODUCTION_BACKEND = "https://poa-backend-production-c371.up.railway.app";
+export const PRODUCTION_BACKEND = "https://poa-backend-production-97b8.up.railway.app";
 
 // 始终使用相对路径（同源请求 → Next.js rewrite → 后端）
 export const BASE_URL = "";

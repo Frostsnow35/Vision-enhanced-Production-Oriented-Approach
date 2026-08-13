@@ -9,8 +9,8 @@ RUN npm ci
 # ARG for build-time env（NEXT_PUBLIC_* 必须在构建时注入，运行时 ENV 对 standalone 模式无效）
 # Railway: 在 railway.json buildArgs 或 Settings → Build Variables 中设置
 # 下方硬编码了默认后端域名（安全兜底，即使构建参数未传入也不会连到 localhost）
-ARG NEXT_PUBLIC_API_BASE=https://poa-backend-production-c371.up.railway.app
-ENV NEXT_PUBLIC_API_BASE=${NEXT_PUBLIC_API_BASE}
+ARG BACKEND_URL=https://poa-backend-production-97b8.up.railway.app
+ENV BACKEND_URL=${BACKEND_URL}
 
 COPY poa-frontend/ .
 RUN npm run build

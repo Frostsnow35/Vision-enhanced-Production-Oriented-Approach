@@ -6,7 +6,7 @@ const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
 const BACKEND_URL =
   process.env.BACKEND_URL ||
   process.env.NEXT_PUBLIC_BACKEND_URL ||
-  "https://poa-backend-production-c371.up.railway.app";
+  "https://poa-backend-production-97b8.up.railway.app";
 
 const nextConfig: NextConfig = {
   output: "standalone",

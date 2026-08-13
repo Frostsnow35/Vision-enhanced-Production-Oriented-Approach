@@ -2,15 +2,15 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://poa-backend-production-c371.up.railway.app/api/:path*"
+      "destination": "https://poa-backend-production-97b8.up.railway.app/api/:path*"
     },
     {
       "source": "/uploads/:path*",
-      "destination": "https://poa-backend-production-c371.up.railway.app/uploads/:path*"
+      "destination": "https://poa-backend-production-97b8.up.railway.app/uploads/:path*"
     },
     {
       "source": "/samples/:path*",
-      "destination": "https://poa-backend-production-c371.up.railway.app/samples/:path*"
+      "destination": "https://poa-backend-production-97b8.up.railway.app/samples/:path*"
     }
   ]
 }
