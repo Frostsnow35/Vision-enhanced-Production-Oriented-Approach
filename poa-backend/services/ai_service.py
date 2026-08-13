@@ -350,6 +350,18 @@ def _sanitize_closing_line(raw: str) -> str:
         text = " ".join(words[:30])
     return text
 
+
+def _to_str(v: Any) -> str:
+    """将任意值安全转换为字符串（dict/list 等复杂类型返回空串），避免 response_model 校验抛 500。"""
+    if v is None:
+        return ""
+    if isinstance(v, str):
+        return v
+    if isinstance(v, (int, float, bool)):
+        return str(v)
+    return ""
+
+
 _NO_VALID_INPUT = {"error": "no_valid_input", "message": "未检测到有效语音内容，请重新录音。"}
 
 
@@ -735,14 +747,30 @@ def diagnose_attempt(attempt_text: str, scene_context: str = "") -> Dict[str, An
                 if isinstance(he, dict) and f"hf_{j}_suggestion" in translations:
                     he["suggestion_en"] = translations[f"hf_{j}_suggestion"]
 
-        # 防御：过滤非法 gap 项并确保 label 为字符串，避免 response_model 校验抛 500
+        # 防御：强制 gap 字段类型（label/evidence/explanation/reference 转字符串，translations 转 dict），
+        # 避免 LLM 返回 dict/list 等异常结构导致 response_model 校验抛 500
         safe_gaps = []
         for gap in gaps:
             if not isinstance(gap, dict):
                 continue
-            if not gap.get("label"):
-                gap["label"] = "待改进项"
-            safe_gaps.append(gap)
+            label = _to_str(gap.get("label"))
+            if not label:
+                label = "待改进项"
+            clean_gap = {
+                "label": label,
+                "evidence_sentence": _to_str(gap.get("evidence_sentence")) or None,
+                "explanation": _to_str(gap.get("explanation")) or None,
+                "reference_expression": _to_str(gap.get("reference_expression")) or None,
+            }
+            # 保留英译字段（label_en/explanation_en 等），同样做类型安全转换
+            for en_field in ("label_en", "evidence_sentence_en", "explanation_en", "reference_expression_en"):
+                en_val = _to_str(gap.get(en_field))
+                if en_val:
+                    clean_gap[en_field] = en_val
+            tr = gap.get("translations")
+            if isinstance(tr, dict):
+                clean_gap["translations"] = {str(k): _to_str(v) for k, v in tr.items()}
+            safe_gaps.append(clean_gap)
         parsed["gaps"] = safe_gaps
         return parsed
 
