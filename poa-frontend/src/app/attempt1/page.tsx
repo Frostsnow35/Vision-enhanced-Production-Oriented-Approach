@@ -345,12 +345,12 @@ export default function Attempt1Page() {
     setCurrentSubtitle(t("attempt.preparing_opening"));
     try {
       const data = await chatStart(
-        task.scene_label,
-        task.roles,
-        task.goal,
-        task.evaluation_criteria,
+        pickLocaleField(task, "scene_label", locale),
+        pickLocaleField(task, "roles", locale),
+        pickLocaleField(task, "goal", locale),
+        pickLocaleField(task, "evaluation_criteria", locale),
         undefined,
-        (task as any).opening_line || ""
+        pickLocaleField(task, "opening_line", locale)
       );
       setWaitingForAiReply(false);
       setPendingAiSubtitle(data.ai_text);
@@ -415,10 +415,10 @@ export default function Attempt1Page() {
       const data = await chatTurn(
         user_text,
         historyForBackend,
-        currentTask?.scene_label || "",
-        currentTask?.roles || "",
-        currentTask?.goal,
-        currentTask?.evaluation_criteria
+        pickLocaleField(currentTask, "scene_label", locale),
+        pickLocaleField(currentTask, "roles", locale),
+        pickLocaleField(currentTask, "goal", locale),
+        pickLocaleField(currentTask, "evaluation_criteria", locale)
       );
 
       // 模型调用失败：前端直接展示真实错误
@@ -663,11 +663,11 @@ export default function Attempt1Page() {
           const data = await chatTurn(
             wrapUpUserText,
             historyForPlanA,
-            currentTask2?.scene_label || "",
-            currentTask2?.roles || "",
-            currentTask2?.goal,
-            currentTask2?.evaluation_criteria,
-            (currentTask2 as any)?.closing_line ?? ""
+            pickLocaleField(currentTask2, "scene_label", locale),
+            pickLocaleField(currentTask2, "roles", locale),
+            pickLocaleField(currentTask2, "goal", locale),
+            pickLocaleField(currentTask2, "evaluation_criteria", locale),
+            pickLocaleField(currentTask2, "closing_line", locale)
           );
           setWaitingForAiReply(false);
           const aiTurn: ConversationTurn = {
@@ -717,8 +717,9 @@ export default function Attempt1Page() {
           }
         } catch (err) {
           console.warn("[attempt1] Plan A 调用失败，降级:", err);
-          const fallbackText = (currentTask2 as any)?.closing_line
-            ? ((currentTask2 as any).closing_line as string) + " [CONVERSATION_COMPLETE]"
+          const closingLine = pickLocaleField(currentTask2, "closing_line", locale);
+          const fallbackText = closingLine
+            ? closingLine + " [CONVERSATION_COMPLETE]"
             : FALLBACK_CLOSING;
           const aiTurn: ConversationTurn = { role: "ai", text: fallbackText };
           setHistory((prev) => [...prev, aiTurn]);
@@ -846,7 +847,7 @@ export default function Attempt1Page() {
   };
 
   const formatTime = (s: number) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
-  const { user, ai } = task ? parseRoles(task.roles, t("common.not_specified")) : { user: "", ai: "" };
+  const { user, ai } = task ? parseRoles(pickLocaleField(task, "roles", locale), t("common.not_specified")) : { user: "", ai: "" };
 
   // ---- dimLabels (使用 t) ----
   const dimLabels = useMemo(() => ({
@@ -862,7 +863,7 @@ export default function Attempt1Page() {
 
   // ---- 有历史任务 ----
   if (hasHistory) {
-    return <div className="flex h-[calc(100vh-100px)] items-center justify-center"><div className="w-full max-w-md px-4"><HistoryTaskSelector onSelected={(item: ScenarioHistoryItem) => { markTaskSelectedInSession(); const taskData: TaskData = { scene_label: item.sceneLabel, roles: item.roles, goal: item.goal, evaluation_criteria: item.task?.evaluation_criteria }; localStorage.setItem("currentTask", JSON.stringify(taskData)); taskRef.current = taskData; setLocalTask(taskData); setHasHistory(false); }} /></div></div>;
+    return <div className="flex h-[calc(100vh-100px)] items-center justify-center"><div className="w-full max-w-md px-4"><HistoryTaskSelector onSelected={(item: ScenarioHistoryItem) => { markTaskSelectedInSession(); const taskData: TaskData = item.task as TaskData; localStorage.setItem("currentTask", JSON.stringify(taskData)); taskRef.current = taskData; setLocalTask(taskData); setHasHistory(false); }} /></div></div>;
   }
 
   // ---- 无任务 ----
@@ -897,7 +898,7 @@ export default function Attempt1Page() {
       <div className="shrink-0 border-b border-border bg-card px-4 py-2">
         <div className="flex items-center justify-between text-xs">
           <div className="flex items-center gap-3">
-            <span className="rounded-md bg-primary/10 px-2 py-0.5 font-semibold text-primary">{task.scene_label}</span>
+            <span className="rounded-md bg-primary/10 px-2 py-0.5 font-semibold text-primary">{pickLocaleField(task, "scene_label", locale)}</span>
             <span className="text-muted-foreground">{user.split("——")[0]} × {ai.split("——")[0]}</span>
           </div>
           <div className="flex items-center gap-2">

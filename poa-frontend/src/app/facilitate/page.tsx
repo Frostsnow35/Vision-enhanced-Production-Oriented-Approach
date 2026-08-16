@@ -441,9 +441,9 @@ export default function FacilitatePage() {
           const task = JSON.parse(raw);
           setTaskContext({
             task_id: task.task_id ?? 0,
-            scene_label: task.scene_label ?? "",
-            roles: task.roles ?? "",
-            goal: task.goal ?? "",
+            scene_label: pickLocaleField(task, "scene_label", locale),
+            roles: pickLocaleField(task, "roles", locale),
+            goal: pickLocaleField(task, "goal", locale),
           });
           hasData = true;
         }
@@ -476,9 +476,9 @@ export default function FacilitatePage() {
         const task = JSON.parse(raw);
         setTaskContext({
           task_id: task.task_id ?? 0,
-          scene_label: task.scene_label ?? "",
-          roles: task.roles ?? "",
-          goal: task.goal ?? "",
+          scene_label: pickLocaleField(task, "scene_label", locale),
+          roles: pickLocaleField(task, "roles", locale),
+          goal: pickLocaleField(task, "goal", locale),
         });
         hasData = true;
       }
@@ -709,9 +709,9 @@ export default function FacilitatePage() {
             setHasHistory(false);
             setTaskContext({
               task_id: item.task?.task_id ?? 0,
-              scene_label: item.sceneLabel ?? "",
-              roles: item.roles ?? "",
-              goal: item.goal ?? "",
+              scene_label: pickLocaleField(item.task, "scene_label", locale),
+              roles: pickLocaleField(item.task, "roles", locale),
+              goal: pickLocaleField(item.task, "goal", locale),
             });
             setHasTask(true);
           }}
@@ -734,9 +734,9 @@ export default function FacilitatePage() {
             setHasHistory(false);
             setTaskContext({
               task_id: item.task?.task_id ?? 0,
-              scene_label: item.sceneLabel ?? "",
-              roles: item.roles ?? "",
-              goal: item.goal ?? "",
+              scene_label: pickLocaleField(item.task, "scene_label", locale),
+              roles: pickLocaleField(item.task, "roles", locale),
+              goal: pickLocaleField(item.task, "goal", locale),
             });
             setHasTask(true);
           }}

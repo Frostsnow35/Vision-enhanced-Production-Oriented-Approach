@@ -86,6 +86,17 @@ export interface ScenarioResult {
   variant_plot: string;
   opening_line?: string;
   closing_line?: string;
+  // 后端返回的双语字段（英文环境优先显示）
+  scene_label_en?: string;
+  roles_en?: string;
+  goal_en?: string;
+  context_constraints_en?: string;
+  evaluation_criteria_en?: string;
+  variant_plot_en?: string;
+  opening_line_en?: string;
+  closing_line_en?: string;
+  translations?: Record<string, string>;
+  [key: string]: any;
 }
 
 /**

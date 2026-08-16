@@ -2,10 +2,11 @@
 
 import { useState, useRef, useEffect, useMemo, type DragEvent } from "react";
 import { useRouter } from "next/navigation";
-import { useTranslations } from "next-intl";
+import { useTranslations, useLocale } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { Upload } from "lucide-react";
 import { uploadImage, type ScenarioResult, buildImageUrl, analyzeScenario, pollScenarioStatus } from "@/lib/api";
+import { pickLocaleField } from "@/lib/locale-utils";
 import { usePOA, getScenarioHistory, addScenarioToHistory, removeScenarioFromHistory, selectScenario, createScenarioFromResult, type ScenarioHistoryItem } from "@/lib/store";
 
 /* ============================================================
@@ -15,6 +16,7 @@ interface ToastItem { id: number; message: string; type: "error" | "success" }
 
 export default function ScenarioPage() {
   const t = useTranslations();
+  const locale = useLocale();
   const router = useRouter();
   const { setScenarioResult } = usePOA();
 
@@ -158,11 +160,7 @@ export default function ScenarioPage() {
   function handleAnalysisResult(result: ScenarioResult, imageUrl: string) {
     ["diagnosis", "diagnosis2", "conversationText", "conversationText2", "facilitate_progress"].forEach(k => localStorage.removeItem(k));
     const currentTask = {
-      scene_label: result.scene_label,
-      roles: result.roles,
-      goal: result.goal,
-      evaluation_criteria: result.evaluation_criteria,
-      variant_plot: result.variant_plot,
+      ...result,
       opening_line: result.opening_line || "",
       closing_line: result.closing_line || "",
     };
@@ -399,7 +397,7 @@ export default function ScenarioPage() {
                   {item.imageUrl ? (
                     <img
                       src={item.imageUrl.startsWith("http") ? item.imageUrl : buildImageUrl(item.imageUrl)}
-                      alt={item.sceneLabel}
+                      alt={pickLocaleField(item.task, "scene_label", locale) || item.sceneLabel}
                       className="size-full object-cover"
                       onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
                     />
@@ -413,7 +411,7 @@ export default function ScenarioPage() {
                 </div>
 
                 {/* 信息 */}
-                <p className="text-xs font-medium text-card-foreground truncate">{item.sceneLabel}</p>
+                <p className="text-xs font-medium text-card-foreground truncate">{pickLocaleField(item.task, "scene_label", locale) || item.sceneLabel}</p>
                 <p className="mt-0.5 text-xs text-muted-foreground/50">{formatTime(item.createdAt)}</p>
 
                 {/* 操作按钮 */}

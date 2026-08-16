@@ -10,6 +10,7 @@ import {
   type ScenarioHistoryItem,
 } from "@/lib/store";
 import { BASE_URL, buildImageUrl } from "@/lib/api";
+import { pickLocaleField } from "@/lib/locale-utils";
 
 interface Props {
   onSelected?: (item: ScenarioHistoryItem) => void;
@@ -108,7 +109,7 @@ export default function HistoryTaskSelector({
               {item.imageUrl ? (
                 <img
                   src={buildImageUrl(item.imageUrl)}
-                  alt={item.sceneLabel}
+                  alt={pickLocaleField(item.task, "scene_label", locale) || item.sceneLabel}
                   className="size-full object-cover"
                   onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
                 />
@@ -124,10 +125,10 @@ export default function HistoryTaskSelector({
             {/* 信息 */}
             <div className="flex-1 min-w-0 space-y-1">
               <p className="text-sm font-semibold text-card-foreground truncate">
-                {item.sceneLabel}
+                {pickLocaleField(item.task, "scene_label", locale) || item.sceneLabel}
               </p>
               <p className="text-xs text-muted-foreground/70 truncate">
-                {(item.goal ?? "").slice(0, 60)}
+                {(pickLocaleField(item.task, "goal", locale) || item.goal || "").slice(0, 60)}
               </p>
               <p className="text-xs text-muted-foreground/50">
                 {formatTime(item.createdAt)}

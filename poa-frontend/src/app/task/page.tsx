@@ -73,6 +73,7 @@ function TaskTextBlock({
 export default function TaskPage() {
   const router = useRouter();
   const t = useTranslations();
+  const locale = useLocale();
   const { scenarioResult, setScenarioResult } = usePOA();
 
   // ---- 初始化状态 ----
@@ -150,7 +151,7 @@ export default function TaskPage() {
     );
   }
 
-  const { user, ai } = parseRoles(task.roles, t("common.not_specified"));
+  const { user, ai } = parseRoles(pickLocaleField(task, "roles", locale), t("common.not_specified"));
 
   return (
     <div className="mx-auto max-w-2xl space-y-8">
@@ -180,7 +181,7 @@ export default function TaskPage() {
           {/* 场景标签 */}
           <div className="flex items-center gap-2">
             <span className="rounded-full bg-primary/10 px-3 py-1 text-sm font-semibold text-primary">
-              {task.scene_label}
+              {pickLocaleField(task, "scene_label", locale)}
             </span>
           </div>
 
@@ -213,7 +214,7 @@ export default function TaskPage() {
                 {t("task.goal")}
               </h3>
               <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">
-                <TaskTextBlock text={task.goal} />
+                <TaskTextBlock text={pickLocaleField(task, "goal", locale)} />
               </div>
             </div>
 
@@ -235,7 +236,7 @@ export default function TaskPage() {
                 {t("task.criteria")}
               </h3>
               <div className="rounded-lg border border-border bg-card p-4">
-                <TaskTextBlock text={task.evaluation_criteria} />
+                <TaskTextBlock text={pickLocaleField(task, "evaluation_criteria", locale)} />
               </div>
             </div>
           </div>

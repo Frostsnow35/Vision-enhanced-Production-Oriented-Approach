@@ -204,7 +204,7 @@ export default function EvaluatePage() {
                 const ct = localStorage.getItem("currentTask");
                 if (ct) {
                   const parsed = JSON.parse(ct);
-                  return parsed?.scene_label || t("evaluate.scene_label");
+                  return pickLocaleField(parsed, "scene_label", locale) || t("evaluate.scene_label");
                 }
               } catch { /* ignore */ }
               return t("evaluate.scene_label");
@@ -214,7 +214,7 @@ export default function EvaluatePage() {
                 const ct = localStorage.getItem("currentTask");
                 if (ct) {
                   const parsed = JSON.parse(ct);
-                  const goal = parsed?.goal || "";
+                  const goal = pickLocaleField(parsed, "goal", locale);
                   return goal.length > 30 ? goal.slice(0, 30) + "..." : goal;
                 }
               } catch { /* ignore */ }

@@ -421,12 +421,12 @@ export default function Attempt2Page() {
         body: JSON.stringify({
           task_id: (task as any)?.task_id ?? 0,
           is_variant: true,
-          variant_context: task.variant_plot ?? "",
-          scene_label: task.scene_label,
-          roles: task.roles,
-          goal: task.goal,
-          evaluation_criteria: task.evaluation_criteria || "",
-          opening_line: (task as any).opening_line || "",
+          variant_context: pickLocaleField(task, "variant_plot", locale),
+          scene_label: pickLocaleField(task, "scene_label", locale),
+          roles: pickLocaleField(task, "roles", locale),
+          goal: pickLocaleField(task, "goal", locale),
+          evaluation_criteria: pickLocaleField(task, "evaluation_criteria", locale),
+          opening_line: pickLocaleField(task, "opening_line", locale),
         }),
       });
       if (res.ok) {
@@ -665,12 +665,12 @@ export default function Attempt2Page() {
         const body: Record<string, unknown> = {
           task_id: (currentTask2 as any)?.id ?? 0,
           conversation_history: historyForBackend,
-          scene_label: currentTask2?.scene_label || "",
-          roles: currentTask2?.roles || "",
-          goal: currentTask2?.goal || "",
-          evaluation_criteria: currentTask2?.evaluation_criteria || "",
-          variant_context: currentTask2?.variant_plot ?? "",
-          closing_line: (currentTask2 as any)?.closing_line ?? "",
+          scene_label: pickLocaleField(currentTask2, "scene_label", locale),
+          roles: pickLocaleField(currentTask2, "roles", locale),
+          goal: pickLocaleField(currentTask2, "goal", locale),
+          evaluation_criteria: pickLocaleField(currentTask2, "evaluation_criteria", locale),
+          variant_context: pickLocaleField(currentTask2, "variant_plot", locale),
+          closing_line: pickLocaleField(currentTask2, "closing_line", locale),
         };
         body.user_text = wrapUpUserText;
         const res = await fetch(`${BASE_URL}/api/chat/turn`, {
@@ -745,8 +745,9 @@ export default function Attempt2Page() {
       } catch (err) {
         console.warn("[attempt2] Plan A 调用失败，降级:", err);
         const currentTask2 = taskRef.current;
-        const fallbackText = (currentTask2 as any)?.closing_line
-          ? ((currentTask2 as any).closing_line as string) + " [CONVERSATION_COMPLETE]"
+        const closingLine = pickLocaleField(currentTask2, "closing_line", locale);
+        const fallbackText = closingLine
+          ? closingLine + " [CONVERSATION_COMPLETE]"
           : FALLBACK_CLOSING;
         const aiTurn: ConversationTurn = { role: "ai", text: fallbackText };
         setHistory((prev) => [...prev, aiTurn]);
@@ -767,11 +768,11 @@ export default function Attempt2Page() {
       const body: Record<string, unknown> = {
         task_id: (currentTask as any)?.task_id ?? 0,
         conversation_history: historyForBackend,
-        scene_label: currentTask?.scene_label || "",
-        roles: currentTask?.roles || "",
-        goal: currentTask?.goal || "",
-        evaluation_criteria: currentTask?.evaluation_criteria || "",
-        variant_context: currentTask?.variant_plot ?? "",
+        scene_label: pickLocaleField(currentTask, "scene_label", locale),
+        roles: pickLocaleField(currentTask, "roles", locale),
+        goal: pickLocaleField(currentTask, "goal", locale),
+        evaluation_criteria: pickLocaleField(currentTask, "evaluation_criteria", locale),
+        variant_context: pickLocaleField(currentTask, "variant_plot", locale),
       };
       body.user_text = user_text;
 
@@ -906,11 +907,11 @@ export default function Attempt2Page() {
       const body: Record<string, unknown> = {
         task_id: (currentTask as any)?.task_id ?? 0,
         conversation_history: historyForBackend,
-        scene_label: currentTask?.scene_label || "",
-        roles: currentTask?.roles || "",
-        goal: currentTask?.goal || "",
-        evaluation_criteria: currentTask?.evaluation_criteria || "",
-        variant_context: currentTask?.variant_plot ?? "",
+        scene_label: pickLocaleField(currentTask, "scene_label", locale),
+        roles: pickLocaleField(currentTask, "roles", locale),
+        goal: pickLocaleField(currentTask, "goal", locale),
+        evaluation_criteria: pickLocaleField(currentTask, "evaluation_criteria", locale),
+        variant_context: pickLocaleField(currentTask, "variant_plot", locale),
       };
       body.user_text = userText;
 
@@ -1045,7 +1046,7 @@ export default function Attempt2Page() {
   const formatTime = (s: number) =>
     `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 
-  const { user, ai } = task ? parseRoles(task.roles, t("common.not_specified")) : { user: "", ai: "" };
+  const { user, ai } = task ? parseRoles(pickLocaleField(task, "roles", locale), t("common.not_specified")) : { user: "", ai: "" };
 
   // ---- dimLabels (使用 t) ----
   const dimLabels = useMemo(() => ({
@@ -1071,13 +1072,7 @@ export default function Attempt2Page() {
           <HistoryTaskSelector
             onSelected={(item: ScenarioHistoryItem) => {
               markTaskSelectedInSession();
-              const taskData: TaskData = {
-                scene_label: item.sceneLabel,
-                roles: item.roles,
-                goal: item.goal,
-                variant_plot: item.task?.variant_plot,
-                evaluation_criteria: item.task?.evaluation_criteria,
-              };
+              const taskData: TaskData = item.task as TaskData;
               localStorage.setItem("currentTask", JSON.stringify(taskData));
               taskRef.current = taskData;
               setLocalTask(taskData);
@@ -1115,7 +1110,7 @@ export default function Attempt2Page() {
         <div className="flex items-center justify-between text-xs">
           <div className="flex items-center gap-3">
             <span className="rounded-md bg-primary/10 px-2 py-0.5 font-semibold text-primary">
-              {task.scene_label}
+              {pickLocaleField(task, "scene_label", locale)}
             </span>
             <span className="text-muted-foreground">
               {user.split("——")[0]} × {ai.split("——")[0]}
@@ -1185,7 +1180,7 @@ export default function Attempt2Page() {
             <span className="mt-0.5 shrink-0 text-[10px] text-amber-600 dark:text-amber-400">◆</span>
             <p className="text-xs leading-relaxed text-card-foreground">
               <span className="font-medium text-amber-600 dark:text-amber-400">{t("attempt.variant_task")}</span>
-              {task.variant_plot}
+              {pickLocaleField(task, "variant_plot", locale)}
             </p>
           </div>
         )}

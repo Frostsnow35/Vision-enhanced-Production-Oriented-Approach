@@ -675,7 +675,7 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
   }
 
   // 使用历史记录或后端报告数据
-  const sceneLabel = (historyItem as any)?.sceneLabel || pickLocaleField(report?.scenario, "scene_label", locale) || t("report.unknown_scene");
+  const sceneLabel = pickLocaleField(report?.scenario, "scene_label", locale) || pickLocaleField((historyItem as any)?.task, "scene_label", locale) || (historyItem as any)?.sceneLabel || t("report.unknown_scene");
   const createdAt = report?.scenario?.created_at?.slice(0, 10) || (historyItem as any)?.createdAt?.slice(0, 10) || "";
 
   return (
