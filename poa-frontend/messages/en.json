@@ -71,7 +71,7 @@
     "start_practice": "Start Practice",
     "continue_practice": "Continue Practice",
     "task_label": "Real-Scenario Communication Task",
-    "dim_trend": "7-Dimension Ability Trends",
+    "dim_trend": "5-Dimension Ability Trends",
     "more_records": "{count} more records...",
     "dim_assessment": "Dimension Assessment",
     "realtime_diagnosis": "Real-time Diagnosis",
@@ -84,13 +84,11 @@
     "weeks_ago": "{w} weeks ago"
   },
   "dims": {
-    "pronunciation": "Pronunciation Accuracy",
-    "grammar": "Grammatical Accuracy",
-    "vocabulary": "Lexical Appropriacy",
-    "function": "Functional Achievement",
-    "pragmatics": "Pragmatic Appropriacy",
-    "turn_taking": "Turn-taking Fluidity",
-    "paralanguage": "Paralinguistic Match"
+    "linguistic": "Linguistic Competence",
+    "discourse": "Discourse Competence",
+    "actional": "Actional Competence",
+    "sociocultural": "Sociocultural Competence",
+    "strategic": "Strategic Competence"
   },
   "scenario": {
     "title": "Select a Scene Photo",
@@ -246,7 +244,7 @@
     "suggest_say": "Better to Say",
     "detail_below": "(See details below)",
     "no_reference": "(No reference available)",
-    "dim_eval": "7-Dimension Overall Evaluation",
+    "dim_eval": "5-Dimension Overall Evaluation",
     "enter_facilitate_hint": "Review your diagnosis results, then move on to targeted facilitation",
     "enter_facilitate": "Enter Facilitation →",
     "no_gaps": "No significant language gaps found. Keep it up!",
@@ -284,7 +282,7 @@
     "assessment_overview": "Ability Assessment Overview",
     "mark_complete": "Mark Complete ✓",
     "avg_score": "Average Score",
-    "assessment_intro": "Based on your first attempt, we evaluated your performance across 7 dimensions. Click each card below to see detailed explanations and improvement suggestions.",
+    "assessment_intro": "Based on your first attempt, we evaluated your performance across 5 dimensions. Click each card below to see detailed explanations and improvement suggestions.",
     "key_improvement_areas": "Key Dimensions to Improve",
     "all_dims": "All Ability Dimensions",
     "dim_desc": "Dimension Description",
@@ -328,7 +326,7 @@
   },
   "evaluate": {
     "title": "Dual-Track Evaluation Report",
-    "subtitle": "Attempt 1 vs Attempt 2 — 7-Dimension Comparative Assessment",
+    "subtitle": "Attempt 1 vs Attempt 2 — 5-Dimension Comparative Assessment",
     "overall": "Overall Evaluation",
     "targeted_title": "Targeted Gap Improvement Assessment",
     "no_targeted": "No targeted assessment data available",
@@ -351,7 +349,12 @@
     "no_eval_data": "No Evaluation Data",
     "no_eval_hint": "Please complete both Attempt 1 and Attempt 2 first",
     "scene_label": "Real-Scenario Conversation",
-    "task_label": "Real-Scenario Communication Task"
+    "task_label": "Real-Scenario Communication Task",
+    "fallback_linguistic": "Linguistic",
+    "fallback_discourse": "Discourse",
+    "fallback_actional": "Actional",
+    "fallback_sociocultural": "Sociocultural",
+    "fallback_strategic": "Strategic"
   },
   "report": {
     "title": "Learning Evidence Chain Report",

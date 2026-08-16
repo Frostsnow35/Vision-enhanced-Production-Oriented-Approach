@@ -48,7 +48,7 @@ function ScoreRing({ value }: { value: number }) {
   );
 }
 
-/** 七维迷你进度条 */
+/** 五维迷你进度条 */
 function MiniDimBars({
   scores,
   dimLabels,
@@ -133,23 +133,19 @@ export default function Home() {
 
   // 维度标签（通过翻译动态获取）
   const dimLabels = useMemo<Record<string, string>>(() => ({
-    "发音标准度": t("dims.pronunciation"),
-    "语法规范性": t("dims.grammar"),
-    "词汇适配性": t("dims.vocabulary"),
-    "语言功能达成度": t("dims.function"),
-    "语用策略得体性": t("dims.pragmatics"),
-    "话语回合适配性": t("dims.turn_taking"),
-    "副语言匹配度": t("dims.paralanguage"),
+    "语言能力": t("dims.linguistic"),
+    "话语能力": t("dims.discourse"),
+    "行动能力": t("dims.actional"),
+    "社会文化能力": t("dims.sociocultural"),
+    "策略能力": t("dims.strategic"),
   }), [t]);
 
   const dimOrder = useMemo(() => [
-    "发音标准度",
-    "语法规范性",
-    "词汇适配性",
-    "语言功能达成度",
-    "语用策略得体性",
-    "话语回合适配性",
-    "副语言匹配度",
+    "语言能力",
+    "话语能力",
+    "行动能力",
+    "社会文化能力",
+    "策略能力",
   ], []);
 
   function timeAgo(ts: number): string {
@@ -195,7 +191,7 @@ export default function Home() {
 
         <div className="mt-6 grid grid-cols-3 gap-4">
           <div className="rounded-xl bg-primary p-4 text-center shadow-lg shadow-primary/30">
-            <div className="text-3xl font-bold text-primary-foreground">7</div>
+            <div className="text-3xl font-bold text-primary-foreground">5</div>
             <div className="text-sm text-primary-foreground/90">{t("home.dim_assessment")}</div>
           </div>
           <div className="rounded-xl bg-accent p-4 text-center shadow-lg shadow-accent/30">
@@ -293,7 +289,7 @@ export default function Home() {
                   </span>
                 </div>
 
-                {/* 第二行：七维迷你趋势 */}
+                {/* 第二行：五维迷你趋势 */}
                 {entry.dimensionScores &&
                   Object.keys(entry.dimensionScores).length > 0 && (
                     <div className="mt-3 pt-2.5 border-t border-border/60">

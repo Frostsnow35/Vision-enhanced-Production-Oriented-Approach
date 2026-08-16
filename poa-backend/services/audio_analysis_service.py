@@ -2,8 +2,8 @@
 音频分析服务 —— 基于音频文件元数据计算发音/流利度指标。
 
 指标：
-- WPM（语速）：词数 / 音频时长（分钟） → 映射到副语言匹配度 1-5 分
-- 平均词置信度（如有 ASR utterance 数据）→ 映射到发音标准度 1-5 分
+- WPM（语速）：词数 / 音频时长（分钟） → 映射到流利度（话语能力）1-5 分
+- 平均词置信度（如有 ASR utterance 数据）→ 映射到发音（语言能力）1-5 分
 - 停顿频率：utterance 间间隔 → 辅助流利度评估
 
 音频格式：webm（opus 编码）、wav 等。
@@ -80,7 +80,7 @@ def _download_audio(audio_url_or_path: str) -> Optional[str]:
 
 def _map_wpm_to_score(wpm: float) -> float:
     """
-    将 WPM（词/分钟）映射到 1-5 分（副语言匹配度/流利度）。
+    将 WPM（词/分钟）映射到 1-5 分（流利度/话语能力）。
     
     参考范围（英语学习者）：
     - < 40  wpm: 非常慢，不流利 → 1.0-2.0
@@ -180,7 +180,7 @@ def analyze_audio(
 
     fluency_score = _map_wpm_to_score(wpm)
 
-    # 发音标准度：基于 WPM 推断（无词级置信度时用 WPM 作为代理）
+    # 发音（语言能力）：基于 WPM 推断（无词级置信度时用 WPM 作为代理）
     # WPM 在合理范围内说明发音至少不影响可懂度
     if wpm >= 70:
         pronunciation_score = round(2.5 + (wpm - 70) / 70 * 2.0, 1)

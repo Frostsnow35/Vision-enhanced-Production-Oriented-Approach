@@ -68,6 +68,19 @@ export default function DiagnosisPage() {
   const t = useTranslations();
   const locale = useLocale();
   const funTips: string[] = Array.isArray(t.raw("diagnosis.fun_tips")) ? t.raw("diagnosis.fun_tips") : [];
+
+  // 维度名称本地化映射（后端返回中文维度名）
+  const dimLabel = (key: string) => {
+    const map: Record<string, string> = {
+      "语言能力": t("dims.linguistic"),
+      "话语能力": t("dims.discourse"),
+      "行动能力": t("dims.actional"),
+      "社会文化能力": t("dims.sociocultural"),
+      "策略能力": t("dims.strategic"),
+    };
+    return map[key] ?? key;
+  };
+
   const [initDone, setInitDone] = useState(false);
   const [hasHistory, setHasHistory] = useState(false);
   const [gaps, setGaps] = useState<GapItem[] | null>(null);
@@ -118,7 +131,7 @@ export default function DiagnosisPage() {
     setInitDone(true);
   }, []);
 
-  // 七维评分异步加载
+  // 五维评分异步加载
   const fetchDimensionScores = useCallback(async (attemptId: number) => {
     setScoresLoading(true);
     try {
@@ -360,12 +373,12 @@ export default function DiagnosisPage() {
           );
         })}
 
-      {/* ---- 七维评分（异步加载）---- */}
+      {/* ---- 五维评分（异步加载）---- */}
       {scoresLoading && (
         <div className="rounded-xl border border-border bg-card p-6 shadow-sm animate-pulse">
           <div className="h-5 w-48 rounded bg-muted mb-3" />
           <div className="grid grid-cols-2 gap-3">
-            {[...Array(6)].map((_, i) => (
+            {[...Array(5)].map((_, i) => (
               <div key={i} className="h-4 w-full rounded bg-muted/60" />
             ))}
           </div>
@@ -382,7 +395,7 @@ export default function DiagnosisPage() {
                 key={key}
                 className="flex items-center justify-between rounded-lg bg-muted/30 px-4 py-2.5"
               >
-                <span className="text-sm text-card-foreground">{key}</span>
+                <span className="text-sm text-card-foreground">{dimLabel(key)}</span>
                 <span className="text-sm font-semibold text-primary">
                   {typeof score === "number" ? score.toFixed(1) : score}
                 </span>

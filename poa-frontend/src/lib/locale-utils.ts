@@ -15,7 +15,7 @@ export function pickLocale(
   enValue: string | null | undefined,
   locale: string,
 ): string {
-  const effectiveLocale = locale || "zh";
+  const effectiveLocale = locale || "en";
   if (effectiveLocale === "en" && enValue) return enValue;
   return zhValue || "";
 }
@@ -31,7 +31,7 @@ export function pickLocaleField<T extends Record<string, any>>(
 ): string {
   if (!data) return "";
   const enField = `${field}_en`;
-  const effectiveLocale = locale || "zh";
+  const effectiveLocale = locale || "en";
   if (effectiveLocale === "en" && data[enField]) return String(data[enField]);
   return String(data[field] || "");
 }
@@ -46,7 +46,7 @@ export function pickTranslation<T extends Record<string, any>>(
   locale: string,
 ): string {
   if (!data) return "";
-  const effectiveLocale = locale || "zh";
+  const effectiveLocale = locale || "en";
   if (effectiveLocale === "en") {
     const translations = data.translations as Record<string, string> | undefined;
     if (translations?.[field]) return translations[field];

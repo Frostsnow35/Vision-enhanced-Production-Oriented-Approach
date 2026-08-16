@@ -47,7 +47,7 @@ export interface JourneyEntry {
   taskTitle: string;
   imageUrl?: string;
   completedAt: number;        // 时间戳
-  avgScore: number;           // 二次产出七维均分
+  avgScore: number;           // 二次产出五维均分
   dimensionScores: Record<string, JourneyDimensionScore>;
 }
 

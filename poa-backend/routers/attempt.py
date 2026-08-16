@@ -281,7 +281,7 @@ async def submit_attempt2(req: AttemptSubmitRequest, db: Session = Depends(get_d
                         a2_scores = a2_eval.get("dimension_scores", {})
 
                         # 从 attempt1 的 gaps 中无法获取原始评分，用固定基准
-                        dims_list = ["发音标准度","语法规范性","词汇适配性","语言功能达成度","语用策略得体性","话语回合适配性","副语言匹配度"]
+                        dims_list = ["语言能力","话语能力","行动能力","社会文化能力","策略能力"]
                         comparison = []
                         dim_scores = {}
                         for d in dims_list:
@@ -314,7 +314,7 @@ async def submit_attempt2(req: AttemptSubmitRequest, db: Session = Depends(get_d
 @router.post("/attempt1/evaluate")
 async def get_evaluation(req: AttemptSubmitRequest, db: Session = Depends(get_db)):
     """
-    异步获取七维评分（不阻塞诊断返回）。
+    异步获取五维评分（不阻塞诊断返回）。
     """
     diagnosis_text = _build_diagnosis_text(req)
     if not diagnosis_text:
@@ -350,9 +350,9 @@ async def get_evaluation(req: AttemptSubmitRequest, db: Session = Depends(get_db
             evaluation_criteria=evaluation_criteria,
         )
         dimension_scores = eval_result.get("dimension_scores", {})
-        logger.info(f"[attempt1/evaluate] 七维评分完成: {list(dimension_scores.keys())}")
+        logger.info(f"[attempt1/evaluate] 五维评分完成: {list(dimension_scores.keys())}")
         return {"dimension_scores": dimension_scores}
     except Exception as e:
-        logger.warning(f"[attempt1/evaluate] 七维评分失败: {e}")
+        logger.warning(f"[attempt1/evaluate] 五维评分失败: {e}")
         from fastapi.responses import JSONResponse
         return JSONResponse(status_code=500, content={"error": "evaluation_failed", "message": str(e)})

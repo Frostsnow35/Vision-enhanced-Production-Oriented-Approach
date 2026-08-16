@@ -1,6 +1,6 @@
 """
 评价路由 —— 单次能力评估 + 双轨对比评估。
-支持音频分析：传入 audio_paths 时，发音+副语言维度由本地 Whisper 分析。
+支持音频分析：传入 audio_paths 时，发音（语言能力）+流利度（话语能力）维度由本地 Whisper 分析。
 """
 import logging
 from typing import List, Optional
@@ -36,14 +36,14 @@ class EvaluateCompareRequest(BaseModel):
     audio1_paths: List[str] = []  # 初次产出音频路径列表
     audio2_paths: List[str] = []  # 二次产出音频路径列表
     gaps: list = []  # 可选：初次产出的诊断 gaps
-    attempt1_scores: dict = {}  # 预计算的 attempt1 七维评分，传入后跳过重分析
+    attempt1_scores: dict = {}  # 预计算的 attempt1 五维评分，传入后跳过重分析
     evaluation_criteria: str = ""  # 任务的场景化评价标准（3-5条）
 
 
 class EvaluateCompareResponse(BaseModel):
     attempt1_scores: dict
     attempt2_scores: dict
-    dimension_scores: dict = {}  # 七维评分（含 weight/comment/change）严格对齐 Excel
+    dimension_scores: dict = {}  # 五维评分（含 weight/comment/change）严格对齐模型
     comparison: list
     target_evaluation: list = []  # 靶向评估结果（仅传入 gaps 时有值）
     audio_analysis: dict = {}  # 音频分析原始指标
@@ -53,8 +53,8 @@ class EvaluateCompareResponse(BaseModel):
 @router.post("/evaluate-single", response_model=EvaluateSingleResponse)
 async def eval_single(req: EvaluateSingleRequest):
     """
-    对单次产出的对话文本进行七维能力评分（1-5 分）。
-    如传入 audio_paths，发音标准度和副语言匹配度由本地音频分析给出真实分数。
+    对单次产出的对话文本进行五维能力评分（1-5 分）。
+    如传入 audio_paths，发音（语言能力）和流利度（话语能力）由本地音频分析给出真实分数。
     """
     audio_paths = [p for p in req.audio_paths if p] if req.audio_paths else None
     result = evaluate_single(
@@ -68,8 +68,8 @@ async def eval_single(req: EvaluateSingleRequest):
 @router.post("/evaluate-compare", response_model=EvaluateCompareResponse)
 async def eval_compare(req: EvaluateCompareRequest, db: Session = Depends(get_db)):
     """
-    对比初次产出与二次产出的七维表现。
-    如果传入了 attempt1_scores（预计算的七维评分），跳过 attempt1 重分析，
+    对比初次产出与二次产出的五维表现。
+    如果传入了 attempt1_scores（预计算的五维评分），跳过 attempt1 重分析，
     仅评估 attempt2，然后与预计算分数对比。
     同时将 Evaluation 记录保存到数据库供报告查询。
     """
@@ -89,7 +89,7 @@ async def eval_compare(req: EvaluateCompareRequest, db: Session = Depends(get_db
         a2_scores = a2_result.get("dimension_scores", {})
 
         # 构建 comparison
-        dims = ["发音标准度","语法规范性","词汇适配性","语言功能达成度","语用策略得体性","话语回适合配性","副语言匹配度"]
+        dims = ["语言能力","话语能力","行动能力","社会文化能力","策略能力"]
         comparison = []
         a1_out = {}
         a2_out = {}

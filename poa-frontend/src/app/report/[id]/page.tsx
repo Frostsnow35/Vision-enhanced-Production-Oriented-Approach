@@ -387,12 +387,17 @@ function EvaluationContent({ evaluation }: { evaluation: Record<string, any> | n
 
   /**
    * Get locale-aware dimension label.
-   * If the dimension value object has a `comment_en` field, use the English comment as label in en mode.
-   * Otherwise fall back to the dimension key itself (which is the label in Chinese).
+   * Map backend Chinese dimension keys to localized labels.
    */
-  const dimLabel = (key: string, val: Record<string, any>): string => {
-    if (locale === "en" && val?.comment_en) return val.comment_en;
-    return key;
+  const dimLabel = (key: string): string => {
+    const map: Record<string, string> = {
+      "语言能力": t("dims.linguistic"),
+      "话语能力": t("dims.discourse"),
+      "行动能力": t("dims.actional"),
+      "社会文化能力": t("dims.sociocultural"),
+      "策略能力": t("dims.strategic"),
+    };
+    return map[key] ?? key;
   };
 
   return (
@@ -418,7 +423,7 @@ function EvaluationContent({ evaluation }: { evaluation: Record<string, any> | n
               return (
                 <div key={key} className="space-y-1">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-muted-foreground">{dimLabel(key, value as Record<string, any>)}</span>
+                    <span className="text-muted-foreground">{dimLabel(key)}</span>
                     {isComparisonItem ? (
                       <span className="font-medium text-card-foreground">
                         {toFixed((value as any).attempt1, 1)} → {toFixed((value as any).attempt2, 1)}{t("report.score")}

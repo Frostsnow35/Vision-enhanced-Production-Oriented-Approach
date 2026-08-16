@@ -275,7 +275,7 @@ class EvaluateRequest(BaseModel):
 
 
 class DimensionScore(BaseModel):
-    """单维度前后对比分数（严格对齐 Excel 七维评分表）"""
+    """单维度前后对比分数（严格对齐五维交际能力模型）"""
     attempt1: float
     attempt2: float
     change: float
@@ -284,7 +284,7 @@ class DimensionScore(BaseModel):
 
 
 class EvaluateResponse(BaseModel):
-    """POST /api/evaluate 响应体（七维度）"""
+    """POST /api/evaluate 响应体（五维度）"""
     dimension_scores: Dict[str, DimensionScore]
     problem_improved: str
     full_report: str

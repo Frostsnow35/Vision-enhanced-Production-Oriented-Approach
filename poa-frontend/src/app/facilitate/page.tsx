@@ -65,26 +65,22 @@ interface LearningProgress {
 
 /** 维度标识符列表（语言无关，用于内部逻辑） */
 const DIM_ORDER = [
-  "pronunciation",
-  "grammar",
-  "vocabulary",
-  "function",
-  "pragmatics",
-  "turn_taking",
-  "paralanguage",
+  "linguistic",
+  "discourse",
+  "actional",
+  "sociocultural",
+  "strategic",
 ] as const;
 
 type DimKey = (typeof DIM_ORDER)[number];
 
 /** API 可能返回中文维度名，需要映射到内部标识符 */
 const CHINESE_DIM_TO_KEY: Record<string, DimKey> = {
-  "发音标准度": "pronunciation",
-  "语法规范性": "grammar",
-  "词汇适配性": "vocabulary",
-  "语言功能达成度": "function",
-  "语用策略得体性": "pragmatics",
-  "话语回合适配性": "turn_taking",
-  "副语言匹配度": "paralanguage",
+  "语言能力": "linguistic",
+  "话语能力": "discourse",
+  "行动能力": "actional",
+  "社会文化能力": "sociocultural",
+  "策略能力": "strategic",
 };
 
 /** 将 API 返回的分数对象（可能包含中文键）归一化为 dim key 键 */
@@ -101,51 +97,40 @@ function normalizeScores(raw: Record<string, any>): DimScores {
 
 /** 维度描述（内容数据，非 UI 标签；键为 dim key） */
 const DIM_DESCRIPTIONS: Record<DimKey, { description: string; levels: Record<number, string>; tips: string }> = {
-  pronunciation: {
-    description: "评估英语发音的准确程度，包括元音、辅音、重音和语调。",
+  linguistic: {
+    description: "评估英语语言基本功，包括发音、语法和词汇的准确性与适配性。",
     levels: {
-      1: "发音困难，大量错误，难以理解",
-      2: "有明显发音错误，部分可理解",
-      3: "基本发音正确，偶有小错误",
-      4: "发音清晰准确，自然流畅",
-      5: "发音标准，接近母语者水平",
+      1: "发音/语法/词汇错误频繁，严重影响理解",
+      2: "有明显错误，部分可理解",
+      3: "基本正确，偶有小错误",
+      4: "准确清晰，表达流畅",
+      5: "发音标准、语法精准、词汇地道",
     },
-    tips: "多听示范音频，模仿跟读，注意重音和语调，可以录下自己的发音进行对比。",
+    tips: "多听示范音频跟读，重点练习元音饱满度和词尾辅音，同时复习时态、主谓一致和场景核心词汇。",
   },
-  grammar: {
-    description: "评估语法使用的正确性，包括时态、语态、主谓一致等。",
+  discourse: {
+    description: "评估话语的连贯性、话轮转换与流利度。",
     levels: {
-      1: "语法错误频繁，严重影响理解",
-      2: "有较多语法错误，影响表达流畅",
-      3: "基本语法正确，偶有小错误",
-      4: "语法使用准确，表达流畅",
-      5: "语法完美，运用自如",
+      1: "回应困难，难以维持对话",
+      2: "能回应，但对话不够自然",
+      3: "能自然回应，维持对话",
+      4: "回应积极，衔接自然",
+      5: "回应灵活自然，对话流畅高效",
     },
-    tips: "练习时注意自我纠正，建立语法笔记，定期复习巩固。",
+    tips: "练习使用话语标记，注意倾听对方，学会自然地转换话题并保持语流连贯。",
   },
-  vocabulary: {
-    description: "评估词汇使用的恰当性、丰富性和准确性。",
+  actional: {
+    description: "评估能否用英语完成特定交际功能并达成任务目标。",
     levels: {
-      1: "词汇量有限，表达单一",
-      2: "基本词汇尚可，表达不够丰富",
-      3: "词汇选择适当，能表达基本意思",
-      4: "词汇丰富，使用恰当",
-      5: "词汇精准，表达地道",
-    },
-    tips: "建立场景词汇库，学习同义词替换，注意词汇搭配。",
-  },
-  function: {
-    description: "评估能否用英语完成特定的交际功能，如请求、建议、道歉等。",
-    levels: {
-      1: "难以完成基本交际功能",
+      1: "难以完成基本交际功能，任务完成率低",
       2: "能部分完成交际功能，但方式有限",
       3: "能完成基本交际功能",
       4: "能有效完成多种交际功能",
-      5: "能灵活、自然地完成各种交际功能",
+      5: "能灵活、自然地完成各种交际功能，任务达成度高",
     },
-    tips: "明确每种交际功能的常用表达，进行有针对性的练习。",
+    tips: "明确每种交际功能的常用表达，先确保完成所有交际要点再追求复杂表达。",
   },
-  pragmatics: {
+  sociocultural: {
     description: "评估语言使用的礼貌性、得体性和文化适应性。",
     levels: {
       1: "表达直接生硬，缺乏礼貌",
@@ -156,99 +141,73 @@ const DIM_DESCRIPTIONS: Record<DimKey, { description: string; levels: Record<num
     },
     tips: "学习委婉表达，注意礼貌用语，了解文化差异。",
   },
-  turn_taking: {
-    description: "评估对话中的回应能力，包括话题延续和转换。",
+  strategic: {
+    description: "评估运用沟通策略应对表达障碍的能力，如请求澄清、自我修正、换说法等。",
     levels: {
-      1: "回应困难，难以维持对话",
-      2: "能回应，但对话不够自然",
-      3: "能自然回应，维持对话",
-      4: "回应积极，推动对话发展",
-      5: "回应灵活自然，对话流畅高效",
+      1: "缺乏策略，遇阻即中断",
+      2: "策略单一，应对有限",
+      3: "能基本运用澄清/修正策略",
+      4: "能灵活运用多种沟通策略",
+      5: "策略运用娴熟，沟通顺畅",
     },
-    tips: "练习使用话语标记，注意倾听对方，学会自然地转换话题。",
-  },
-  paralanguage: {
-    description: "评估语调、语速、停顿等非语言要素的使用。",
-    levels: {
-      1: "语调单一，语速不当",
-      2: "语调基本正确，但缺乏变化",
-      3: "语调自然，语速适当",
-      4: "语调富有变化，表达有力",
-      5: "副语言要素使用完美，增强表达效果",
-    },
-    tips: "注意疑问句升调和陈述句降调，练习语速变化，模仿母语者的语调节奏。",
+    tips: "练习使用 'Sorry, could you...' 请求澄清，遇到表达困难时尝试换一种说法。",
   },
 };
 
 /** 维度提升建议（内容数据，键为 dim key） */
 const DIM_ADVICE: Record<DimKey, string> = {
-  pronunciation: "多听示范音频跟读，重点练习元音饱满度和词尾辅音，可使用录音自评。",
-  grammar: "重点复习时态、主谓一致和介词搭配，口头练习时注意自我纠正。",
-  vocabulary: "积累场景核心词汇和固定搭配，用同义替换避免重复使用基础词汇。",
-  function: "先确保完成所有交际要点再追求复杂表达，练习前先列出关键步骤。",
-  pragmatics: "学习使用 'I'd like', 'Could you...' 等委婉表达，强化礼貌标记词。",
-  turn_taking: "练习使用 'Well', 'Actually', 'Sure' 等话语标记自然开启回应，注意话轮交替节奏。",
-  paralanguage: "注意疑问句升调和陈述句降调，练习语速变化和情感语调，可跟读示范音频。",
+  linguistic: "多听示范音频跟读，重点练习发音、时态与主谓一致，并积累场景核心词汇和固定搭配。",
+  discourse: "练习使用 'Well', 'Actually', 'Sure' 等话语标记自然开启回应，注意话轮交替节奏与流利度。",
+  actional: "先确保完成所有交际要点再追求复杂表达，练习前先列出关键步骤。",
+  sociocultural: "学习使用 'I'd like', 'Could you...' 等委婉表达，强化礼貌标记词并注意文化习惯。",
+  strategic: "遇到表达困难时主动请求澄清或换一种说法，练习自我修正以保持沟通顺畅。",
 };
 
 /** 维度提升建议（英文版） */
 const DIM_ADVICE_EN: Record<DimKey, string> = {
-  pronunciation: "Listen to model audio and shadow it, focusing on full vowels and final consonants. Record yourself for self-assessment.",
-  grammar: "Review tenses, subject-verb agreement, and preposition collocations. Self-correct while speaking.",
-  vocabulary: "Build a scene-specific word bank and fixed collocations. Use synonyms to avoid repeating basic words.",
-  function: "Complete all communicative points before pursuing complex expressions. List key steps before practicing.",
-  pragmatics: "Use polite forms such as 'I'd like' and 'Could you...' to strengthen politeness markers.",
-  turn_taking: "Use discourse markers like 'Well', 'Actually', and 'Sure' to open responses naturally, and mind turn-taking rhythm.",
-  paralanguage: "Notice rising intonation for questions and falling for statements. Practice pacing and emotional tone with model audio.",
+  linguistic: "Shadow model audio to improve pronunciation, review tense and subject-verb agreement, and build scene-specific vocabulary and collocations.",
+  discourse: "Use discourse markers like 'Well', 'Actually', and 'Sure' to open responses naturally, and mind turn-taking rhythm and fluency.",
+  actional: "Complete all communicative points before pursuing complex expressions. List key steps before practicing.",
+  sociocultural: "Use polite forms such as 'I'd like' and 'Could you...' to strengthen politeness markers and mind cultural conventions.",
+  strategic: "Ask for clarification or rephrase when stuck, and practice self-correction to keep communication smooth.",
 };
 
 /** 维度描述（英文版，键为 dim key） */
 const DIM_DESCRIPTIONS_EN: Record<DimKey, { description: string; levels: Record<number, string>; tips: string }> = {
-  pronunciation: {
-    description: "Assesses the accuracy of English pronunciation, including vowels, consonants, stress, and intonation.",
+  linguistic: {
+    description: "Assesses foundational English language ability, including pronunciation, grammar, and vocabulary accuracy and appropriacy.",
     levels: {
-      1: "Pronunciation is difficult with many errors, hard to understand",
-      2: "Noticeable pronunciation errors, partially understandable",
-      3: "Mostly correct pronunciation with occasional small errors",
-      4: "Clear, accurate, and naturally fluent pronunciation",
-      5: "Standard pronunciation, near-native level",
+      1: "Frequent errors in pronunciation, grammar, or vocabulary that seriously affect understanding",
+      2: "Noticeable errors, partially understandable",
+      3: "Mostly correct with occasional small errors",
+      4: "Accurate, clear, and fluent expression",
+      5: "Standard pronunciation, precise grammar, and idiomatic vocabulary",
     },
-    tips: "Listen to model audio, shadow it, pay attention to stress and intonation, and record yourself to compare.",
+    tips: "Shadow model audio to improve pronunciation, review tense and subject-verb agreement, and build scene-specific vocabulary and collocations.",
   },
-  grammar: {
-    description: "Assesses grammatical accuracy, including tense, voice, and subject-verb agreement.",
+  discourse: {
+    description: "Assesses discourse coherence, turn-taking, and fluency.",
     levels: {
-      1: "Frequent grammar errors that seriously affect understanding",
-      2: "Many grammar errors that affect fluency",
-      3: "Mostly correct grammar with occasional small errors",
-      4: "Accurate grammar with fluent expression",
-      5: "Flawless and flexible grammar use",
+      1: "Difficulty responding and maintaining dialogue",
+      2: "Can respond, but dialogue is not natural enough",
+      3: "Responds naturally and maintains dialogue",
+      4: "Responds actively with natural cohesion",
+      5: "Flexible, natural responses with smooth and efficient dialogue",
     },
-    tips: "Self-correct during practice, keep grammar notes, and review regularly.",
+    tips: "Practice discourse markers, listen attentively, and learn to transition topics naturally while maintaining fluency.",
   },
-  vocabulary: {
-    description: "Assesses the appropriateness, richness, and accuracy of vocabulary use.",
+  actional: {
+    description: "Assesses the ability to fulfill specific communicative functions and achieve the task goal.",
     levels: {
-      1: "Limited vocabulary and monotonous expression",
-      2: "Basic vocabulary is acceptable but not rich enough",
-      3: "Appropriate vocabulary choices that convey basic meaning",
-      4: "Rich and appropriately used vocabulary",
-      5: "Precise and idiomatic vocabulary",
-    },
-    tips: "Build a scene vocabulary bank, learn synonym substitution, and pay attention to collocations.",
-  },
-  function: {
-    description: "Assesses the ability to fulfill specific communicative functions in English, such as requesting, suggesting, and apologizing.",
-    levels: {
-      1: "Difficulty fulfilling basic communicative functions",
+      1: "Difficulty fulfilling basic communicative functions and low task completion",
       2: "Partially fulfills communicative functions but in limited ways",
       3: "Fulfills basic communicative functions",
       4: "Effectively fulfills multiple communicative functions",
-      5: "Flexibly and naturally fulfills various communicative functions",
+      5: "Flexibly and naturally fulfills various communicative functions with high task achievement",
     },
-    tips: "Learn common expressions for each communicative function and practice them purposefully.",
+    tips: "Learn common expressions for each communicative function and complete all communicative points before pursuing complexity.",
   },
-  pragmatics: {
+  sociocultural: {
     description: "Assesses politeness, appropriateness, and cultural adaptability of language use.",
     levels: {
       1: "Direct and blunt expression, lacking politeness",
@@ -259,27 +218,16 @@ const DIM_DESCRIPTIONS_EN: Record<DimKey, { description: string; levels: Record<
     },
     tips: "Learn tactful expressions, pay attention to polite forms, and understand cultural differences.",
   },
-  turn_taking: {
-    description: "Assesses responsiveness in dialogue, including topic continuation and transition.",
+  strategic: {
+    description: "Assesses the use of communication strategies to overcome expression difficulties, such as requesting clarification, self-correction, and rephrasing.",
     levels: {
-      1: "Difficulty responding and maintaining dialogue",
-      2: "Can respond, but dialogue is not natural enough",
-      3: "Responds naturally and maintains dialogue",
-      4: "Responds actively and drives the dialogue forward",
-      5: "Flexible, natural responses with smooth and efficient dialogue",
+      1: "Lacks strategies and breaks off when stuck",
+      2: "Limited strategies",
+      3: "Can basically use clarification or correction strategies",
+      4: "Can flexibly use multiple communication strategies",
+      5: "Uses strategies skillfully and communicates smoothly",
     },
-    tips: "Practice discourse markers, listen attentively, and learn to transition topics naturally.",
-  },
-  paralanguage: {
-    description: "Assesses the use of non-verbal elements such as intonation, pace, and pauses.",
-    levels: {
-      1: "Monotonous intonation and inappropriate pace",
-      2: "Mostly correct intonation but lacking variation",
-      3: "Natural intonation and appropriate pace",
-      4: "Varied intonation with powerful expression",
-      5: "Perfect use of paralinguistic elements that enhance expression",
-    },
-    tips: "Notice rising intonation for questions and falling for statements, practice pacing, and imitate native speakers' rhythm.",
+    tips: "Practice requesting clarification with 'Sorry, could you...' and try rephrasing when you encounter expression difficulties.",
   },
 };
 

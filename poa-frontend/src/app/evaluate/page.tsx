@@ -110,13 +110,11 @@ export default function EvaluatePage() {
 
   // ---- DIM_LABELS (使用 t) ----
   const DIM_LABELS: Record<string, string> = useMemo(() => ({
-    "发音标准度": t("dims.pronunciation"),
-    "语法规范性": t("dims.grammar"),
-    "词汇适配性": t("dims.vocabulary"),
-    "语言功能达成度": t("dims.function"),
-    "语用策略得体性": t("dims.pragmatics"),
-    "话语回合适配性": t("dims.turn_taking"),
-    "副语言匹配度": t("dims.paralanguage"),
+    "语言能力": t("dims.linguistic"),
+    "话语能力": t("dims.discourse"),
+    "行动能力": t("dims.actional"),
+    "社会文化能力": t("dims.sociocultural"),
+    "策略能力": t("dims.strategic"),
   }), [t]);
 
   // ---- 初始化状态 ----
@@ -505,13 +503,11 @@ function RadarChart({ data, dims, dimLabels }: { data: EvaluateData | null; dims
     const hasData = data && dims.length > 0;
 
     const FALLBACK_INDICATOR = [
-      { name: t("evaluate.fallback_fluency"), min: 1, max: 5 },
-      { name: t("evaluate.fallback_grammar"), min: 1, max: 5 },
-      { name: t("evaluate.fallback_pragmatics"), min: 1, max: 5 },
-      { name: t("evaluate.fallback_complexity"), min: 1, max: 5 },
-      { name: t("evaluate.fallback_task_completion"), min: 1, max: 5 },
-      { name: t("evaluate.fallback_vocabulary"), min: 1, max: 5 },
-      { name: t("evaluate.fallback_pronunciation"), min: 1, max: 5 },
+      { name: t("evaluate.fallback_linguistic"), min: 1, max: 5 },
+      { name: t("evaluate.fallback_discourse"), min: 1, max: 5 },
+      { name: t("evaluate.fallback_actional"), min: 1, max: 5 },
+      { name: t("evaluate.fallback_sociocultural"), min: 1, max: 5 },
+      { name: t("evaluate.fallback_strategic"), min: 1, max: 5 },
     ];
 
     const indicator = hasData

@@ -71,7 +71,7 @@
     "start_practice": "开始实景练习",
     "continue_practice": "继续练习",
     "task_label": "实景对话任务",
-    "dim_trend": "七维能力趋势",
+    "dim_trend": "五维能力趋势",
     "more_records": "还有 {count} 条历史记录…",
     "dim_assessment": "维度评估",
     "realtime_diagnosis": "实时诊断",
@@ -84,13 +84,11 @@
     "weeks_ago": "{w} 周前"
   },
   "dims": {
-    "pronunciation": "发音标准度",
-    "grammar": "语法规范性",
-    "vocabulary": "词汇适配性",
-    "function": "语言功能达成度",
-    "pragmatics": "语用策略得体性",
-    "turn_taking": "话语回合适配性",
-    "paralanguage": "副语言匹配度"
+    "linguistic": "语言能力",
+    "discourse": "话语能力",
+    "actional": "行动能力",
+    "sociocultural": "社会文化能力",
+    "strategic": "策略能力"
   },
   "scenario": {
     "title": "选择场景照片",
@@ -246,7 +244,7 @@
     "suggest_say": "建议这样说",
     "detail_below": "（详细说明见下方）",
     "no_reference": "（暂无参考表达）",
-    "dim_eval": "七维综合评价",
+    "dim_eval": "五维综合评价",
     "enter_facilitate_hint": "查看诊断结果后，进入针对性的促成学习",
     "enter_facilitate": "进入促成学习 →",
     "no_gaps": "未发现明显的语言不足，继续保持！",
@@ -284,7 +282,7 @@
     "assessment_overview": "能力评估概览",
     "mark_complete": "标记完成 ✓",
     "avg_score": "平均分",
-    "assessment_intro": "根据你的初次产出，我们从7个维度进行了综合评估。点击下方卡片可以查看每个维度的详细说明和提升建议。",
+    "assessment_intro": "根据你的初次产出，我们从5个维度进行了综合评估。点击下方卡片可以查看每个维度的详细说明和提升建议。",
     "key_improvement_areas": "需要重点提升的维度",
     "all_dims": "所有能力维度",
     "dim_desc": "维度说明",
@@ -328,7 +326,7 @@
   },
   "evaluate": {
     "title": "双轨评价报告",
-    "subtitle": "初次产出 vs 二次产出 — 七维度对比评估",
+    "subtitle": "初次产出 vs 二次产出 — 五维度对比评估",
     "overall": "总体评价",
     "targeted_title": "靶向问题改善评估",
     "no_targeted": "暂无靶向评估数据",
@@ -352,13 +350,11 @@
     "no_eval_hint": "请先完成初次产出和二次产出练习",
     "scene_label": "实景对话",
     "task_label": "实景对话任务",
-    "fallback_fluency": "流利度",
-    "fallback_grammar": "语法",
-    "fallback_pragmatics": "语用",
-    "fallback_complexity": "复杂度",
-    "fallback_task_completion": "任务完成",
-    "fallback_vocabulary": "词汇",
-    "fallback_pronunciation": "发音"
+    "fallback_linguistic": "语言能力",
+    "fallback_discourse": "话语能力",
+    "fallback_actional": "行动能力",
+    "fallback_sociocultural": "社会文化能力",
+    "fallback_strategic": "策略能力"
   },
   "report": {
     "title": "学习证据链报告",
