@@ -6,7 +6,7 @@ import { useTranslations, useLocale } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { BASE_URL, type TurnFeedback } from "@/lib/api";
 import { pickLocaleField } from "@/lib/locale-utils";
-import { playAiAudio } from "@/lib/audio";
+import { playAiAudio, stopAiAudio } from "@/lib/audio";
 import RecordingWaveform from "@/components/RecordingWaveform";
 import { getScenarioHistory, isTaskSelectedInSession, markTaskSelectedInSession, type ScenarioHistoryItem } from "@/lib/store";
 import { isDeviceCheckPassed } from "@/lib/device-check";
@@ -376,7 +376,7 @@ export default function Attempt2Page() {
   // ---- 轮次限制（客户端兜底）----
   const userTurnCount = history.filter((h) => h.role === "user").length;
   const turnLimitReached = userTurnCount >= ATTEMPT2_MAX_USER_TURNS;
-  const canRecord = micReady && !uploading && !waitingForAiReply && !isFinal && !turnLimitReached && !wrappingUp && !aiSpeaking;
+  const canRecord = micReady && !uploading && !waitingForAiReply && !isFinal && !turnLimitReached && !wrappingUp;
 
   // ---- 键盘提示自动消失 ----
   const [showHint, setShowHint] = useState(true);
@@ -478,6 +478,8 @@ export default function Attempt2Page() {
     if (!canRecord) return;
     if (!audioStreamRef.current || recording || uploading) return;
     if (isRecordingRef.current) return;
+    // 用户点击说话时先停止正在播放的 AI 音频
+    stopAiAudio();
     isRecordingRef.current = true;
 
     // 用户手势后恢复 AudioContext：避免 suspended 状态导致 analyser 全零
@@ -1296,15 +1298,13 @@ export default function Attempt2Page() {
                     try {
                       const url = lastAiAudioUrlRef.current;
                       if (url) {
-                        const audio = new Audio(url);
-                        await new Promise<void>((resolve) => {
-                          audio.onended = () => resolve();
-                          audio.onerror = () => resolve();
-                          audio.play().catch(() => resolve());
+                        playAiAudio(url, (isPlaying) => {
+                          if (!isPlaying) setReplaying(false);
                         });
+                      } else {
+                        setReplaying(false);
                       }
                     } catch { /* ignore */ }
-                    setReplaying(false);
                   }}
                   disabled={replaying}
                   className="inline-flex items-center justify-center size-9 rounded-full bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-50"

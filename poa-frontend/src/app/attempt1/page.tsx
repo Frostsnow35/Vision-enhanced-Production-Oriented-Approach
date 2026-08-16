@@ -6,7 +6,7 @@ import { useTranslations, useLocale } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { BASE_URL, chatStart, chatTurn, type TurnFeedback } from "@/lib/api";
 import { pickLocaleField } from "@/lib/locale-utils";
-import { playAiAudio } from "@/lib/audio";
+import { playAiAudio, stopAiAudio } from "@/lib/audio";
 import RecordingWaveform from "@/components/RecordingWaveform";
 import { getScenarioHistory, isTaskSelectedInSession, markTaskSelectedInSession, type ScenarioHistoryItem } from "@/lib/store";
 import { isDeviceCheckPassed } from "@/lib/device-check";
@@ -399,7 +399,7 @@ export default function Attempt1Page() {
 
   // ---- 录音可达性派生（前置以避免 TDZ 报错）----
   const micReady = micStatus === "ready";
-  const canRecord = micReady && !uploading && !waitingForAiReply && !aiSpeaking && !isFinal && !turnLimitReached && !wrappingUp;
+  const canRecord = micReady && !uploading && !waitingForAiReply && !isFinal && !turnLimitReached && !wrappingUp;
 
   // ---- 通话轮次 ----
   const callChatTurn = async (user_text: string, currentHistory: ConversationTurn[]) => {
@@ -522,6 +522,8 @@ export default function Attempt1Page() {
     if (!audioStreamRef.current || recording || uploading) return;
     // 防重复：用 ref 追踪真实录制状态
     if (isRecordingRef.current) return;
+    // 用户点击说话时先停止正在播放的 AI 音频
+    stopAiAudio();
     isRecordingRef.current = true;
 
     // 用户手势后恢复 AudioContext：浏览器自动播放策略会让无手势创建的 context 处于 suspended，
@@ -883,8 +885,6 @@ export default function Attempt1Page() {
     ? t("attempt.uploading")
     : waitingForAiReply
     ? stageToLabel(speechStage)
-    : aiSpeaking
-    ? t("attempt.ai_speaking")
     : isFinal
     ? t("attempt.dialog_ended")
     : turnLimitReached
